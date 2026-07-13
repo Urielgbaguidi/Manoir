@@ -1,0 +1,191 @@
+import Link from "next/link";
+import {
+  ArrowRight,
+  CalendarCheck,
+  CheckCircle2,
+  Clock3,
+  CreditCard,
+  FileText,
+  ShieldCheck,
+  UserPlus,
+  XCircle,
+} from "lucide-react";
+
+const reservationSteps = [
+  {
+    title: "Choisir un appartement",
+    text: "Le client consulte les appartements, ouvre la galerie, lit la description, verifie le prix par nuit et la caution par jour.",
+    icon: CalendarCheck,
+  },
+  {
+    title: "Creer son profil",
+    text: "Au moment de reserver, le client cree son compte avec son nom, son email, son telephone et un mot de passe. Le compte sert ensuite a suivre toute la demande.",
+    icon: UserPlus,
+  },
+  {
+    title: "Envoyer la demande",
+    text: "Le client choisit la date d'arrivee, la date de depart et peut ajouter une demande speciale. La caution est calculee automatiquement selon le nombre de jours avant l'arrivee.",
+    icon: FileText,
+  },
+  {
+    title: "Validation par l'administration",
+    text: "L'equipe du Manoir examine la demande. Elle peut confirmer ou refuser. Si elle confirme, le client recoit une autorisation de paiement valable 24h.",
+    icon: ShieldCheck,
+  },
+  {
+    title: "Payer la caution",
+    text: "Apres validation, le client paie la caution depuis son espace client. Une fois la caution payee, la reservation devient confirmee.",
+    icon: CreditCard,
+  },
+  {
+    title: "Suivre et telecharger les documents",
+    text: "Le client retrouve son bon de reservation, sa facture de caution, son bon de sejour et sa facture de sejour dans son espace personnel.",
+    icon: CheckCircle2,
+  },
+];
+
+const statusRows = [
+  ["EN_ATTENTE", "La demande a ete envoyee et attend la validation de l'administration."],
+  ["VALIDEE_PAIEMENT_REQUIS", "La demande est acceptee. Le client doit payer la caution dans le delai affiche."],
+  ["CONFIRMEE", "La caution est payee. La reservation est definitivement confirmee."],
+  ["SEJOUR_PAYE", "Le client a aussi regle les frais de sejour."],
+  ["REFUSEE", "La demande a ete refusee par l'administration."],
+  ["EXPIREE", "Le delai de paiement de 24h est depasse."],
+  ["ANNULEE", "Le client a annule sa reservation."],
+  ["REMBOURSEE", "L'administration a confirme le remboursement."],
+];
+
+export default function HowToReservePage() {
+  return (
+    <main className="min-h-screen bg-cream px-6 py-28 text-charcoal md:px-10 grain-layer">
+      <div className="mx-auto max-w-7xl">
+        <section className="grid gap-10 border-b border-bark/10 pb-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-end">
+          <div>
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-bark/10 bg-bark/5 px-4 py-2">
+              <FileText className="h-4 w-4 text-bark" />
+              <span className="text-[10px] font-black uppercase tracking-[0.32em] text-bark">
+                Guide client
+              </span>
+            </div>
+            <h1 className="font-display text-[clamp(3rem,8vw,7rem)] uppercase leading-[0.88] tracking-[-0.045em] text-bark">
+              Comment reserver au Manoir
+            </h1>
+            <p className="mt-6 max-w-3xl text-lg leading-8 text-charcoal/85">
+              Cette page explique clairement tout le parcours de reservation : choix de l'appartement,
+              creation du compte, validation par l'administration, paiement de la caution, documents
+              disponibles et suivi depuis l'espace client.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-bark bg-bark p-7 text-cream shadow-2xl shadow-bark/20">
+            <div className="flex items-start gap-4">
+              <Clock3 className="mt-1 h-6 w-6 flex-shrink-0" />
+              <div>
+                <h2 className="font-display text-3xl uppercase leading-none">Delai de paiement</h2>
+                <p className="mt-4 text-sm leading-7 text-cream/90">
+                  Apres acceptation par l'administration, le client dispose de 24h pour payer la caution.
+                  Un compte a rebours s'affiche dans son espace client.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="py-14">
+          <div className="mb-8 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.32em] text-bark/80">Processus</p>
+              <h2 className="mt-3 font-display text-4xl uppercase text-bark md:text-5xl">Les etapes</h2>
+            </div>
+            <Link
+              href="/rooms"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-bark px-6 py-4 text-xs font-black uppercase tracking-[0.22em] text-cream transition hover:bg-bark-light"
+            >
+              Voir les appartements <ArrowRight size={16} />
+            </Link>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {reservationSteps.map((step, index) => (
+              <article key={step.title} className="rounded-2xl border border-bark/10 bg-cream-dark/40 p-6">
+                <div className="mb-7 flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-bark/80">
+                    Etape {index + 1}
+                  </span>
+                  <span className="grid size-11 place-items-center rounded-full border border-bark/15 bg-cream text-bark">
+                    <step.icon size={18} />
+                  </span>
+                </div>
+                <h3 className="font-display text-3xl uppercase leading-none text-bark">{step.title}</h3>
+                <p className="mt-4 text-sm leading-7 text-charcoal/85">{step.text}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="grid gap-6 py-8 lg:grid-cols-[0.85fr_1.15fr]">
+          <div className="rounded-2xl border border-bark/10 bg-cream-dark/40 p-7">
+            <h2 className="font-display text-4xl uppercase leading-none text-bark">
+              Paiements et documents
+            </h2>
+            <div className="mt-7 space-y-5 text-sm leading-7 text-charcoal/85">
+              <p>
+                La caution confirme la reservation. Elle est calculee selon le nombre de jours entre
+                la date de demande et la date d'arrivee.
+              </p>
+              <p>
+                Les frais de sejour correspondent au nombre de nuits multiplie par le prix par nuit.
+                Le client peut les regler depuis son espace client.
+              </p>
+              <p>
+                Les documents sont generes automatiquement : bon de reservation, facture de caution,
+                bon du sejour et facture du sejour.
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-bark/10 bg-white/45 p-7">
+            <h2 className="font-display text-4xl uppercase leading-none text-bark">Statuts de suivi</h2>
+            <div className="mt-6 divide-y divide-bark/10">
+              {statusRows.map(([status, description]) => (
+                <div key={status} className="grid gap-2 py-4 md:grid-cols-[0.45fr_1fr]">
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-bark">{status}</p>
+                  <p className="text-sm leading-6 text-charcoal/85">{description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="grid gap-6 py-10 md:grid-cols-2">
+          <div className="rounded-2xl border border-terracotta/20 bg-terracotta/5 p-7">
+            <div className="flex items-start gap-4">
+              <XCircle className="mt-1 h-6 w-6 flex-shrink-0 text-terracotta" />
+              <div>
+                <h2 className="font-display text-3xl uppercase text-bark">Annulation</h2>
+                <p className="mt-3 text-sm leading-7 text-charcoal/85">
+                  Le client peut annuler si la demande est en attente, validee avant paiement ou deja
+                  confirmee. Si la caution est deja payee, le remboursement est calcule automatiquement
+                  selon les jours consommes.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-olive/20 bg-olive/5 p-7">
+            <div className="flex items-start gap-4">
+              <CheckCircle2 className="mt-1 h-6 w-6 flex-shrink-0 text-olive" />
+              <div>
+                <h2 className="font-display text-3xl uppercase text-bark">Espace client</h2>
+                <p className="mt-3 text-sm leading-7 text-charcoal/85">
+                  L'espace client centralise les demandes, les paiements, le compte a rebours,
+                  les documents, l'historique et la gestion du profil.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}

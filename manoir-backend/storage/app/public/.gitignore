@@ -1,0 +1,4 @@
+*
+!.gitignore
+!room-categories/
+!room-categories/**

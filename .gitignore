@@ -1,0 +1,27 @@
+# Dependencies
+manoir-frontend/node_modules/
+manoir-backend/vendor/
+
+# Build outputs and caches
+manoir-frontend/.next/
+manoir-frontend/.npm-cache/
+manoir-frontend/tsconfig.tsbuildinfo
+manoir-backend/.phpunit.result.cache
+
+# Local logs
+manoir-frontend/*.log
+manoir-backend/storage/logs/*.log
+
+# Laravel generated cache files
+manoir-backend/storage/framework/cache/data/*
+!manoir-backend/storage/framework/cache/data/.gitignore
+manoir-backend/storage/framework/views/*.php
+
+# Local environment files
+manoir-frontend/.env*.local
+manoir-backend/.env
+
+# Codex/local assistant workspace
+.agents/
+.codex/
+.git-manoir/
