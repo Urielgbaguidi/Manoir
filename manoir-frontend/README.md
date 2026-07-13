@@ -50,7 +50,7 @@ manoir-frontend/
 
 ```bash
 npm ci
-copy .env.example .env.local
+if (!(Test-Path .env.local)) { copy .env.example .env.local }
 npm run dev
 ```
 

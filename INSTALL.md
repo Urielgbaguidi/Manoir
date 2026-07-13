@@ -11,7 +11,9 @@ Ce guide permet de lancer Le Manoir en local avec :
 - Composer
 - Node.js 18 ou plus
 - npm
-- MySQL via XAMPP, WAMP ou autre serveur local
+- Extension PHP SQLite active
+
+Le projet utilise SQLite en local. Il n'est donc pas necessaire de lancer MySQL dans XAMPP pour tester le site.
 
 ## 1. Installer le backend Laravel
 
@@ -20,13 +22,12 @@ Ouvrir PowerShell dans le dossier du projet :
 ```powershell
 cd C:\xampp\htdocs\Manoir\manoir-backend
 composer install
-copy .env.example .env
+if (!(Test-Path .env)) { copy .env.example .env }
+if (!(Test-Path database\database.sqlite)) { New-Item -ItemType File database\database.sqlite | Out-Null }
 php artisan key:generate
 ```
 
-Configurer ensuite la base de donnees dans `manoir-backend\.env`.
-
-Exemple avec MySQL local :
+Verifier que `manoir-backend\.env` contient bien :
 
 ```env
 APP_NAME="Le Manoir"
@@ -34,17 +35,12 @@ APP_ENV=local
 APP_DEBUG=true
 APP_URL=http://localhost:8000
 
-DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=manoir
-DB_USERNAME=root
-DB_PASSWORD=
+DB_CONNECTION=sqlite
 
 MAIL_MAILER=log
 ```
 
-Creer la base de donnees `manoir` dans MySQL, puis lancer :
+Lancer ensuite les migrations, les donnees de test et le serveur backend :
 
 ```powershell
 php artisan migrate
@@ -60,6 +56,12 @@ Le backend doit repondre sur :
 http://localhost:8000
 ```
 
+L'API doit repondre sur :
+
+```text
+http://localhost:8000/api
+```
+
 ## 2. Installer le frontend Next.js
 
 Ouvrir un autre terminal PowerShell :
@@ -67,7 +69,7 @@ Ouvrir un autre terminal PowerShell :
 ```powershell
 cd C:\xampp\htdocs\Manoir\manoir-frontend
 npm ci
-copy .env.example .env.local
+if (!(Test-Path .env.local)) { copy .env.example .env.local }
 ```
 
 Verifier que `manoir-frontend\.env.local` contient :
@@ -169,3 +171,13 @@ composer install
 ```
 
 Ces dossiers sont volontairement ignores par Git.
+
+## 7. Resume de la bonne methode locale
+
+Pour tester le projet en local :
+
+1. Installer PHP, Composer, Node.js et npm.
+2. Ne pas creer de base MySQL.
+3. Utiliser SQLite avec le fichier `manoir-backend\database\database.sqlite`.
+4. Lancer Laravel sur le port `8000`.
+5. Lancer Next.js sur le port `3000`.

@@ -21,6 +21,8 @@ Ces elements sont ignores par `.gitignore`.
 
 ## Backend Laravel
 
+En local, le projet utilise SQLite. En production, il est possible de garder SQLite pour un petit deploiement, mais une base MySQL est generalement plus adaptee chez un hebergeur.
+
 Sur le serveur, depuis `manoir-backend` :
 
 ```bash

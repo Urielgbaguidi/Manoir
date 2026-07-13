@@ -154,6 +154,14 @@ L'administration permet de :
 
 Consulter [INSTALL.md](./INSTALL.md).
 
+En local, le backend utilise SQLite avec le fichier :
+
+```text
+manoir-backend/database/database.sqlite
+```
+
+Il n'est pas necessaire de creer une base MySQL ni de lancer MySQL dans XAMPP pour tester le projet localement.
+
 ## Mise en ligne
 
 Consulter [MISE_EN_LIGNE.md](./MISE_EN_LIGNE.md).

@@ -20,20 +20,31 @@ Elle gere :
 - PHP 8.3+
 - Laravel 13
 - Composer
-- MySQL en production ou developpement local
+- SQLite pour le developpement local
+- MySQL possible en production selon l'hebergeur
 - DomPDF installe via `barryvdh/laravel-dompdf`
 
 ## Installation locale
 
-```bash
+Le backend utilise SQLite en local. Si le fichier n'existe pas apres telechargement du projet, il faut le creer dans `database/database.sqlite`.
+
+```powershell
 composer install
-copy .env.example .env
+if (!(Test-Path .env)) { copy .env.example .env }
+if (!(Test-Path database\database.sqlite)) { New-Item -ItemType File database\database.sqlite | Out-Null }
 php artisan key:generate
 php artisan migrate
 php artisan db:seed --class=UserSeeder
 php artisan db:seed --class=RoomSeeder
 php artisan storage:link
 php artisan serve --host=127.0.0.1 --port=8000
+```
+
+Configuration locale attendue dans `.env` :
+
+```env
+APP_URL=http://localhost:8000
+DB_CONNECTION=sqlite
 ```
 
 API locale :
