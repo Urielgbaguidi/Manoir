@@ -24,6 +24,8 @@ class PaymentController extends Controller
             ->where('id', $reservationId)
             ->firstOrFail();
 
+        $reservation->expireIfPaymentDeadlinePassed();
+
         $paymentType = $request->input('payment_type', 'deposit');
 
         if ($paymentType === 'deposit') {

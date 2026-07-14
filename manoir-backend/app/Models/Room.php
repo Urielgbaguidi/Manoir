@@ -49,7 +49,16 @@ class Room extends Model
         }
 
         $query = $this->reservations()
-            ->whereIn('status', ['VALIDEE_PAIEMENT_REQUIS', 'CONFIRMEE', 'SEJOUR_PAYE'])
+            ->where(function ($query) {
+                $query->whereIn('status', ['CONFIRMEE', 'SEJOUR_PAYE'])
+                    ->orWhere(function ($query) {
+                        $query->where('status', 'VALIDEE_PAIEMENT_REQUIS')
+                            ->where(function ($query) {
+                                $query->whereNull('payment_deadline')
+                                    ->orWhere('payment_deadline', '>', now());
+                            });
+                    });
+            })
             ->where(function ($query) use ($checkIn, $checkOut) {
                 $query->where('check_in', '<', $checkOut)
                     ->where('check_out', '>', $checkIn);

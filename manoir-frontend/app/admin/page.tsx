@@ -121,7 +121,7 @@ export default function AdminDashboard() {
     try {
       if (actionType === 'approve') {
         await api.approveReservation(selectedRes.id, { admin_notes: adminNotes });
-        showToast('Demande confirmee. Le client peut payer la caution.', 'success');
+        showToast('Demande confirmee. Le client peut payer la caution de réservation.', 'success');
       } else {
         await api.rejectReservation(selectedRes.id, { admin_notes: adminNotes });
         showToast('Demande refusee. Le client sera notifie.', 'success');

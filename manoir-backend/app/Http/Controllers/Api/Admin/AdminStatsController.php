@@ -13,13 +13,24 @@ class AdminStatsController extends Controller
 {
     public function dashboard(): JsonResponse
     {
+        Reservation::expireOverduePaymentRequests();
+
         $totalReservations = Reservation::count();
         $totalRooms = Room::count();
         $totalUsers = User::count();
         $totalRevenue = Payment::where('status', 'success')->sum('amount');
 
         $today = now()->format('Y-m-d');
-        $occupiedRoomsCount = Reservation::whereIn('status', ['VALIDEE_PAIEMENT_REQUIS', 'CONFIRMEE', 'SEJOUR_PAYE'])
+        $occupiedRoomsCount = Reservation::where(function ($query) {
+            $query->whereIn('status', ['CONFIRMEE', 'SEJOUR_PAYE'])
+                ->orWhere(function ($query) {
+                    $query->where('status', 'VALIDEE_PAIEMENT_REQUIS')
+                        ->where(function ($query) {
+                            $query->whereNull('payment_deadline')
+                                ->orWhere('payment_deadline', '>', now());
+                        });
+                });
+        })
             ->where('check_in', '<=', $today)
             ->where('check_out', '>=', $today)
             ->distinct('room_id')

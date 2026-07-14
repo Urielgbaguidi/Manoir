@@ -154,13 +154,32 @@ DELETE /api/admin/users/{id}
 | Statut | Role |
 | --- | --- |
 | `EN_ATTENTE` | Demande envoyee |
-| `VALIDEE_PAIEMENT_REQUIS` | Demande acceptee, caution a payer |
+| `VALIDEE_PAIEMENT_REQUIS` | Demande acceptee, caution de réservation a payer sous 24h |
 | `CONFIRMEE` | Caution payee |
 | `REFUSEE` | Demande refusee |
-| `EXPIREE` | Delai de paiement depasse |
+| `EXPIREE` | Delai de paiement depasse, appartement libere |
 | `SEJOUR_PAYE` | Frais de sejour payes |
 | `ANNULEE` | Reservation annulee |
 | `REMBOURSEE` | Remboursement effectue |
+
+## Expiration des cautions
+
+Quand une demande est acceptee par l'administrateur, `payment_deadline` est fixe a 24h apres la validation.
+
+Pendant ce delai, l'appartement attribue est considere comme bloque pour les dates de la reservation.
+
+Si le client ne paie pas la caution avant la fin du delai :
+
+- la reservation passe au statut `EXPIREE`,
+- elle n'est plus prise en compte dans les conflits de disponibilite,
+- l'appartement est automatiquement disponible pour les autres clients,
+- le bouton de paiement de caution est desactive dans l'espace client.
+
+Le backend expire les demandes depassees lors des appels API importants, et la commande suivante permet aussi de traiter les expirations et les relances en arriere-plan :
+
+```bash
+php artisan reservations:check-expirations
+```
 
 ## Paiement actuel
 
@@ -195,4 +214,5 @@ php artisan storage:link
 php artisan test
 vendor/bin/pint --test
 php artisan route:list
+php artisan reservations:check-expirations
 ```

@@ -107,9 +107,10 @@ npm run start
 5. Il saisit les dates et les demandes speciales.
 6. La demande apparait dans son espace client.
 7. L'administrateur valide ou refuse.
-8. Si la demande est validee, le client paie la caution dans le site.
-9. Le client peut consulter ses documents et payer le sejour.
-10. Le client peut annuler une reservation lorsque le statut l'autorise.
+8. Si la demande est validee, le client a 24h pour payer la caution de réservation dans le site.
+9. Si le delai de 24h expire, le bouton de paiement de caution est desactive et la reservation passe dans l'historique.
+10. Apres paiement de la caution, le client peut consulter ses documents et payer le sejour.
+11. Le client peut annuler une reservation lorsque le statut l'autorise.
 
 ## Medias frontend
 

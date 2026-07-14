@@ -86,9 +86,15 @@ Caution = caution par jour x nombre de jours entre la demande et l'arrivee
 Frais sejour = nombre de nuits x prix par nuit
 ```
 
+- Apres validation par l'administrateur, l'appartement est reserve pour le client pendant 24h.
+- Si la caution n'est pas payee dans ce delai :
+  - la demande passe automatiquement au statut `EXPIREE`,
+  - le bouton de paiement de caution est desactive cote client,
+  - l'appartement est libere et redevient disponible pour les autres clients.
+
 ### Paiements actuels
 
-Le paiement est gere dans le site sous forme de validation interne. Quand le client clique sur "Payer la caution" ou "Payer mon sejour", le site affiche le message de succes :
+Le paiement est gere dans le site sous forme de validation interne. Quand le client clique sur "Payer la caution de réservation" ou "Payer mon sejour", le site affiche le message de succes :
 
 ```text
 PAIEMENT REUSSI
@@ -142,10 +148,10 @@ L'administration permet de :
 | Statut | Signification |
 | --- | --- |
 | `EN_ATTENTE` | Demande envoyee, en attente de validation admin |
-| `VALIDEE_PAIEMENT_REQUIS` | Demande acceptee, caution a payer |
+| `VALIDEE_PAIEMENT_REQUIS` | Demande acceptee, caution de réservation a payer sous 24h |
 | `CONFIRMEE` | Caution payee, reservation confirmee |
 | `REFUSEE` | Demande refusee par l'administrateur |
-| `EXPIREE` | Delai de paiement de caution depasse |
+| `EXPIREE` | Delai de paiement de caution depasse, appartement libere |
 | `SEJOUR_PAYE` | Frais de sejour payes |
 | `ANNULEE` | Reservation annulee par le client |
 | `REMBOURSEE` | Remboursement confirme par l'administrateur |

@@ -18,6 +18,8 @@ class ReservationController extends Controller
 {
     public function store(Request $request): JsonResponse
     {
+        Reservation::expireOverduePaymentRequests();
+
         $request->validate([
             'category_type' => 'required|string|in:'.implode(',', RoomCategory::TYPES),
             'check_in' => 'required|date|after_or_equal:today',
@@ -78,6 +80,8 @@ class ReservationController extends Controller
 
     public function myReservations(): JsonResponse
     {
+        Reservation::expireOverduePaymentRequests(Auth::id());
+
         $reservations = Reservation::where('user_id', Auth::id())
             ->with(['room', 'payments', 'user'])
             ->orderByDesc('created_at')
@@ -92,12 +96,16 @@ class ReservationController extends Controller
             ->with(['room', 'payments', 'notifications', 'user'])
             ->findOrFail($id);
 
+        $reservation->expireIfPaymentDeadlinePassed();
+
         return response()->json($reservation);
     }
 
     public function payments(string $id): JsonResponse
     {
         $reservation = Reservation::where('user_id', Auth::id())->findOrFail($id);
+        $reservation->expireIfPaymentDeadlinePassed();
+
         $payments = Payment::where('reservation_id', $reservation->id)
             ->orderByDesc('created_at')
             ->get();
@@ -110,6 +118,8 @@ class ReservationController extends Controller
         $reservation = Reservation::where('user_id', Auth::id())
             ->with(['room', 'payments', 'user'])
             ->findOrFail($id);
+
+        $reservation->expireIfPaymentDeadlinePassed();
 
         if (! in_array($reservation->status, ['EN_ATTENTE', 'VALIDEE_PAIEMENT_REQUIS', 'CONFIRMEE'], true)) {
             return response()->json([
@@ -195,6 +205,8 @@ class ReservationController extends Controller
         ]);
 
         $reservation = Reservation::where('user_id', Auth::id())->findOrFail($id);
+        $reservation->expireIfPaymentDeadlinePassed();
+
         $isStay = $request->payment_type === 'stay';
         $invoiceNumberField = $isStay ? 'stay_invoice_number' : 'deposit_invoice_number';
         $downloadedField = $isStay ? 'stay_invoice_downloaded' : 'deposit_invoice_downloaded';

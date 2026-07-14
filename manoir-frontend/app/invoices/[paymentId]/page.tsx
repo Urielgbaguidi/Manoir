@@ -35,6 +35,7 @@ interface InvoiceData {
     description: string;
     unit_price: number;
     quantity: number;
+    quantity_label?: string;
     subtotal: number;
     tax_rate: number;
     tax: number;
@@ -189,7 +190,7 @@ export default function InvoicePage() {
               <div className="bg-white p-4 rounded-lg shadow-sm">
                 <p className="text-sm text-gray-600">N° Facture</p>
                 <p className="text-lg font-bold text-gray-900">{invoice.invoice_number}</p>
-                <p className="text-sm text-gray-600 mt-2">Date</p>
+                <p className="text-sm text-gray-600 mt-2">Date et heure de délivrance</p>
                 <p className="text-base font-semibold text-gray-900">{invoice.invoice_date}</p>
               </div>
             </div>
@@ -257,7 +258,9 @@ export default function InvoicePage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Description</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Qté</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">
+                    {invoice.pricing.quantity_label || 'Nombre de jours'}
+                  </th>
                   <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Prix unitaire</th>
                   <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Total</th>
                 </tr>

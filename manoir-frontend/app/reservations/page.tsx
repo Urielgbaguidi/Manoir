@@ -56,6 +56,15 @@ const parseReservationDate = (value?: string) => {
 const formatReservationDate = (value: string) =>
   parseReservationDate(value)?.toLocaleDateString('fr-FR') || 'Date indisponible';
 
+const formatReservationDateTime = (value?: string) =>
+  parseReservationDate(value)?.toLocaleString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }) || 'Date indisponible';
+
 const countNights = (checkIn: string, checkOut: string) => {
   const start = parseReservationDate(checkIn);
   const end = parseReservationDate(checkOut);
@@ -103,6 +112,14 @@ const paymentCountdown = (deadline?: string, approvedAt?: string, nowMs = Date.n
     isUrgent: remainingMs > 0 && remainingMs <= 2 * 60 * 60 * 1000,
   };
 };
+
+const isDepositPaymentExpired = (reservation: Reservation, nowMs = Date.now()) =>
+  reservation.status === 'VALIDEE_PAIEMENT_REQUIS'
+  && Boolean(reservation.payment_deadline)
+  && Boolean(paymentCountdown(reservation.payment_deadline, reservation.approved_at, nowMs)?.expired);
+
+const effectiveReservationStatus = (reservation: Reservation, nowMs = Date.now()): Reservation['status'] =>
+  isDepositPaymentExpired(reservation, nowMs) ? 'EXPIREE' : reservation.status;
 
 export default function ReservationsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -217,7 +234,7 @@ export default function ReservationsPage() {
   };
 
   const canCancelReservation = (reservation: Reservation) =>
-    ['EN_ATTENTE', 'VALIDEE_PAIEMENT_REQUIS', 'CONFIRMEE'].includes(reservation.status);
+    ['EN_ATTENTE', 'VALIDEE_PAIEMENT_REQUIS', 'CONFIRMEE'].includes(effectiveReservationStatus(reservation, nowMs));
 
   const handleConfirmCancellation = async () => {
     if (!cancellingReservation) return;
@@ -341,10 +358,10 @@ export default function ReservationsPage() {
 
   const buildInvoiceSvg = (reservation: Reservation, type: PaymentType, logoDataUrl: string) => {
     const isStay = type === 'stay';
-    const accent = isStay ? '#047857' : '#b45309';
-    const footerEnd = isStay ? '#059669' : '#c2410c';
-    const headerStart = isStay ? '#ecfdf5' : '#fff7ed';
-    const headerEnd = isStay ? '#d1fae5' : '#ffedd5';
+    const accent = '#b45309';
+    const footerEnd = '#c2410c';
+    const headerStart = '#fff7ed';
+    const headerEnd = '#ffedd5';
     const title = isStay ? 'Facture Séjour' : 'Facture Caution';
     const amount = getPaymentAmount(reservation, type);
     const nights = countNights(reservation.check_in, reservation.check_out);
@@ -353,7 +370,7 @@ export default function ReservationsPage() {
       ? `${nights} nuit${nights > 1 ? 's' : ''}`
       : `${unitPrice > 0 ? Math.round(amount / unitPrice) : 0} jour(s)`;
     const client = reservation.user || user;
-    const documentDate = formatReservationDate(isStay ? reservation.stay_paid_at || new Date().toISOString() : reservation.paid_at || new Date().toISOString());
+    const documentDate = formatReservationDateTime(isStay ? reservation.stay_paid_at || new Date().toISOString() : reservation.paid_at || new Date().toISOString());
     const description = isStay ? 'Frais de séjour' : 'Caution de réservation';
     const titleText = svgEscape(title);
     const numberText = svgEscape(invoiceNumber(reservation, type));
@@ -394,11 +411,11 @@ export default function ReservationsPage() {
         <text x="250" y="248" font-family="Arial, sans-serif" font-size="20" fill="#374151">contact@manoir.com</text>
 
         <text x="830" y="100" font-family="Georgia, serif" font-size="44" font-weight="700" fill="${accent}">${titleText}</text>
-        <rect x="820" y="125" width="330" height="130" rx="14" fill="#ffffff" filter="url(#shadow)" />
+        <rect x="820" y="125" width="360" height="155" rx="14" fill="#ffffff" filter="url(#shadow)" />
         <text x="850" y="166" font-family="Arial, sans-serif" font-size="18" fill="#6b7280">Numéro</text>
         <text x="850" y="197" font-family="Arial, sans-serif" font-size="24" font-weight="700" fill="#111827">${numberText}</text>
-        <text x="850" y="231" font-family="Arial, sans-serif" font-size="18" fill="#6b7280">Date</text>
-        <text x="925" y="231" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#111827">${svgEscape(documentDate)}</text>
+        <text x="850" y="232" font-family="Arial, sans-serif" font-size="17" fill="#6b7280">Date et heure de délivrance</text>
+        <text x="850" y="262" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#111827">${svgEscape(documentDate)}</text>
 
         <text x="80" y="405" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#111827">Client</text>
         <rect x="80" y="425" width="470" height="5" fill="${accent}" />
@@ -418,7 +435,7 @@ export default function ReservationsPage() {
         <rect x="80" y="780" width="1080" height="5" fill="${accent}" />
         <rect x="80" y="835" width="1080" height="70" fill="#f9fafb" />
         <text x="115" y="879" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#374151">Description</text>
-        <text x="585" y="879" font-family="Arial, sans-serif" font-size="20" font-weight="700" text-anchor="middle" fill="#374151">Quantité</text>
+        <text x="585" y="879" font-family="Arial, sans-serif" font-size="20" font-weight="700" text-anchor="middle" fill="#374151">${isStay ? 'Nombre de nuits' : 'Nombre de jours'}</text>
         <text x="815" y="879" font-family="Arial, sans-serif" font-size="20" font-weight="700" text-anchor="end" fill="#374151">Prix unitaire</text>
         <text x="1125" y="879" font-family="Arial, sans-serif" font-size="20" font-weight="700" text-anchor="end" fill="#374151">Montant</text>
         <line x1="80" y1="905" x2="1160" y2="905" stroke="#e5e7eb" stroke-width="2" />
@@ -434,9 +451,7 @@ export default function ReservationsPage() {
         <text x="720" y="1190" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="#111827">Total net</text>
         <text x="1160" y="1190" font-family="Arial, sans-serif" font-size="30" font-weight="700" text-anchor="end" fill="${accent}">${total}</text>
 
-        <rect x="80" y="1300" width="1080" height="130" rx="18" fill="${headerStart}" stroke="${headerEnd}" stroke-width="4" />
-        <text x="120" y="1360" font-family="Arial, sans-serif" font-size="22" fill="#374151">Merci de votre confiance. Cette facture reprend le format du document affiché sur le site.</text>
-        <text x="120" y="1402" font-family="Arial, sans-serif" font-size="22" fill="#374151">Conservez ce PDF pour vos archives.</text>
+
 
         <rect x="0" y="1600" width="1240" height="154" fill="url(#footerGradient)" />
         <text x="620" y="1660" font-family="Arial, sans-serif" font-size="22" text-anchor="middle" fill="#ffffff">Merci de votre confiance.</text>
@@ -505,6 +520,19 @@ export default function ReservationsPage() {
   };
 
   const handleOpenPayment = async (reservation: Reservation, type: PaymentType) => {
+    if (type === 'deposit' && isDepositPaymentExpired(reservation, Date.now())) {
+      setReservations((currentReservations) =>
+        currentReservations.map((currentReservation) =>
+          currentReservation.id === reservation.id
+            ? { ...currentReservation, status: 'EXPIREE' }
+            : currentReservation
+        )
+      );
+      showToast("Le delai de paiement est expire. L'appartement est de nouveau disponible.", 'error');
+      loadReservations();
+      return;
+    }
+
     setActiveReservation(reservation);
     setActivePaymentType(type);
     setPaymentError('');
@@ -546,10 +574,10 @@ export default function ReservationsPage() {
   };
 
   const activeReservations = reservations.filter((reservation) =>
-    ['EN_ATTENTE', 'VALIDEE_PAIEMENT_REQUIS', 'CONFIRMEE'].includes(reservation.status)
+    ['EN_ATTENTE', 'VALIDEE_PAIEMENT_REQUIS', 'CONFIRMEE'].includes(effectiveReservationStatus(reservation, nowMs))
   );
   const historyReservations = reservations.filter((reservation) =>
-    ['REFUSEE', 'EXPIREE', 'SEJOUR_PAYE', 'ANNULEE', 'REMBOURSEE'].includes(reservation.status)
+    ['REFUSEE', 'EXPIREE', 'SEJOUR_PAYE', 'ANNULEE', 'REMBOURSEE'].includes(effectiveReservationStatus(reservation, nowMs))
   );
   const visibleReservations = activeTab === 'active' ? activeReservations : historyReservations;
 
@@ -564,13 +592,15 @@ export default function ReservationsPage() {
     let currentStepIndex = 0;
     let errorLabel = '';
 
-    if (reservation.status === 'VALIDEE_PAIEMENT_REQUIS') currentStepIndex = 1;
-    if (reservation.status === 'CONFIRMEE') currentStepIndex = 2;
-    if (reservation.status === 'SEJOUR_PAYE') currentStepIndex = 3;
-    if (reservation.status === 'REFUSEE') errorLabel = 'Demande refusee';
-    if (reservation.status === 'EXPIREE') errorLabel = 'Delai expire';
-    if (reservation.status === 'ANNULEE') errorLabel = 'Reservation annulee';
-    if (reservation.status === 'REMBOURSEE') errorLabel = 'Remboursement effectue';
+    const status = effectiveReservationStatus(reservation, nowMs);
+
+    if (status === 'VALIDEE_PAIEMENT_REQUIS') currentStepIndex = 1;
+    if (status === 'CONFIRMEE') currentStepIndex = 2;
+    if (status === 'SEJOUR_PAYE') currentStepIndex = 3;
+    if (status === 'REFUSEE') errorLabel = 'Demande refusee';
+    if (status === 'EXPIREE') errorLabel = 'Delai expire';
+    if (status === 'ANNULEE') errorLabel = 'Reservation annulee';
+    if (status === 'REMBOURSEE') errorLabel = 'Remboursement effectue';
 
     if (errorLabel) {
       return (
@@ -691,7 +721,7 @@ export default function ReservationsPage() {
                         {getReservationTitle(reservation)}
                       </h3>
                       <span className="rounded-full border border-bark/10 bg-bark/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-bark/60">
-                        {statusLabels[reservation.status] || reservation.status}
+                        {statusLabels[effectiveReservationStatus(reservation, nowMs)] || effectiveReservationStatus(reservation, nowMs)}
                       </span>
                     </div>
 
@@ -772,12 +802,12 @@ export default function ReservationsPage() {
                                   Autorisation valable jusqu'au {new Date(reservation.payment_deadline).toLocaleString('fr-FR')}
                                 </p>
                                 <p className="mt-1 text-[10px] uppercase tracking-widest opacity-60">
-                                  Temps restant pour payer la caution
+                                  Temps restant pour payer la caution de réservation
                                 </p>
 
                                 {countdown?.expired ? (
                                   <p className="mt-3 rounded-xl border border-terracotta/20 bg-terracotta/10 px-3 py-2 text-[11px] font-bold">
-                                    Delai expire. La reservation doit etre liberee automatiquement.
+                                    Delai expire. Le paiement est desactive et l'appartement est de nouveau disponible.
                                   </p>
                                 ) : countdown ? (
                                   <>
@@ -821,9 +851,19 @@ export default function ReservationsPage() {
                           <FileText size={14} />
                           Voir le bon
                         </a>
-                        <button onClick={() => handleOpenPayment(reservation, 'deposit')} className="flex w-full items-center justify-center gap-2 rounded-xl bg-bark px-6 py-4 text-xs font-black uppercase tracking-[0.2em] text-cream transition hover:bg-bark-light">
-                          Payer la caution
-                        </button>
+                        {isDepositPaymentExpired(reservation, nowMs) ? (
+                          <button
+                            type="button"
+                            disabled
+                            className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-bark/35 px-5 py-4 text-center text-[10px] font-black uppercase leading-5 tracking-[0.14em] text-cream/80 sm:text-xs"
+                          >
+                            Delai expire
+                          </button>
+                        ) : (
+                          <button onClick={() => handleOpenPayment(reservation, 'deposit')} className="flex w-full items-center justify-center gap-2 rounded-xl bg-bark px-5 py-4 text-center text-[10px] font-black uppercase leading-5 tracking-[0.14em] text-cream transition hover:bg-bark-light sm:text-xs">
+                            Payer la caution de réservation
+                          </button>
+                        )}
                       </div>
                     )}
 
@@ -977,8 +1017,15 @@ export default function ReservationsPage() {
                     <h3 className="font-display text-2xl font-bold uppercase tracking-wider text-terracotta">Paiement echoue</h3>
                     <p className="mx-auto mt-2 max-w-xs text-xs leading-relaxed text-bark/50">{paymentError}</p>
                   </div>
-                  <button type="button" onClick={() => activeReservation && handleOpenPayment(activeReservation, activePaymentType)} className="w-full rounded-xl bg-bark py-4 text-xs font-black uppercase tracking-wider text-cream transition hover:bg-bark-light">
-                    Reessayer le paiement
+                  <button
+                    type="button"
+                    disabled={Boolean(activeReservation && activePaymentType === 'deposit' && isDepositPaymentExpired(activeReservation, nowMs))}
+                    onClick={() => activeReservation && handleOpenPayment(activeReservation, activePaymentType)}
+                    className="w-full rounded-xl bg-bark py-4 text-xs font-black uppercase tracking-wider text-cream transition hover:bg-bark-light disabled:cursor-not-allowed disabled:bg-bark/35 disabled:text-cream/80"
+                  >
+                    {activeReservation && activePaymentType === 'deposit' && isDepositPaymentExpired(activeReservation, nowMs)
+                      ? 'Delai expire'
+                      : 'Reessayer le paiement'}
                   </button>
                 </div>
               )}
@@ -1026,11 +1073,11 @@ export default function ReservationsPage() {
 
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className="rounded-2xl border border-bark/5 bg-bark/5 p-4">
-                        <p className="text-[9px] uppercase tracking-widest text-bark/40">Caution payee</p>
+                        <p className="text-[9px] uppercase tracking-widest text-bark/40">Caution payée</p>
                         <p className="mt-1 font-display text-xl font-bold text-bark">{formatCurrency(preview.depositAmount)}</p>
                       </div>
                       <div className="rounded-2xl border border-bark/5 bg-bark/5 p-4">
-                        <p className="text-[9px] uppercase tracking-widest text-bark/40">Jours consommes</p>
+                        <p className="text-[9px] uppercase tracking-widest text-bark/40">Jours consommés</p>
                         <p className="mt-1 font-display text-xl font-bold text-bark">{preview.consumedDays}</p>
                       </div>
                       <div className="rounded-2xl border border-bark/5 bg-bark/5 p-4">

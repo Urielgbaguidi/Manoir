@@ -49,6 +49,15 @@ const parseReservationDate = (value?: string) => {
 const formatReservationDate = (value?: string) =>
   parseReservationDate(value)?.toLocaleDateString('fr-FR') || 'Date indisponible';
 
+const formatReservationDateTime = (value?: string) =>
+  parseReservationDate(value)?.toLocaleString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }) || 'Date indisponible';
+
 const diffDays = (from?: string, to?: string) => {
   const start = parseReservationDate(from);
   const end = parseReservationDate(to);
@@ -193,12 +202,12 @@ export default function ReservationInvoicePage() {
   const cancellationDays = reservation.cancellation_consumed_days ?? 0;
   const totalNet = isCancellationDocument ? cancellationRefund : isDepositDocument ? depositAmount : stayAmount;
   const lineDescription = isCancellationDocument
-    ? 'Remboursement apres annulation'
+    ? 'Remboursement après annulation'
     : isDepositDocument
-      ? 'Caution de reservation'
-      : 'Frais de sejour';
+      ? 'Caution de réservation'
+      : 'Frais de séjour';
   const calculation = isCancellationDocument
-    ? `${cancellationDays} jour${cancellationDays > 1 ? 's' : ''} consomme${cancellationDays > 1 ? 's' : ''} - retenue ${formatCurrency(cancellationRetained)}`
+    ? `${cancellationDays} jour${cancellationDays > 1 ? 's' : ''} consommé${cancellationDays > 1 ? 's' : ''} - retenue ${formatCurrency(cancellationRetained)}`
     : isDepositDocument
       ? `${depositDays} jour${depositDays > 1 ? 's' : ''} x ${formatCurrency(depositRate)}`
       : `${nights} nuit${nights > 1 ? 's' : ''} x ${formatCurrency(stayUnitPrice)}`;
@@ -208,8 +217,10 @@ export default function ReservationInvoicePage() {
   const generatedNumber = documentNumber(reservation, documentType, paidPayment);
   const fallbackInvoiceDate = documentType === 'stay' ? reservation.stay_paid_at : reservation.paid_at;
   const documentDate = isInvoice && paidPayment?.paid_at
-    ? formatReservationDate(paidPayment.paid_at)
-    : formatReservationDate(isCancellationDocument ? reservation.cancelled_at || new Date().toISOString() : isInvoice ? fallbackInvoiceDate || new Date().toISOString() : reservation.created_at);
+    ? formatReservationDateTime(paidPayment.paid_at)
+    : isInvoice
+      ? formatReservationDateTime(fallbackInvoiceDate || new Date().toISOString())
+      : formatReservationDate(isCancellationDocument ? reservation.cancelled_at || new Date().toISOString() : reservation.created_at);
   const isStayDocument = documentType === 'stay-voucher' || documentType === 'stay';
   const theme = isCancellationDocument
     ? {
@@ -220,16 +231,6 @@ export default function ReservationInvoicePage() {
         header: 'bg-gradient-to-r from-orange-50 to-amber-50',
         notice: 'border-orange-100 bg-orange-50',
         footer: 'bg-gradient-to-r from-orange-700 to-amber-700',
-      }
-    : isStayDocument
-    ? {
-        text: 'text-emerald-700',
-        hoverText: 'hover:text-emerald-800',
-        button: 'bg-emerald-700 hover:bg-emerald-800',
-        border: 'border-emerald-700',
-        header: 'bg-gradient-to-r from-green-50 to-emerald-50',
-        notice: 'border-emerald-100 bg-emerald-50',
-        footer: 'bg-gradient-to-r from-emerald-700 to-green-700',
       }
     : {
         text: 'text-amber-700',
@@ -286,7 +287,7 @@ export default function ReservationInvoicePage() {
               <div className="rounded-lg bg-white p-4 shadow-sm">
                 <p className="text-sm text-gray-600">Numéro</p>
                 <p className="text-lg font-bold text-gray-900">{generatedNumber}</p>
-                <p className="mt-2 text-sm text-gray-600">Date</p>
+                <p className="mt-2 text-sm text-gray-600">{isInvoice ? 'Date et heure de délivrance' : 'Date'}</p>
                 <p className="font-semibold text-gray-900">{documentDate}</p>
               </div>
             </div>
@@ -336,7 +337,9 @@ export default function ReservationInvoicePage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Description</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Quantité</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">
+                    {isDepositDocument ? 'Nombre de jours' : isStayDocument ? 'Nombre de nuits' : 'Jours consommés'}
+                  </th>
                   <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Prix unitaire</th>
                   <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Montant</th>
                 </tr>

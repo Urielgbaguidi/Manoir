@@ -81,6 +81,29 @@ class Reservation extends Model
             && now()->greaterThan($this->payment_deadline);
     }
 
+    public function expireIfPaymentDeadlinePassed(): bool
+    {
+        if (! $this->isExpired()) {
+            return false;
+        }
+
+        return $this->update(['status' => 'EXPIREE']);
+    }
+
+    public static function expireOverduePaymentRequests(?int $userId = null): int
+    {
+        $query = self::query()
+            ->where('status', 'VALIDEE_PAIEMENT_REQUIS')
+            ->whereNotNull('payment_deadline')
+            ->where('payment_deadline', '<=', now());
+
+        if ($userId) {
+            $query->where('user_id', $userId);
+        }
+
+        return $query->update(['status' => 'EXPIREE']);
+    }
+
     public function nightsCount(): int
     {
         return max(1, $this->check_in->diffInDays($this->check_out));

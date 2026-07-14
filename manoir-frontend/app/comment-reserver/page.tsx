@@ -33,8 +33,8 @@ const reservationSteps = [
     icon: ShieldCheck,
   },
   {
-    title: "Payer la caution",
-    text: "Apres validation, le client paie la caution depuis son espace client. Une fois la caution payee, la reservation devient confirmee.",
+    title: "Payer la caution de réservation",
+    text: "Apres validation, le client paie la caution de réservation depuis son espace client. Si le paiement n'est pas fait dans les 24h, le bouton est desactive, la demande expire et l'appartement redevient disponible.",
     icon: CreditCard,
   },
   {
@@ -46,11 +46,11 @@ const reservationSteps = [
 
 const statusRows = [
   ["EN_ATTENTE", "La demande a ete envoyee et attend la validation de l'administration."],
-  ["VALIDEE_PAIEMENT_REQUIS", "La demande est acceptee. Le client doit payer la caution dans le delai affiche."],
+  ["VALIDEE_PAIEMENT_REQUIS", "La demande est acceptee. Le client doit payer la caution de réservation dans le delai affiche de 24h."],
   ["CONFIRMEE", "La caution est payee. La reservation est definitivement confirmee."],
   ["SEJOUR_PAYE", "Le client a aussi regle les frais de sejour."],
   ["REFUSEE", "La demande a ete refusee par l'administration."],
-  ["EXPIREE", "Le delai de paiement de 24h est depasse."],
+  ["EXPIREE", "Le delai de paiement de 24h est depasse. Le paiement est bloque et l'appartement est libere."],
   ["ANNULEE", "Le client a annule sa reservation."],
   ["REMBOURSEE", "L'administration a confirme le remboursement."],
 ];
@@ -83,8 +83,9 @@ export default function HowToReservePage() {
               <div>
                 <h2 className="font-display text-3xl uppercase leading-none">Delai de paiement</h2>
                 <p className="mt-4 text-sm leading-7 text-cream/90">
-                  Apres acceptation par l'administration, le client dispose de 24h pour payer la caution.
-                  Un compte a rebours s'affiche dans son espace client.
+                  Apres acceptation par l'administration, le client dispose de 24h pour payer la caution de réservation.
+                  Un compte a rebours s'affiche dans son espace client. Si le delai expire, le bouton de
+                  paiement est desactive et l'appartement est remis a disposition.
                 </p>
               </div>
             </div>

@@ -152,7 +152,17 @@ Backend :
 cd C:\xampp\htdocs\Manoir\manoir-backend
 php artisan test
 vendor\bin\pint --test
+php artisan reservations:check-expirations
 ```
+
+Pour tester les expirations et relances en arriere-plan pendant le developpement, ouvrir un terminal backend supplementaire et lancer :
+
+```powershell
+cd C:\xampp\htdocs\Manoir\manoir-backend
+php artisan schedule:work
+```
+
+Ce n'est pas obligatoire pour naviguer sur le site : les expirations sont aussi verifiees lors des appels API importants.
 
 ## 6. Reinstallation apres nettoyage
 
@@ -181,3 +191,4 @@ Pour tester le projet en local :
 3. Utiliser SQLite avec le fichier `manoir-backend\database\database.sqlite`.
 4. Lancer Laravel sur le port `8000`.
 5. Lancer Next.js sur le port `3000`.
+6. Optionnel : lancer `php artisan schedule:work` pour tester les expirations automatiques en arriere-plan.

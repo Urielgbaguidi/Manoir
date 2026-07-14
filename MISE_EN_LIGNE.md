@@ -102,12 +102,30 @@ php artisan storage:link
 
 Le site contient actuellement un flux de paiement interne :
 
-- le client clique sur "Payer la caution" ou "Payer mon sejour",
+- le client clique sur "Payer la caution de réservation" ou "Payer mon sejour",
 - le paiement est valide dans l'application,
 - le message de succes est affiche,
 - la reservation et les documents sont mis a jour.
 
 Les fournisseurs acceptes par l'API sont `fedapay` et `kkiapay`, mais aucun SDK externe de paiement n'est installe dans le depot actuel.
+
+## Expiration automatique des cautions
+
+Apres validation d'une demande par l'administrateur, le client dispose de 24h pour payer la caution de réservation.
+
+Si le paiement n'est pas effectue avant l'expiration :
+
+- la reservation passe au statut `EXPIREE`,
+- le bouton de paiement de caution n'est plus utilisable,
+- l'appartement est libere pour les autres clients.
+
+Le backend verifie ces expirations lors des appels API importants. En production, il faut aussi configurer le planificateur Laravel pour executer les taches en arriere-plan.
+
+Exemple cron sur serveur Linux :
+
+```bash
+* * * * * cd /chemin/vers/manoir-backend && php artisan schedule:run >> /dev/null 2>&1
+```
 
 ## Taches a faire sur le serveur
 
@@ -116,9 +134,10 @@ Les fournisseurs acceptes par l'API sont `fedapay` et `kkiapay`, mais aucun SDK 
 3. Configurer la base de donnees.
 4. Lancer les migrations.
 5. Lancer `php artisan storage:link`.
-6. Installer et builder le frontend.
-7. Configurer `NEXT_PUBLIC_API_URL` vers l'API Laravel.
-8. Configurer HTTPS sur les domaines.
+6. Configurer le planificateur Laravel pour les expirations automatiques.
+7. Installer et builder le frontend.
+8. Configurer `NEXT_PUBLIC_API_URL` vers l'API Laravel.
+9. Configurer HTTPS sur les domaines.
 
 ## Verifications apres deploiement
 

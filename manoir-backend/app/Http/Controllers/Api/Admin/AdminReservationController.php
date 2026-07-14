@@ -18,6 +18,8 @@ class AdminReservationController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
+        Reservation::expireOverduePaymentRequests();
+
         $query = Reservation::with(['user', 'room', 'payments']);
 
         if ($request->filled('status')) {
@@ -42,6 +44,7 @@ class AdminReservationController extends Controller
         ]);
 
         $reservation = Reservation::with(['room', 'user'])->findOrFail($id);
+        Reservation::expireOverduePaymentRequests();
 
         if ($reservation->status !== 'EN_ATTENTE') {
             return response()->json([
@@ -101,7 +104,7 @@ class AdminReservationController extends Controller
         }
 
         return response()->json([
-            'message' => 'Demande confirmee. Le client a 24h pour payer la caution.',
+            'message' => 'Demande confirmee. Le client a 24h pour payer la caution de réservation.',
             'reservation' => $reservation->fresh(['room', 'user', 'payments']),
         ]);
     }
@@ -177,7 +180,16 @@ class AdminReservationController extends Controller
 
         $query = Reservation::with(['user', 'room'])
             ->where('category_type', $request->category_type)
-            ->whereIn('status', ['VALIDEE_PAIEMENT_REQUIS', 'CONFIRMEE', 'SEJOUR_PAYE'])
+            ->where(function ($query) {
+                $query->whereIn('status', ['CONFIRMEE', 'SEJOUR_PAYE'])
+                    ->orWhere(function ($query) {
+                        $query->where('status', 'VALIDEE_PAIEMENT_REQUIS')
+                            ->where(function ($query) {
+                                $query->whereNull('payment_deadline')
+                                    ->orWhere('payment_deadline', '>', now());
+                            });
+                    });
+            })
             ->where(function ($query) use ($request) {
                 $query->where('check_in', '<', $request->check_out)
                     ->where('check_out', '>', $request->check_in);
