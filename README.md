@@ -48,10 +48,10 @@ Manoir/
 
 | Categorie | Appartements | Prix par nuit | Caution par jour |
 | --- | --- | ---: | ---: |
-| VIP 3 | Numero 3 | 30 000 FCFA | 500 000 FCFA |
-| VIP 7 | Numero 7 | 40 000 FCFA | 500 000 FCFA |
-| 2 Chambres | Numeros 2, 4, 6, 8 | 118 000 FCFA | 300 000 FCFA |
-| 1 Chambre | Numeros 1, 5 | 85 000 FCFA | 200 000 FCFA |
+| VIP 3 | Numero 3 | 40 000 FCFA | 4 000 FCFA |
+| VIP 7 | Numero 7 | 50 000 FCFA | 5 000 FCFA |
+| 2 Chambres | Numeros 2, 4, 6, 8 |35 000 FCFA | 3 500 FCFA |
+| 1 Chambre | Numeros 1, 5 | 30 000 FCFA | 3 000 FCFA |
 
 Pour les categories 1 Chambre et 2 Chambres, le client voit la categorie et le systeme attribue automatiquement un appartement disponible selon les dates.
 
