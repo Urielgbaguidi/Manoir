@@ -1,0 +1,1 @@
+self.__SSG_MANIFEST=new Set(["\u002Finvoices\u002F[paymentId]","\u002Freservations\u002F[id]\u002Finvoice","\u002Frooms\u002F[slug]"]);self.__SSG_MANIFEST_CB&&self.__SSG_MANIFEST_CB()

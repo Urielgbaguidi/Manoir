@@ -1,10 +1,16 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'export', // Génère le dossier statique 'out' pour cPanel
   images: {
+    unoptimized: true, // Requis car l'export statique ne supporte pas l'optimisation d'image native de Next.js
     remotePatterns: [
       {
         protocol: "https",
         hostname: "images.unsplash.com"
+      },
+      {
+        protocol: "https",
+        hostname: "api.lemanoir.bj" // Ton sous-domaine API de production
       },
       {
         protocol: "http",

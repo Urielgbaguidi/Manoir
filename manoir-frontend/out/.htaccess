@@ -1,0 +1,21 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  
+  # Si le fichier ou dossier demandé existe, on le sert directement
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Sinon, on redirige vers le fichier html correspondant ou l'index
+  RewriteCond %{DOCUMENT_ROOT}/$1.html -f
+  RewriteRule ^([^/]+)/?$ $1.html [L]
+
+  # Pour les routes dynamiques (ex: /rooms/slug)
+  RewriteRule ^rooms/[^/]+/?$ rooms/preview.html [L]
+  RewriteRule ^invoices/[^/]+/?$ invoices/preview.html [L]
+  RewriteRule ^reservations/[^/]+/invoice/?$ reservations/preview/invoice.html [L]
+
+  # Page 404 par défaut si rien ne correspond
+  RewriteRule ^ 404.html [L]
+</IfModule>
