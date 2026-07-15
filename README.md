@@ -40,16 +40,16 @@ Manoir/
   - Appartement 2 Chambres
   - Appartement 1 Chambre
 - Page intermediaire VIP avec deux appartements distincts :
-  - VIP 1, appartement numero 3
-  - VIP 2, appartement numero 7
+  - VIP 3, appartement numero 3
+  - VIP 7, appartement numero 7
 - Pages detail avec galerie photos, videos, description, prix, caution et bouton de reservation.
 
 ### Structure des appartements
 
 | Categorie | Appartements | Prix par nuit | Caution par jour |
 | --- | --- | ---: | ---: |
-| VIP 1 | Numero 3 | 30 000 FCFA | 500 000 FCFA |
-| VIP 2 | Numero 7 | 40 000 FCFA | 500 000 FCFA |
+| VIP 3 | Numero 3 | 30 000 FCFA | 500 000 FCFA |
+| VIP 7 | Numero 7 | 40 000 FCFA | 500 000 FCFA |
 | 2 Chambres | Numeros 2, 4, 6, 8 | 118 000 FCFA | 300 000 FCFA |
 | 1 Chambre | Numeros 1, 5 | 85 000 FCFA | 200 000 FCFA |
 
@@ -86,8 +86,8 @@ Caution = caution par jour x nombre de jours entre la demande et l'arrivee
 Frais sejour = nombre de nuits x prix par nuit
 ```
 
-- Apres validation par l'administrateur, l'appartement est reserve pour le client pendant 24h.
-- Si la caution n'est pas payee dans ce delai :
+- Apres validation par l'administrateur, l'appartement est reserve pour le client pendant 24h maximum.
+- Si la caution n'est pas payee dans ce delai, ou si la date d'arrivee est atteinte avant le paiement :
   - la demande passe automatiquement au statut `EXPIREE`,
   - le bouton de paiement de caution est desactive cote client,
   - l'appartement est libere et redevient disponible pour les autres clients.
@@ -115,15 +115,39 @@ Le client peut consulter ou telecharger selon l'etape :
 
 Les documents affichent les informations client, les dates, le numero d'appartement attribue, les montants et les references de facture lorsque disponibles.
 
+Pour les documents de caution de reservation, le Bon de Reservation et la Facture de Caution affichent uniquement :
+
+- la date de demande de reservation,
+- la date d'arrivee du client.
+
+La Facture de Caution affiche aussi la date et l'heure de delivrance de la facture.
+
+### Prolongation de sejour
+
+Le client peut demander a prolonger son sejour depuis son espace client uniquement si :
+
+- la reservation est confirmee,
+- le sejour a deja commence,
+- au moins une journee du sejour est deja passee,
+- le sejour en cours n'est pas encore paye.
+
+Le client renseigne une nouvelle date de depart. Le systeme verifie que le meme appartement reste disponible jusqu'a cette nouvelle date. Si oui, la demande est envoyee a l'administrateur.
+
+L'administrateur peut accepter ou rejeter la prolongation. En cas de rejet, le motif est obligatoire. En cas d'acceptation, la date de depart est mise a jour automatiquement et le montant du sejour est recalcule sur le Bon du Sejour.
+
 ### Annulation
 
-Le client peut annuler une reservation lorsque le statut le permet :
+Le client peut annuler une reservation uniquement avant la date d'arrivee, c'est-a-dire pendant la periode de reservation.
+
+Les statuts autorises avant l'arrivee sont :
 
 - `EN_ATTENTE`
 - `VALIDEE_PAIEMENT_REQUIS`
 - `CONFIRMEE`
 
 Si la caution a deja ete payee, le systeme calcule le montant retenu et le montant a rembourser.
+
+Des que la date d'arrivee est atteinte, l'occupation reelle commence. Le bouton d'annulation n'est plus affiche dans l'espace client et l'API refuse aussi l'annulation.
 
 L'administrateur peut marquer le remboursement comme effectue.
 
@@ -133,6 +157,8 @@ L'administration permet de :
 
 - consulter les statistiques,
 - voir les demandes de reservation,
+- voir les appartements occupes avec les informations du client et les dates d'occupation,
+- liberer manuellement un appartement occupe,
 - confirmer ou rejeter une demande,
 - saisir un motif de rejet,
 - marquer un remboursement comme effectue,
@@ -140,7 +166,7 @@ L'administration permet de :
 - ajouter ou supprimer des photos et videos,
 - modifier descriptions, prix et cautions,
 - bloquer ou debloquer une categorie,
-- bloquer ou debloquer VIP 1 et VIP 2,
+- bloquer ou debloquer VIP 3 et VIP 7,
 - gerer les utilisateurs.
 
 ## Statuts de reservation
@@ -155,6 +181,16 @@ L'administration permet de :
 | `SEJOUR_PAYE` | Frais de sejour payes |
 | `ANNULEE` | Reservation annulee par le client |
 | `REMBOURSEE` | Remboursement confirme par l'administrateur |
+| `LIBEREE` | Occupation terminee par l'administrateur, appartement de nouveau disponible |
+
+## Reservation et occupation
+
+Le projet distingue deux periodes :
+
+- periode de reservation : de la date de demande jusqu'a la date d'arrivee ;
+- occupation d'un appartement : de la date d'arrivee jusqu'a la date de depart.
+
+Dans le back-office, la section "Appartements occupes" affiche uniquement les sejours actuellement en cours. Si l'administrateur libere un appartement, la reservation passe au statut `LIBEREE` et n'est plus prise en compte dans les conflits de disponibilite.
 
 ## Installation locale
 

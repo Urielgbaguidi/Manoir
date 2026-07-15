@@ -84,7 +84,7 @@ npm run start
 | `/` | Accueil |
 | `/comment-reserver` | Documentation client du processus de reservation |
 | `/rooms` | Catalogue des appartements |
-| `/rooms/appartement-vip` | Selection VIP 1 / VIP 2 |
+| `/rooms/appartement-vip` | Selection VIP 3 / VIP 7 |
 | `/rooms/appartement-2-chambres` | Detail categorie 2 Chambres |
 | `/rooms/appartement-1-chambre` | Detail categorie 1 Chambre |
 | `/auth/login` | Connexion |
@@ -107,10 +107,35 @@ npm run start
 5. Il saisit les dates et les demandes speciales.
 6. La demande apparait dans son espace client.
 7. L'administrateur valide ou refuse.
-8. Si la demande est validee, le client a 24h pour payer la caution de réservation dans le site.
-9. Si le delai de 24h expire, le bouton de paiement de caution est desactive et la reservation passe dans l'historique.
+8. Si la demande est validee, le client a 24h maximum pour payer la caution de réservation dans le site.
+9. Si le delai de 24h expire, ou si la date d'arrivee est atteinte avant paiement, le bouton de paiement de caution est desactive et la reservation passe dans l'historique.
 10. Apres paiement de la caution, le client peut consulter ses documents et payer le sejour.
-11. Le client peut annuler une reservation lorsque le statut l'autorise.
+11. Si le sejour a commence depuis au moins une journee et que le sejour n'est pas encore paye, le client peut demander une prolongation depuis son espace client.
+12. L'administrateur accepte ou rejette la prolongation. Si elle est acceptee, la date de depart et le montant du sejour sont recalcules automatiquement.
+13. Le client peut annuler une reservation lorsque le statut l'autorise, uniquement avant la date d'arrivee.
+14. A partir de la date d'arrivee, l'occupation reelle commence et le bouton d'annulation n'est plus affiche.
+
+## Back-office admin
+
+La page `/admin` affiche aussi les appartements occupes actuellement. Cette section ne liste pas les simples demandes de reservation : elle concerne uniquement les sejours entre la date d'arrivee et la date de depart.
+
+Pour chaque appartement occupe, l'administrateur voit :
+
+- le client occupant,
+- l'email et le telephone du client,
+- la date de demande,
+- la date d'arrivee,
+- la date de depart prevue,
+- la duree du sejour,
+- le statut.
+
+L'administrateur peut liberer l'appartement. Dans ce cas, la reservation passe au statut `LIBEREE`, quitte les reservations actives du client et l'appartement redevient disponible.
+
+## Documents client
+
+Les documents de caution de reservation affichent uniquement la date de demande et la date d'arrivee du client.
+
+La facture de caution affiche aussi la date et l'heure de delivrance de la facture.
 
 ## Medias frontend
 

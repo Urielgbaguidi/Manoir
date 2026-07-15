@@ -127,6 +127,12 @@ class ReservationController extends Controller
             ], 422);
         }
 
+        if (now()->startOfDay()->greaterThanOrEqualTo($reservation->check_in->copy()->startOfDay())) {
+            return response()->json([
+                'message' => 'Le sejour a deja commence. La periode de reservation est terminee et cette reservation ne peut plus etre annulee.',
+            ], 422);
+        }
+
         $calculation = $this->calculateCancellation($reservation);
         $documentNumber = 'ANN-'.now()->format('Y').'-'.str_pad((string) $reservation->id, 5, '0', STR_PAD_LEFT);
 
@@ -155,6 +161,58 @@ class ReservationController extends Controller
             'message' => 'Reservation annulee avec succes.',
             'reservation' => $reservation,
             'cancellation' => $calculation,
+        ]);
+    }
+
+    public function requestExtension(Request $request, string $id): JsonResponse
+    {
+        $request->validate([
+            'new_check_out' => 'required|date',
+        ]);
+
+        $reservation = Reservation::where('user_id', Auth::id())
+            ->with(['room', 'payments', 'user'])
+            ->findOrFail($id);
+
+        $reservation->expireIfPaymentDeadlinePassed();
+
+        if (! $reservation->canRequestStayExtension()) {
+            return response()->json([
+                'message' => 'Cette reservation ne peut pas etre prolongee pour le moment.',
+            ], 422);
+        }
+
+        $newCheckOut = Carbon::parse($request->new_check_out)->startOfDay();
+        $currentCheckOut = $reservation->check_out->copy()->startOfDay();
+
+        if ($newCheckOut->lessThanOrEqualTo($currentCheckOut)) {
+            return response()->json([
+                'message' => 'La nouvelle date de depart doit etre apres la date de depart actuelle.',
+            ], 422);
+        }
+
+        if (! $reservation->room->isAvailableForDates(
+            $currentCheckOut->toDateString(),
+            $newCheckOut->toDateString(),
+            $reservation->id
+        )) {
+            return response()->json([
+                'message' => 'Cet appartement n\'est pas disponible jusqu\'a cette nouvelle date de depart.',
+            ], 422);
+        }
+
+        $reservation->update([
+            'extension_status' => 'EN_ATTENTE',
+            'extension_previous_check_out' => $reservation->check_out,
+            'extension_requested_check_out' => $newCheckOut,
+            'extension_requested_at' => now(),
+            'extension_processed_at' => null,
+            'extension_admin_notes' => null,
+        ]);
+
+        return response()->json([
+            'message' => 'Votre demande de prolongation a ete envoyee a l\'administrateur.',
+            'reservation' => $reservation->fresh(['room', 'payments', 'user']),
         ]);
     }
 

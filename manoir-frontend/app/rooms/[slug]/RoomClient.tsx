@@ -1,11 +1,11 @@
 'use client';
-export const dynamic = 'force-dynamic';
-import { useEffect, useMemo, useState } from 'react';
+
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { motion } from 'framer-motion';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { AlertCircle, ArrowLeft, Images, ShieldCheck, Sparkles, Video } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Images, Maximize2, Pause, Play, ShieldCheck, Sparkles, Video, Volume2, VolumeX, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { api, Room, RoomCategory } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -28,9 +28,9 @@ const fallbackCategories: Record<string, RoomCategory> = {
     units: [
       {
         id: 1,
-        name: 'VIP 1',
+        name: 'VIP 3',
         slug: 'appartement-vip-1',
-        description: "Appartement VIP 1 du Manoir, pense pour un sejour intime avec finitions premium, salon elegant et galerie propre a cet appartement.",
+        description: "Appartement VIP 3 du Manoir, pense pour un sejour intime avec finitions premium, salon elegant et galerie propre a cet appartement.",
         max_occupants: 2,
         apartment_number: 3,
         base_price: 30000,
@@ -45,9 +45,9 @@ const fallbackCategories: Record<string, RoomCategory> = {
       },
       {
         id: 2,
-        name: 'VIP 2',
+        name: 'VIP 7',
         slug: 'appartement-vip-2',
-        description: "Appartement VIP 2 du Manoir, plus exclusif, avec ambiance feutree, confort renforce et galerie dediee.",
+        description: "Appartement VIP 7 du Manoir, plus exclusif, avec ambiance feutree, confort renforce et galerie dediee.",
         max_occupants: 2,
         apartment_number: 7,
         base_price: 40000,
@@ -114,8 +114,15 @@ const dayDiff = (from: string, to: string) => {
   return Math.max(0, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
 };
 
-const roomDisplayName = (room: Room) =>
-  room.name.toLowerCase().startsWith('appartement') ? room.name : `Appartement ${room.name}`;
+const roomDisplayName = (room: Room) => {
+  if (room.type === 'vip' && room.apartment_number) {
+    return `Appartement VIP ${room.apartment_number}`;
+  }
+
+  return room.name.toLowerCase().startsWith('appartement') ? room.name : `Appartement ${room.name}`;
+};
+
+const videoPreviewSrc = (video: string) => (video.includes('#') ? video : `${video}#t=0.1`);
 
 export default function RoomCategoryDetailPage() {
   const params = useParams();
@@ -124,6 +131,8 @@ export default function RoomCategoryDetailPage() {
   const slug = params.slug as string;
   const { user, logout } = useAuth();
   const { showToast } = useToast();
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const videoFrameRef = useRef<HTMLDivElement | null>(null);
 
   const [category, setCategory] = useState<RoomCategory | null>(null);
   const [loading, setLoading] = useState(true);
@@ -136,6 +145,11 @@ export default function RoomCategoryDetailPage() {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [specialRequests, setSpecialRequests] = useState('');
   const [assignedRoom, setAssignedRoom] = useState<Room | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
+  const [videoPlaying, setVideoPlaying] = useState(false);
+  const [videoMuted, setVideoMuted] = useState(false);
+  const [videoCurrentTime, setVideoCurrentTime] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
 
   const units = useMemo(() => {
     const rawUnits = category?.units ?? [];
@@ -190,6 +204,7 @@ export default function RoomCategoryDetailPage() {
       setAvailable(null);
       setAssignedRoom(null);
       setShowForm(false);
+      setSelectedVideo(null);
 
       try {
         const data = await api.getRoomCategory(slug);
@@ -205,6 +220,76 @@ export default function RoomCategoryDetailPage() {
 
     if (slug) loadCategory();
   }, [slug]);
+
+  useEffect(() => {
+    if (!selectedVideo) return;
+
+    setVideoPlaying(false);
+    setVideoCurrentTime(0);
+    setVideoDuration(0);
+    setVideoMuted(false);
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSelectedVideo(null);
+      }
+    };
+
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [selectedVideo]);
+
+  const formatVideoTime = (seconds: number) => {
+    const safeSeconds = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+    const minutes = Math.floor(safeSeconds / 60);
+    const remainingSeconds = Math.floor(safeSeconds % 60);
+
+    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+  };
+
+  const toggleVideoPlayback = () => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (video.paused) {
+      void video.play();
+    } else {
+      video.pause();
+    }
+  };
+
+  const toggleVideoMute = () => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    video.muted = !video.muted;
+    setVideoMuted(video.muted);
+  };
+
+  const handleVideoSeek = (event: ChangeEvent<HTMLInputElement>) => {
+    const nextTime = Number(event.target.value);
+
+    if (videoRef.current) {
+      videoRef.current.currentTime = nextTime;
+    }
+
+    setVideoCurrentTime(nextTime);
+  };
+
+  const handleVideoFullscreen = async () => {
+    const frame = videoFrameRef.current;
+    if (!frame) return;
+
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await frame.requestFullscreen();
+      }
+    } catch {
+      showToast("Le plein ecran n'est pas disponible pour cette video.", 'error');
+    }
+  };
 
   useEffect(() => {
     const verify = async () => {
@@ -588,12 +673,37 @@ export default function RoomCategoryDetailPage() {
                 {videos.length > 0 ? (
                   <div className="grid gap-4 md:grid-cols-2">
                     {videos.map((video, index) => (
-                      <div key={`${video}-${index}`} className="relative aspect-video overflow-hidden rounded-2xl border border-bark/10 bg-cream-dark/40">
-                        <video controls className="h-full w-full object-cover" poster={images[0]} aria-label={`Video ${index + 1} ${detailTitle}`}>
-                          <source src={video} type="video/mp4" />
-                          Votre navigateur ne supporte pas la lecture de videos.
+                      <button
+                        key={`${video}-${index}`}
+                        type="button"
+                        onClick={() => setSelectedVideo(video)}
+                        className="group relative aspect-video overflow-hidden rounded-2xl border border-bark/10 bg-bark text-left shadow-sm transition hover:-translate-y-0.5 hover:border-bark/30 hover:shadow-xl"
+                        aria-label={`Lire la video ${index + 1} ${detailTitle}`}
+                      >
+                        <video
+                          muted
+                          playsInline
+                          preload="metadata"
+                          className="h-full w-full bg-black object-contain"
+                          onLoadedMetadata={(event) => {
+                            const preview = event.currentTarget;
+                            if (Number.isFinite(preview.duration) && preview.duration > 0.1) {
+                              preview.currentTime = 0.1;
+                            }
+                          }}
+                        >
+                          <source src={videoPreviewSrc(video)} type="video/mp4" />
                         </video>
-                      </div>
+                        <span className="absolute inset-0 bg-bark/20 transition group-hover:bg-bark/10" />
+                        <span className="absolute inset-0 flex items-center justify-center">
+                          <span className="inline-flex h-14 w-14 items-center justify-center rounded-full border border-cream/40 bg-bark/75 text-cream shadow-2xl backdrop-blur-sm transition group-hover:scale-105 group-hover:bg-bark">
+                            <Play size={24} fill="currentColor" />
+                          </span>
+                        </span>
+                        <span className="absolute bottom-4 left-4 rounded-full border border-cream/25 bg-bark/75 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-cream backdrop-blur-sm">
+                          Video {index + 1}
+                        </span>
+                      </button>
                     ))}
                   </div>
                 ) : (
@@ -753,6 +863,109 @@ export default function RoomCategoryDetailPage() {
           </div>
         </motion.div>
       </div>
+
+      {selectedVideo && (
+        <div
+          className="fixed inset-x-0 bottom-0 top-[84px] z-[80] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Lecture video ${detailTitle}`}
+          onClick={() => setSelectedVideo(null)}
+        >
+          <div
+            ref={videoFrameRef}
+            className="relative flex h-[calc(100vh-116px)] max-h-[720px] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-cream/15 bg-black shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex flex-shrink-0 items-center justify-between border-b border-cream/10 bg-bark px-5 py-4 text-cream">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-cream/60">
+                  Video
+                </p>
+                <h3 className="mt-1 font-display text-xl font-bold uppercase tracking-wide">
+                  {detailTitle}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedVideo(null)}
+                className="inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-cream bg-cream text-bark shadow-lg transition hover:bg-white"
+                aria-label="Fermer la video"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex min-h-0 flex-1 items-center justify-center bg-black px-3 py-4">
+              <video
+                ref={videoRef}
+                key={selectedVideo}
+                autoPlay
+                playsInline
+                muted={videoMuted}
+                onPlay={() => setVideoPlaying(true)}
+                onPause={() => setVideoPlaying(false)}
+                onLoadedMetadata={(event) => setVideoDuration(event.currentTarget.duration || 0)}
+                onTimeUpdate={(event) => setVideoCurrentTime(event.currentTarget.currentTime || 0)}
+                className="h-auto max-h-full w-auto max-w-full object-contain"
+              >
+                <source src={selectedVideo} type="video/mp4" />
+                Votre navigateur ne supporte pas la lecture de videos.
+              </video>
+            </div>
+
+            <div className="flex-shrink-0 border-t border-cream/10 bg-black px-5 py-4 text-cream">
+              <input
+                type="range"
+                min={0}
+                max={videoDuration || 0}
+                step={0.1}
+                value={Math.min(videoCurrentTime, videoDuration || videoCurrentTime)}
+                onChange={handleVideoSeek}
+                aria-label="Avancer ou reculer dans la video"
+                className="h-1.5 w-full cursor-pointer accent-cream"
+              />
+
+              <div className="mt-3 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={toggleVideoPlayback}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-cream/35 bg-cream text-bark transition hover:bg-white"
+                    aria-label={videoPlaying ? 'Mettre la video en pause' : 'Lire la video'}
+                  >
+                    {videoPlaying ? <Pause size={18} /> : <Play size={18} />}
+                  </button>
+
+                  <span className="text-xs font-semibold tabular-nums text-cream/80">
+                    {formatVideoTime(videoCurrentTime)} / {formatVideoTime(videoDuration)}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleVideoMute}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-cream/35 bg-cream text-bark transition hover:bg-white"
+                    aria-label={videoMuted ? 'Activer le son' : 'Couper le son'}
+                  >
+                    {videoMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleVideoFullscreen}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-cream/35 bg-cream text-bark transition hover:bg-white"
+                    aria-label="Afficher la video en plein ecran"
+                  >
+                    <Maximize2 size={18} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

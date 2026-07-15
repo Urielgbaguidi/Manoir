@@ -36,6 +36,7 @@ const statusLabels: Record<string, string> = {
   SEJOUR_PAYE: 'Sejour paye',
   ANNULEE: 'Reservation annulee',
   REMBOURSEE: 'Remboursement effectue',
+  LIBEREE: 'Appartement libere par l\'administration',
 };
 
 const formatCurrency = (value = 0) => `${Number(value || 0).toLocaleString('fr-FR')} FCFA`;
@@ -88,6 +89,15 @@ const todayDateString = () => {
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 };
 
+const dateInputValue = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+const addDays = (date: Date, days: number) => {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+};
+
 const paymentCountdown = (deadline?: string, approvedAt?: string, nowMs = Date.now()) => {
   if (!deadline) return null;
 
@@ -113,10 +123,18 @@ const paymentCountdown = (deadline?: string, approvedAt?: string, nowMs = Date.n
   };
 };
 
+const hasArrivalDateReached = (reservation: Reservation, nowMs = Date.now()) => {
+  const arrivalDate = parseReservationDate(reservation.check_in);
+
+  return Boolean(arrivalDate && nowMs >= arrivalDate.getTime());
+};
+
 const isDepositPaymentExpired = (reservation: Reservation, nowMs = Date.now()) =>
   reservation.status === 'VALIDEE_PAIEMENT_REQUIS'
-  && Boolean(reservation.payment_deadline)
-  && Boolean(paymentCountdown(reservation.payment_deadline, reservation.approved_at, nowMs)?.expired);
+  && (
+    Boolean(paymentCountdown(reservation.payment_deadline, reservation.approved_at, nowMs)?.expired)
+    || hasArrivalDateReached(reservation, nowMs)
+  );
 
 const effectiveReservationStatus = (reservation: Reservation, nowMs = Date.now()): Reservation['status'] =>
   isDepositPaymentExpired(reservation, nowMs) ? 'EXPIREE' : reservation.status;
@@ -135,6 +153,10 @@ export default function ReservationsPage() {
   const [processingText, setProcessingText] = useState('');
   const [cancellingReservation, setCancellingReservation] = useState<Reservation | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [extensionReservation, setExtensionReservation] = useState<Reservation | null>(null);
+  const [extensionDate, setExtensionDate] = useState('');
+  const [requestingExtension, setRequestingExtension] = useState(false);
+  const [extensionError, setExtensionError] = useState('');
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -233,8 +255,81 @@ export default function ReservationsPage() {
     };
   };
 
-  const canCancelReservation = (reservation: Reservation) =>
-    ['EN_ATTENTE', 'VALIDEE_PAIEMENT_REQUIS', 'CONFIRMEE'].includes(effectiveReservationStatus(reservation, nowMs));
+  const canCancelReservation = (reservation: Reservation) => {
+    const statusAllowsCancellation = ['EN_ATTENTE', 'VALIDEE_PAIEMENT_REQUIS', 'CONFIRMEE'].includes(effectiveReservationStatus(reservation, nowMs));
+    const arrivalDate = reservation.check_in.slice(0, 10);
+
+    return statusAllowsCancellation && todayDateString() < arrivalDate;
+  };
+
+  const extensionMinimumDate = (reservation: Reservation) => {
+    const checkoutDate = parseReservationDate(reservation.check_out);
+    return checkoutDate ? dateInputValue(addDays(checkoutDate, 1)) : '';
+  };
+
+  const canRequestStayExtension = (reservation: Reservation) => {
+    if (reservation.status !== 'CONFIRMEE' || hasStayInvoice(reservation) || reservation.extension_status === 'EN_ATTENTE') {
+      return false;
+    }
+
+    const checkIn = parseReservationDate(reservation.check_in);
+    const checkOut = parseReservationDate(reservation.check_out);
+
+    if (!checkIn || !checkOut) return false;
+
+    const today = todayDateString();
+    const firstEligibleDay = dateInputValue(addDays(checkIn, 1));
+    const checkoutDay = dateInputValue(checkOut);
+
+    return today >= firstEligibleDay && today < checkoutDay;
+  };
+
+  const extensionPreview = (reservation: Reservation, nextCheckOut = extensionDate) => {
+    const currentNights = countNights(reservation.check_in, reservation.check_out);
+    const newNights = nextCheckOut ? countNights(reservation.check_in, nextCheckOut) : currentNights;
+    const pricePerNight = Number(reservation.room?.base_price || (currentNights ? (reservation.stay_amount || 0) / currentNights : 0));
+
+    return {
+      currentNights,
+      newNights,
+      additionalNights: Math.max(0, newNights - currentNights),
+      newStayAmount: Math.max(0, newNights * pricePerNight),
+    };
+  };
+
+  const openExtensionModal = (reservation: Reservation) => {
+    const minimumDate = extensionMinimumDate(reservation);
+    setExtensionReservation(reservation);
+    setExtensionDate(minimumDate);
+    setExtensionError('');
+  };
+
+  const handleSubmitExtension = async () => {
+    if (!extensionReservation) return;
+
+    if (!extensionDate || extensionDate <= extensionReservation.check_out.slice(0, 10)) {
+      setExtensionError('Choisissez une nouvelle date de depart apres la date actuelle.');
+      return;
+    }
+
+    setRequestingExtension(true);
+    setExtensionError('');
+
+    try {
+      const response = await api.requestStayExtension(extensionReservation.id.toString(), extensionDate);
+      setReservations((currentReservations) =>
+        currentReservations.map((reservation) =>
+          reservation.id === response.reservation.id ? response.reservation : reservation
+        )
+      );
+      showToast('Votre demande de prolongation a ete envoyee a l\'administrateur.', 'success');
+      setExtensionReservation(null);
+    } catch (error) {
+      setExtensionError(error instanceof Error ? error.message : 'La demande de prolongation a echoue.');
+    } finally {
+      setRequestingExtension(false);
+    }
+  };
 
   const handleConfirmCancellation = async () => {
     if (!cancellingReservation) return;
@@ -383,6 +478,17 @@ export default function ReservationsPage() {
     const requestDate = svgEscape(formatReservationDate(reservation.created_at));
     const calculation = svgEscape(`${quantity} × ${formatCurrency(unitPrice)}`);
     const total = svgEscape(formatCurrency(amount));
+    const detailsDateLines = isStay
+      ? `
+        <text x="660" y="532" font-family="Arial, sans-serif" font-size="22" fill="#374151">Arrivée : ${arrival}</text>
+        <text x="660" y="570" font-family="Arial, sans-serif" font-size="22" fill="#374151">Départ : ${departure}</text>
+        <text x="660" y="608" font-family="Arial, sans-serif" font-size="22" fill="#374151">Durée : ${nights} nuit${nights > 1 ? 's' : ''}</text>
+        <text x="660" y="646" font-family="Arial, sans-serif" font-size="22" fill="#374151">Date de demande : ${requestDate}</text>
+      `
+      : `
+        <text x="660" y="532" font-family="Arial, sans-serif" font-size="22" fill="#374151">Date de demande : ${requestDate}</text>
+        <text x="660" y="570" font-family="Arial, sans-serif" font-size="22" fill="#374151">Arrivée : ${arrival}</text>
+      `;
 
     return `
       <svg xmlns="http://www.w3.org/2000/svg" width="1240" height="1754" viewBox="0 0 1240 1754">
@@ -426,10 +532,7 @@ export default function ReservationsPage() {
         <text x="660" y="405" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#111827">Détails du séjour</text>
         <rect x="660" y="425" width="500" height="5" fill="${accent}" />
         <text x="660" y="485" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#111827">${apartment}</text>
-        <text x="660" y="532" font-family="Arial, sans-serif" font-size="22" fill="#374151">Arrivée : ${arrival}</text>
-        <text x="660" y="570" font-family="Arial, sans-serif" font-size="22" fill="#374151">Départ : ${departure}</text>
-        <text x="660" y="608" font-family="Arial, sans-serif" font-size="22" fill="#374151">Durée : ${nights} nuit${nights > 1 ? 's' : ''}</text>
-        <text x="660" y="646" font-family="Arial, sans-serif" font-size="22" fill="#374151">Date de demande : ${requestDate}</text>
+        ${detailsDateLines}
 
         <text x="80" y="760" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#111827">Calcul</text>
         <rect x="80" y="780" width="1080" height="5" fill="${accent}" />
@@ -565,7 +668,21 @@ export default function ReservationsPage() {
 
       await new Promise((resolve) => setTimeout(resolve, 350));
       setPaymentStep('success');
+      setReservations((currentReservations) =>
+        currentReservations.map((currentReservation) =>
+          currentReservation.id === reservation.id
+            ? {
+                ...currentReservation,
+                status: type === 'stay' ? 'SEJOUR_PAYE' : 'CONFIRMEE',
+                ...(type === 'stay' ? { stay_paid_at: new Date().toISOString() } : { paid_at: new Date().toISOString() }),
+              }
+            : currentReservation
+        )
+      );
       showToast(type === 'deposit' ? 'Caution payee. Reservation confirmee.' : 'Sejour paye avec succes.', 'success');
+      if (type === 'stay') {
+        setActiveTab('history');
+      }
       loadReservations();
     } catch (err) {
       setPaymentStep('failed');
@@ -577,7 +694,7 @@ export default function ReservationsPage() {
     ['EN_ATTENTE', 'VALIDEE_PAIEMENT_REQUIS', 'CONFIRMEE'].includes(effectiveReservationStatus(reservation, nowMs))
   );
   const historyReservations = reservations.filter((reservation) =>
-    ['REFUSEE', 'EXPIREE', 'SEJOUR_PAYE', 'ANNULEE', 'REMBOURSEE'].includes(effectiveReservationStatus(reservation, nowMs))
+    ['REFUSEE', 'EXPIREE', 'SEJOUR_PAYE', 'ANNULEE', 'REMBOURSEE', 'LIBEREE'].includes(effectiveReservationStatus(reservation, nowMs))
   );
   const visibleReservations = activeTab === 'active' ? activeReservations : historyReservations;
 
@@ -589,18 +706,29 @@ export default function ReservationsPage() {
       { key: 'stay', label: 'Sejour' },
     ];
 
-    let currentStepIndex = 0;
+    let completedStepIndex = 0;
+    let nextStepIndex = 1;
     let errorLabel = '';
 
     const status = effectiveReservationStatus(reservation, nowMs);
 
-    if (status === 'VALIDEE_PAIEMENT_REQUIS') currentStepIndex = 1;
-    if (status === 'CONFIRMEE') currentStepIndex = 2;
-    if (status === 'SEJOUR_PAYE') currentStepIndex = 3;
+    if (status === 'VALIDEE_PAIEMENT_REQUIS') {
+      completedStepIndex = 1;
+      nextStepIndex = 2;
+    }
+    if (status === 'CONFIRMEE') {
+      completedStepIndex = 2;
+      nextStepIndex = 3;
+    }
+    if (status === 'SEJOUR_PAYE') {
+      completedStepIndex = 3;
+      nextStepIndex = 3;
+    }
     if (status === 'REFUSEE') errorLabel = 'Demande refusee';
     if (status === 'EXPIREE') errorLabel = 'Delai expire';
     if (status === 'ANNULEE') errorLabel = 'Reservation annulee';
     if (status === 'REMBOURSEE') errorLabel = 'Remboursement effectue';
+    if (status === 'LIBEREE') errorLabel = 'Appartement libere';
 
     if (errorLabel) {
       return (
@@ -621,11 +749,11 @@ export default function ReservationsPage() {
         <div className="absolute left-0 right-0 top-8 z-0 h-0.5 bg-bark/10" />
         <div
           className="absolute left-0 top-8 z-0 h-0.5 bg-bark transition-all duration-700"
-          style={{ width: `${(currentStepIndex / (steps.length - 1)) * 100}%` }}
+          style={{ width: `${(completedStepIndex / (steps.length - 1)) * 100}%` }}
         />
         {steps.map((step, index) => {
-          const isDone = index < currentStepIndex;
-          const isActive = index === currentStepIndex;
+          const isDone = index <= completedStepIndex;
+          const isActive = !isDone && index === nextStepIndex;
 
           return (
             <div key={step.key} className="relative z-10 flex flex-col items-center">
@@ -636,7 +764,7 @@ export default function ReservationsPage() {
               }`}>
                 {isDone ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : <span className="text-[9px] font-bold">{index + 1}</span>}
               </div>
-              <span className={`mt-2 hidden text-[9px] uppercase tracking-wider sm:block ${isActive ? 'font-bold text-bark' : 'text-bark/40'}`}>
+              <span className={`mt-2 hidden text-[9px] uppercase tracking-wider sm:block ${isDone || isActive ? 'font-bold text-bark' : 'text-bark/40'}`}>
                 {step.label}
               </span>
             </div>
@@ -901,6 +1029,28 @@ export default function ReservationsPage() {
                         <button onClick={() => handleOpenPayment(reservation, 'stay')} className="flex w-full items-center justify-center gap-2 rounded-xl bg-bark px-6 py-4 text-xs font-black uppercase tracking-[0.2em] text-cream transition hover:bg-bark-light">
                           Payer mon séjour
                         </button>
+                        {reservation.extension_status === 'EN_ATTENTE' && reservation.extension_requested_check_out && (
+                          <div className="rounded-xl border border-bark/10 bg-cream p-3 text-xs leading-relaxed text-bark/70">
+                            <p className="font-bold text-bark">Prolongation en attente</p>
+                            <p>Nouvelle date demandée : {formatReservationDate(reservation.extension_requested_check_out)}</p>
+                            <p>L'administrateur doit encore valider cette demande.</p>
+                          </div>
+                        )}
+                        {reservation.extension_status === 'REFUSEE' && (
+                          <div className="rounded-xl border border-terracotta/20 bg-terracotta/5 p-3 text-xs leading-relaxed text-terracotta">
+                            <p className="font-bold">Prolongation refusée</p>
+                            <p>{reservation.extension_admin_notes || 'Aucun motif précisé.'}</p>
+                          </div>
+                        )}
+                        {canRequestStayExtension(reservation) && (
+                          <button
+                            type="button"
+                            onClick={() => openExtensionModal(reservation)}
+                            className="flex w-full items-center justify-center gap-2 rounded-xl border border-bark/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-bark transition hover:bg-bark hover:text-cream"
+                          >
+                            Prolonger mon séjour
+                          </button>
+                        )}
                       </div>
                     )}
 
@@ -1110,6 +1260,107 @@ export default function ReservationsPage() {
                         className="flex-1 rounded-xl bg-terracotta py-4 text-xs font-black uppercase tracking-wider text-white transition hover:bg-terracotta/90 disabled:opacity-50"
                       >
                         {cancelling ? 'Annulation...' : "Confirmer l'annulation"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {extensionReservation && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !requestingExtension && setExtensionReservation(null)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-xl rounded-3xl border border-bark/10 bg-cream p-8 text-charcoal shadow-2xl"
+            >
+              {(() => {
+                const preview = extensionPreview(extensionReservation);
+                const minimumDate = extensionMinimumDate(extensionReservation);
+
+                return (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="font-display text-2xl font-bold uppercase tracking-wide text-bark">
+                        Prolonger mon séjour
+                      </h3>
+                      <p className="mt-1 text-[10px] uppercase tracking-widest text-bark/50">
+                        Réservation #{extensionReservation.id}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-bark/10 bg-bark/5 p-4 text-xs leading-relaxed text-bark/70">
+                      <p><strong>Appartement :</strong> {getReservationTitle(extensionReservation)}</p>
+                      <p><strong>Arrivée :</strong> {formatReservationDate(extensionReservation.check_in)}</p>
+                      <p><strong>Départ actuel :</strong> {formatReservationDate(extensionReservation.check_out)}</p>
+                    </div>
+
+                    <label className="block">
+                      <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-bark/60">
+                        Nouvelle date de départ
+                      </span>
+                      <input
+                        type="date"
+                        min={minimumDate}
+                        value={extensionDate}
+                        onChange={(event) => {
+                          setExtensionDate(event.target.value);
+                          setExtensionError('');
+                        }}
+                        className="w-full rounded-xl border border-bark/15 bg-transparent px-4 py-4 text-sm font-semibold text-bark outline-none transition focus:border-bark"
+                      />
+                    </label>
+
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-2xl border border-bark/5 bg-bark/5 p-4">
+                        <p className="text-[9px] uppercase tracking-widest text-bark/40">Nuits actuelles</p>
+                        <p className="mt-1 font-display text-xl font-bold text-bark">{preview.currentNights}</p>
+                      </div>
+                      <div className="rounded-2xl border border-bark/5 bg-bark/5 p-4">
+                        <p className="text-[9px] uppercase tracking-widest text-bark/40">Nuits ajoutees</p>
+                        <p className="mt-1 font-display text-xl font-bold text-bark">{preview.additionalNights}</p>
+                      </div>
+                      <div className="rounded-2xl border border-olive/15 bg-olive/5 p-4">
+                        <p className="text-[9px] uppercase tracking-widest text-bark/40">Nouveau sejour</p>
+                        <p className="mt-1 font-display text-xl font-bold text-olive">{formatCurrency(preview.newStayAmount)}</p>
+                      </div>
+                    </div>
+
+                    <p className="rounded-2xl border border-bark/10 bg-cream-dark/60 p-4 text-sm leading-relaxed text-bark/70">
+                      La demande sera envoyée à l'administrateur. Si l'appartement reste libre sur la nouvelle période, l'administrateur pourra accepter et le Bon du Séjour sera automatiquement mis à jour.
+                    </p>
+
+                    {extensionError && <p className="text-xs font-semibold text-terracotta">{extensionError}</p>}
+
+                    <div className="flex gap-3 border-t border-bark/5 pt-4">
+                      <button
+                        type="button"
+                        disabled={requestingExtension}
+                        onClick={() => setExtensionReservation(null)}
+                        className="flex-1 rounded-xl border border-bark/10 py-4 text-xs font-bold uppercase tracking-wider text-bark/70 transition hover:bg-bark/5 disabled:opacity-50"
+                      >
+                        Retour
+                      </button>
+                      <button
+                        type="button"
+                        disabled={requestingExtension}
+                        onClick={handleSubmitExtension}
+                        className="flex-1 rounded-xl bg-bark py-4 text-xs font-black uppercase tracking-wider text-cream transition hover:bg-bark/90 disabled:opacity-50"
+                      >
+                        {requestingExtension ? 'Envoi...' : 'Envoyer la demande'}
                       </button>
                     </div>
                   </div>

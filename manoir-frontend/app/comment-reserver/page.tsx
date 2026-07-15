@@ -14,45 +14,82 @@ import {
 const reservationSteps = [
   {
     title: "Choisir un appartement",
-    text: "Le client consulte les appartements, ouvre la galerie, lit la description, verifie le prix par nuit et la caution par jour.",
+    text: "Le client consulte les categories, les photos, les videos, la description, le prix par nuit et la caution par jour. Pour les VIP, il choisit directement entre VIP 3 et VIP 7.",
     icon: CalendarCheck,
   },
   {
     title: "Creer son profil",
-    text: "Au moment de reserver, le client cree son compte avec son nom, son email, son telephone et un mot de passe. Le compte sert ensuite a suivre toute la demande.",
+    text: "Au moment de reserver, le client cree son compte avec son nom, son email, son telephone et un mot de passe. S'il possede deja un compte, il peut se connecter.",
     icon: UserPlus,
   },
   {
     title: "Envoyer la demande",
-    text: "Le client choisit la date d'arrivee, la date de depart et peut ajouter une demande speciale. La caution est calculee automatiquement selon le nombre de jours avant l'arrivee.",
+    text: "Le client choisit la date d'arrivee, la date de depart et ajoute ses demandes speciales. La caution de reservation est calculee entre la date de demande et la date d'arrivee.",
     icon: FileText,
   },
   {
-    title: "Validation par l'administration",
-    text: "L'equipe du Manoir examine la demande. Elle peut confirmer ou refuser. Si elle confirme, le client recoit une autorisation de paiement valable 24h.",
+    title: "Validation admin",
+    text: "L'administration examine la demande. Elle peut confirmer ou refuser avec un motif. Si elle confirme, le client recoit une autorisation de paiement de caution.",
     icon: ShieldCheck,
   },
   {
-    title: "Payer la caution de réservation",
-    text: "Apres validation, le client paie la caution de réservation depuis son espace client. Si le paiement n'est pas fait dans les 24h, le bouton est desactive, la demande expire et l'appartement redevient disponible.",
+    title: "Payer la caution",
+    text: "Le client dispose de 24h maximum pour payer la caution de reservation. Si le delai expire, ou si la date d'arrivee est atteinte sans paiement, la demande passe en expiree.",
     icon: CreditCard,
   },
   {
-    title: "Suivre et telecharger les documents",
-    text: "Le client retrouve son bon de reservation, sa facture de caution, son bon de sejour et sa facture de sejour dans son espace personnel.",
+    title: "Commencer le sejour",
+    text: "A la date d'arrivee, la reservation devient une occupation reelle. Le client ne peut plus annuler la reservation depuis son espace client.",
     icon: CheckCircle2,
+  },
+  {
+    title: "Payer le sejour",
+    text: "Le client peut payer ses frais de sejour depuis son espace client. Apres paiement, l'etape Sejour est cochee et la reservation passe directement dans l'historique.",
+    icon: CreditCard,
+  },
+];
+
+const keyRules = [
+  {
+    title: "Reservation et occupation",
+    text: "La reservation correspond a la periode entre la date de demande et la date d'arrivee. L'occupation correspond a la periode entre la date d'arrivee et la date de depart.",
+    icon: CalendarCheck,
+  },
+  {
+    title: "Expiration automatique",
+    text: "Une demande acceptee expire si la caution n'est pas payee dans les 24h, ou si la date d'arrivee est atteinte avant paiement. L'appartement est alors libere.",
+    icon: Clock3,
+  },
+  {
+    title: "Annulation avant arrivee",
+    text: "Le client peut annuler uniquement avant la date d'arrivee. Quand l'occupation commence, le bouton d'annulation disparait.",
+    icon: XCircle,
+  },
+  {
+    title: "Prolongation du sejour",
+    text: "Le client peut demander une prolongation seulement si le sejour a commence, qu'au moins une journee est passee et que le sejour n'est pas encore paye.",
+    icon: ShieldCheck,
   },
 ];
 
 const statusRows = [
   ["EN_ATTENTE", "La demande a ete envoyee et attend la validation de l'administration."],
-  ["VALIDEE_PAIEMENT_REQUIS", "La demande est acceptee. Le client doit payer la caution de réservation dans le delai affiche de 24h."],
+  ["VALIDEE_PAIEMENT_REQUIS", "La demande est acceptee. La caution de reservation doit etre payee dans le delai affiche, avec une limite maximum de 24h."],
   ["CONFIRMEE", "La caution est payee. La reservation est definitivement confirmee."],
-  ["SEJOUR_PAYE", "Le client a aussi regle les frais de sejour."],
+  ["SEJOUR_PAYE", "Les frais de sejour ont ete regles. La reservation passe dans l'historique."],
   ["REFUSEE", "La demande a ete refusee par l'administration."],
-  ["EXPIREE", "Le delai de paiement de 24h est depasse. Le paiement est bloque et l'appartement est libere."],
-  ["ANNULEE", "Le client a annule sa reservation."],
+  ["EXPIREE", "Le delai de paiement est depasse, ou la date d'arrivee est atteinte sans paiement. Le paiement est bloque et l'appartement est libere."],
+  ["ANNULEE", "Le client a annule sa reservation avant le debut de l'occupation."],
   ["REMBOURSEE", "L'administration a confirme le remboursement."],
+  ["LIBEREE", "L'occupation a ete terminee par l'administration. L'appartement est de nouveau disponible."],
+];
+
+const documentRows = [
+  ["Bon de Reservation", "Visible apres validation par l'administration, avant le paiement de la caution."],
+  ["Facture Caution", "Visible apres paiement de la caution de reservation."],
+  ["Bon du Sejour", "Visible quand la reservation est confirmee et que le sejour reste a regler."],
+  ["Facture Sejour", "Visible apres paiement des frais de sejour."],
+  ["Bon d'Annulation", "Visible si le client annule avant le debut de l'occupation."],
 ];
 
 export default function HowToReservePage() {
@@ -71,9 +108,9 @@ export default function HowToReservePage() {
               Comment reserver au Manoir
             </h1>
             <p className="mt-6 max-w-3xl text-lg leading-8 text-charcoal/85">
-              Cette page explique clairement tout le parcours de reservation : choix de l'appartement,
-              creation du compte, validation par l'administration, paiement de la caution, documents
-              disponibles et suivi depuis l'espace client.
+              Cette page explique tout le parcours : choix de l'appartement, creation du compte,
+              validation par l'administration, caution de reservation, occupation reelle, documents,
+              paiement du sejour, historique, annulation et prolongation.
             </p>
           </div>
 
@@ -81,11 +118,11 @@ export default function HowToReservePage() {
             <div className="flex items-start gap-4">
               <Clock3 className="mt-1 h-6 w-6 flex-shrink-0" />
               <div>
-                <h2 className="font-display text-3xl uppercase leading-none">Delai de paiement</h2>
+                <h2 className="font-display text-3xl uppercase leading-none">Delai de caution</h2>
                 <p className="mt-4 text-sm leading-7 text-cream/90">
-                  Apres acceptation par l'administration, le client dispose de 24h pour payer la caution de réservation.
-                  Un compte a rebours s'affiche dans son espace client. Si le delai expire, le bouton de
-                  paiement est desactive et l'appartement est remis a disposition.
+                  Apres acceptation par l'administration, le client dispose de 24h maximum pour payer
+                  la caution de reservation. Si le delai expire, ou si la date d'arrivee est atteinte
+                  sans paiement, le bouton de paiement est bloque et l'appartement est remis a disposition.
                 </p>
               </div>
             </div>
@@ -124,7 +161,25 @@ export default function HowToReservePage() {
           </div>
         </section>
 
-        <section className="grid gap-6 py-8 lg:grid-cols-[0.85fr_1.15fr]">
+        <section className="border-y border-bark/10 py-12">
+          <div className="mb-8">
+            <p className="text-xs font-black uppercase tracking-[0.32em] text-bark/80">Regles importantes</p>
+            <h2 className="mt-3 font-display text-4xl uppercase text-bark md:text-5xl">A retenir</h2>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {keyRules.map((rule) => (
+              <article key={rule.title} className="rounded-2xl border border-bark/10 bg-white/45 p-6">
+                <span className="mb-5 grid size-11 place-items-center rounded-full border border-bark/15 bg-cream text-bark">
+                  <rule.icon size={18} />
+                </span>
+                <h3 className="font-display text-2xl uppercase leading-none text-bark">{rule.title}</h3>
+                <p className="mt-4 text-sm leading-7 text-charcoal/85">{rule.text}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="grid gap-6 py-12 lg:grid-cols-[0.85fr_1.15fr]">
           <div className="rounded-2xl border border-bark/10 bg-cream-dark/40 p-7">
             <h2 className="font-display text-4xl uppercase leading-none text-bark">
               Paiements et documents
@@ -136,12 +191,17 @@ export default function HowToReservePage() {
               </p>
               <p>
                 Les frais de sejour correspondent au nombre de nuits multiplie par le prix par nuit.
-                Le client peut les regler depuis son espace client.
+                Apres paiement du sejour, la reservation quitte les demandes en cours et passe dans
+                l'historique.
               </p>
-              <p>
-                Les documents sont generes automatiquement : bon de reservation, facture de caution,
-                bon du sejour et facture du sejour.
-              </p>
+            </div>
+            <div className="mt-7 divide-y divide-bark/10 rounded-2xl border border-bark/10 bg-cream/70">
+              {documentRows.map(([title, text]) => (
+                <div key={title} className="p-4">
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-bark">{title}</p>
+                  <p className="mt-1 text-sm leading-6 text-charcoal/75">{text}</p>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -166,8 +226,8 @@ export default function HowToReservePage() {
                 <h2 className="font-display text-3xl uppercase text-bark">Annulation</h2>
                 <p className="mt-3 text-sm leading-7 text-charcoal/85">
                   Le client peut annuler si la demande est en attente, validee avant paiement ou deja
-                  confirmee. Si la caution est deja payee, le remboursement est calcule automatiquement
-                  selon les jours consommes.
+                  confirmee, mais seulement avant la date d'arrivee. Si la caution est deja payee,
+                  le remboursement est calcule automatiquement selon les jours consommes.
                 </p>
               </div>
             </div>
@@ -179,8 +239,8 @@ export default function HowToReservePage() {
               <div>
                 <h2 className="font-display text-3xl uppercase text-bark">Espace client</h2>
                 <p className="mt-3 text-sm leading-7 text-charcoal/85">
-                  L'espace client centralise les demandes, les paiements, le compte a rebours,
-                  les documents, l'historique et la gestion du profil.
+                  L'espace client centralise les demandes en cours, l'historique, les paiements,
+                  les documents, le compte a rebours, la gestion du profil et les demandes de prolongation.
                 </p>
               </div>
             </div>

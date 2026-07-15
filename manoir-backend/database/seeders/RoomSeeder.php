@@ -12,7 +12,7 @@ class RoomSeeder extends Seeder
     {
         // Catégorie 1: Appartement VIP (2 disponibles)
         $vip1 = Room::create([
-            'name' => 'VIP 1',
+            'name' => 'VIP 3',
             'slug' => 'appartement-vip-1',
             'description' => 'Appartement d\'exception avec vue imprenable sur la mer. Cet appartement VIP offre un espace de vie raffiné avec salon spacieux, chambre avec lit king-size, salle de bain en marbre et terrasse privative. Profitez d\'un service personnalisé et d\'un confort absolu pour un séjour inoubliable.',
             'max_occupants' => 2,
@@ -31,7 +31,7 @@ class RoomSeeder extends Seeder
         ]);
 
         $vip2 = Room::create([
-            'name' => 'VIP 2',
+            'name' => 'VIP 7',
             'slug' => 'appartement-vip-2',
             'description' => 'Appartement VIP luxueux avec vue sur le jardin tropical. Design contemporain, matériaux nobles et équipements haut de gamme pour une expérience exclusive. Inclut un accès direct à la piscine et un service de conciergerie 24h/24.',
             'max_occupants' => 2,

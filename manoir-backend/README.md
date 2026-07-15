@@ -83,8 +83,8 @@ Mot de passe: password123
 
 | Categorie | Appartements | Prix par nuit | Caution par jour |
 | --- | --- | ---: | ---: |
-| VIP 1 | Numero 3 | 30 000 FCFA | 500 000 FCFA |
-| VIP 2 | Numero 7 | 40 000 FCFA | 500 000 FCFA |
+| VIP 3 | Numero 3 | 30 000 FCFA | 500 000 FCFA |
+| VIP 7 | Numero 7 | 40 000 FCFA | 500 000 FCFA |
 | 2 Chambres | Numeros 2, 4, 6, 8 | 118 000 FCFA | 300 000 FCFA |
 | 1 Chambre | Numeros 1, 5 | 85 000 FCFA | 200 000 FCFA |
 
@@ -114,6 +114,7 @@ GET  /api/reservations/{id}
 GET  /api/reservations/{id}/payments
 POST /api/reservations/{id}/invoice-download
 POST /api/reservations/{id}/cancel
+POST /api/reservations/{id}/extension
 POST /api/reservations/{reservationId}/payments/initiate
 GET  /api/payments/{paymentId}/status
 GET  /api/payments/{paymentId}/invoice
@@ -129,9 +130,13 @@ POST /api/payments/{paymentId}/webhook
 
 ```text
 GET    /api/admin/reservations
+GET    /api/admin/occupied-rooms
 POST   /api/admin/reservations/{id}/approve
 POST   /api/admin/reservations/{id}/reject
+POST   /api/admin/reservations/{id}/release-room
 POST   /api/admin/reservations/{id}/mark-refunded
+POST   /api/admin/reservations/{id}/extension/approve
+POST   /api/admin/reservations/{id}/extension/reject
 POST   /api/admin/reservations/check-conflicts
 GET    /api/admin/room-categories
 PUT    /api/admin/room-categories/{category}
@@ -161,6 +166,23 @@ DELETE /api/admin/users/{id}
 | `SEJOUR_PAYE` | Frais de sejour payes |
 | `ANNULEE` | Reservation annulee |
 | `REMBOURSEE` | Remboursement effectue |
+| `LIBEREE` | Occupation terminee par l'administrateur, appartement disponible |
+
+## Reservation et occupation
+
+La periode de reservation correspond a l'intervalle entre la date de demande et la date d'arrivee.
+
+L'occupation d'un appartement correspond a l'intervalle entre la date d'arrivee et la date de depart.
+
+Une annulation client est autorisee uniquement avant la date d'arrivee. A partir du jour d'arrivee, la periode de reservation est terminee, l'occupation reelle commence et l'API refuse l'annulation.
+
+Le back-office expose `GET /api/admin/occupied-rooms` pour lister uniquement les appartements actuellement occupes. Une reservation est consideree comme une occupation en cours si :
+
+- son statut est `CONFIRMEE` ou `SEJOUR_PAYE`,
+- la date d'arrivee est atteinte,
+- la date de depart n'est pas encore atteinte.
+
+`POST /api/admin/reservations/{id}/release-room` permet a l'administrateur de liberer une occupation en cours. La reservation passe au statut `LIBEREE`, les champs `released_at`, `released_by_admin_id` et `release_notes` conservent l'historique, et l'appartement n'est plus pris en compte dans les conflits de disponibilite.
 
 ## Expiration des cautions
 
@@ -168,7 +190,7 @@ Quand une demande est acceptee par l'administrateur, `payment_deadline` est fixe
 
 Pendant ce delai, l'appartement attribue est considere comme bloque pour les dates de la reservation.
 
-Si le client ne paie pas la caution avant la fin du delai :
+Si le client ne paie pas la caution avant la fin du delai, ou si la date d'arrivee est atteinte avant le paiement :
 
 - la reservation passe au statut `EXPIREE`,
 - elle n'est plus prise en compte dans les conflits de disponibilite,
@@ -180,6 +202,27 @@ Le backend expire les demandes depassees lors des appels API importants, et la c
 ```bash
 php artisan reservations:check-expirations
 ```
+
+## Prolongation de sejour
+
+Une reservation peut recevoir une demande de prolongation uniquement si :
+
+- son statut est `CONFIRMEE`,
+- le sejour a deja commence,
+- au moins une journee du sejour est deja passee,
+- le sejour n'est pas encore paye,
+- aucune demande de prolongation n'est deja en attente.
+
+Le client envoie une nouvelle date de depart via `POST /api/reservations/{id}/extension`.
+
+Le backend verifie que le meme appartement reste disponible entre l'ancienne date de depart et la nouvelle date demandee.
+
+Cote administrateur :
+
+- `POST /api/admin/reservations/{id}/extension/approve` accepte la prolongation, met a jour `check_out` et recalcule `stay_amount`.
+- `POST /api/admin/reservations/{id}/extension/reject` rejette la prolongation avec un motif obligatoire.
+
+Les champs `extension_status`, `extension_previous_check_out`, `extension_requested_check_out`, `extension_requested_at`, `extension_processed_at` et `extension_admin_notes` conservent l'historique de la demande.
 
 ## Paiement actuel
 

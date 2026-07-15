@@ -20,7 +20,7 @@ class AdminReservationController extends Controller
     {
         Reservation::expireOverduePaymentRequests();
 
-        $query = Reservation::with(['user', 'room', 'payments']);
+        $query = Reservation::with(['user', 'room', 'payments', 'releasedByAdmin']);
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
@@ -37,6 +37,63 @@ class AdminReservationController extends Controller
         return response()->json($query->orderByDesc('created_at')->paginate(20));
     }
 
+    public function occupiedRooms(): JsonResponse
+    {
+        Reservation::expireOverduePaymentRequests();
+
+        $today = now()->toDateString();
+
+        $reservations = Reservation::with(['user', 'room', 'payments'])
+            ->whereIn('status', ['CONFIRMEE', 'SEJOUR_PAYE'])
+            ->whereDate('check_in', '<=', $today)
+            ->whereDate('check_out', '>', $today)
+            ->orderBy('check_out')
+            ->get();
+
+        return response()->json([
+            'data' => $reservations,
+        ]);
+    }
+
+    public function releaseRoom(Request $request, string $id): JsonResponse
+    {
+        $request->validate([
+            'release_notes' => 'nullable|string|max:1000',
+        ]);
+
+        $reservation = Reservation::with(['room', 'user', 'payments'])->findOrFail($id);
+
+        if (! in_array($reservation->status, ['CONFIRMEE', 'SEJOUR_PAYE'], true)) {
+            return response()->json([
+                'message' => 'Seule une reservation confirmee ou un sejour paye peut liberer un appartement.',
+            ], 422);
+        }
+
+        if (now()->toDateString() < $reservation->check_in->toDateString()) {
+            return response()->json([
+                'message' => 'Ce sejour n\'a pas encore commence. Il ne peut pas etre libere depuis la liste des appartements occupes.',
+            ], 422);
+        }
+
+        if (now()->toDateString() >= $reservation->check_out->toDateString()) {
+            return response()->json([
+                'message' => 'Ce sejour est deja termine. L\'appartement n\'est plus considere comme occupe.',
+            ], 422);
+        }
+
+        $reservation->update([
+            'status' => 'LIBEREE',
+            'released_at' => now(),
+            'released_by_admin_id' => $request->user()?->id,
+            'release_notes' => $request->release_notes,
+        ]);
+
+        return response()->json([
+            'message' => 'Appartement libere. Il est de nouveau disponible pour les prochaines demandes.',
+            'reservation' => $reservation->fresh(['room', 'user', 'payments', 'releasedByAdmin']),
+        ]);
+    }
+
     public function approve(Request $request, string $id): JsonResponse
     {
         $request->validate([
@@ -49,6 +106,14 @@ class AdminReservationController extends Controller
         if ($reservation->status !== 'EN_ATTENTE') {
             return response()->json([
                 'message' => 'Cette demande ne peut plus etre confirmee.',
+            ], 422);
+        }
+
+        if (now()->startOfDay()->greaterThanOrEqualTo($reservation->check_in->copy()->startOfDay())) {
+            $reservation->update(['status' => 'EXPIREE']);
+
+            return response()->json([
+                'message' => 'La date d\'arrivee est deja atteinte. Cette demande a expire et ne peut plus etre confirmee.',
             ], 422);
         }
 
@@ -169,6 +234,89 @@ class AdminReservationController extends Controller
         ]);
     }
 
+    public function approveExtension(Request $request, string $id): JsonResponse
+    {
+        $request->validate([
+            'admin_notes' => 'nullable|string|max:1000',
+        ]);
+
+        $reservation = Reservation::with(['room', 'user', 'payments'])->findOrFail($id);
+
+        if ($reservation->extension_status !== 'EN_ATTENTE' || ! $reservation->extension_requested_check_out) {
+            return response()->json([
+                'message' => 'Aucune demande de prolongation en attente pour cette reservation.',
+            ], 422);
+        }
+
+        if ($reservation->status !== 'CONFIRMEE') {
+            return response()->json([
+                'message' => 'Seule une reservation confirmee peut etre prolongee.',
+            ], 422);
+        }
+
+        $currentCheckOut = $reservation->check_out->copy()->startOfDay();
+        $requestedCheckOut = $reservation->extension_requested_check_out->copy()->startOfDay();
+
+        if ($requestedCheckOut->lessThanOrEqualTo($currentCheckOut)) {
+            return response()->json([
+                'message' => 'La nouvelle date de depart n\'est plus valide.',
+            ], 422);
+        }
+
+        if (! $reservation->room->isAvailableForDates(
+            $currentCheckOut->toDateString(),
+            $requestedCheckOut->toDateString(),
+            $reservation->id
+        )) {
+            return response()->json([
+                'message' => 'Cet appartement n\'est plus disponible jusqu\'a la date demandee.',
+            ], 422);
+        }
+
+        $category = RoomCategory::where('type', $reservation->category_type ?: $reservation->room->type)->first();
+        $pricePerNight = (int) ($reservation->room->base_price ?: $category?->price_per_night ?: 0);
+        $nights = max(1, $reservation->check_in->copy()->startOfDay()->diffInDays($requestedCheckOut));
+
+        $reservation->update([
+            'check_out' => $requestedCheckOut,
+            'stay_amount' => $nights * $pricePerNight,
+            'extension_status' => 'APPROUVEE',
+            'extension_processed_at' => now(),
+            'extension_admin_notes' => $request->admin_notes,
+        ]);
+
+        return response()->json([
+            'message' => 'Prolongation acceptee. La date de depart et le montant du sejour ont ete mis a jour.',
+            'reservation' => $reservation->fresh(['room', 'user', 'payments']),
+        ]);
+    }
+
+    public function rejectExtension(Request $request, string $id): JsonResponse
+    {
+        $request->validate([
+            'admin_notes' => 'required|string|max:1000',
+        ]);
+
+        $reservation = Reservation::with(['room', 'user', 'payments'])->findOrFail($id);
+
+        if ($reservation->extension_status !== 'EN_ATTENTE') {
+            return response()->json([
+                'message' => 'Aucune demande de prolongation en attente pour cette reservation.',
+            ], 422);
+        }
+
+        $reservation->update([
+            'extension_status' => 'REFUSEE',
+            'extension_processed_at' => now(),
+            'extension_admin_notes' => $request->admin_notes,
+        ]);
+
+        return response()->json([
+            'message' => 'Prolongation refusee avec motif.',
+            'reservation' => $reservation->fresh(['room', 'user', 'payments']),
+        ]);
+    }
+
     public function checkConflicts(Request $request): JsonResponse
     {
         $request->validate([
@@ -184,6 +332,7 @@ class AdminReservationController extends Controller
                 $query->whereIn('status', ['CONFIRMEE', 'SEJOUR_PAYE'])
                     ->orWhere(function ($query) {
                         $query->where('status', 'VALIDEE_PAIEMENT_REQUIS')
+                            ->whereDate('check_in', '>', now()->toDateString())
                             ->where(function ($query) {
                                 $query->whereNull('payment_deadline')
                                     ->orWhere('payment_deadline', '>', now());

@@ -24,7 +24,10 @@ class CheckPaymentExpirations extends Command
 
         // 1. Gérer les réservations dont le délai est dépassé
         $expiredReservations = Reservation::where('status', 'VALIDEE_PAIEMENT_REQUIS')
-            ->where('payment_deadline', '<=', $now)
+            ->where(function ($query) use ($now) {
+                $query->where('payment_deadline', '<=', $now)
+                    ->orWhereDate('check_in', '<=', $now->toDateString());
+            })
             ->with(['user', 'room'])
             ->get();
 
@@ -50,6 +53,7 @@ class CheckPaymentExpirations extends Command
         $reminderReservations = Reservation::where('status', 'VALIDEE_PAIEMENT_REQUIS')
             ->where('payment_deadline', '>', $now)
             ->where('payment_deadline', '<=', $twoHoursFromNow)
+            ->whereDate('check_in', '>', $now->toDateString())
             ->with(['user', 'room'])
             ->get();
 

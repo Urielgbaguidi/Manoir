@@ -53,6 +53,7 @@ class Room extends Model
                 $query->whereIn('status', ['CONFIRMEE', 'SEJOUR_PAYE'])
                     ->orWhere(function ($query) {
                         $query->where('status', 'VALIDEE_PAIEMENT_REQUIS')
+                            ->whereDate('check_in', '>', now()->toDateString())
                             ->where(function ($query) {
                                 $query->whereNull('payment_deadline')
                                     ->orWhere('payment_deadline', '>', now());

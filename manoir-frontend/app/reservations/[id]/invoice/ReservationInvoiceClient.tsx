@@ -1,5 +1,5 @@
 'use client';
-export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
@@ -312,10 +312,19 @@ export default function ReservationInvoicePage() {
             </h3>
             <div className="space-y-2 text-gray-700">
               <p className="text-lg font-semibold text-gray-900">{title}</p>
-              <p>Arrivée : {formatReservationDate(reservation.check_in)}</p>
-              <p>Départ : {formatReservationDate(reservation.check_out)}</p>
-              <p>Durée : {nights} nuit{nights > 1 ? 's' : ''}</p>
-              <p>Date de demande : {formatReservationDate(reservation.created_at)}</p>
+              {isDepositDocument ? (
+                <>
+                  <p>Date de demande : {formatReservationDate(reservation.created_at)}</p>
+                  <p>Arrivée : {formatReservationDate(reservation.check_in)}</p>
+                </>
+              ) : (
+                <>
+                  <p>Arrivée : {formatReservationDate(reservation.check_in)}</p>
+                  <p>Départ : {formatReservationDate(reservation.check_out)}</p>
+                  <p>Durée : {nights} nuit{nights > 1 ? 's' : ''}</p>
+                  <p>Date de demande : {formatReservationDate(reservation.created_at)}</p>
+                </>
+              )}
               {isCancellationDocument && (
                 <>
                   <p>Date d'annulation : {formatReservationDate(reservation.cancelled_at || new Date().toISOString())}</p>

@@ -90,7 +90,7 @@ export const fallbackCategoryRooms: RoomCategories = {
   vip: [
     {
       id: 1,
-      name: 'VIP 1',
+      name: 'VIP 3',
       slug: 'appartement-vip-1',
       description:
         "Appartement d'exception avec vue imprenable sur la mer. Salon spacieux, chambre avec lit king-size, salle de bain en marbre et terrasse privative.",
@@ -108,7 +108,7 @@ export const fallbackCategoryRooms: RoomCategories = {
     },
     {
       id: 2,
-      name: 'VIP 2',
+      name: 'VIP 7',
       slug: 'appartement-vip-2',
       description:
         'Appartement VIP luxueux avec vue sur le jardin tropical. Design contemporain, materiaux nobles et equipements haut de gamme.',

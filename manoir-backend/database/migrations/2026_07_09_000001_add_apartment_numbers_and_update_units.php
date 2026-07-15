@@ -66,9 +66,9 @@ return new class extends Migration
     {
         return [
             [
-                'name' => 'VIP 1',
+                'name' => 'VIP 3',
                 'slug' => 'appartement-vip-1',
-                'description' => 'Appartement VIP 1 du Manoir, pense pour un sejour intime avec finitions premium, salon elegant et galerie propre a cet appartement.',
+                'description' => 'Appartement VIP 3 du Manoir, pense pour un sejour intime avec finitions premium, salon elegant et galerie propre a cet appartement.',
                 'max_occupants' => 2,
                 'apartment_number' => 3,
                 'base_price' => 30000,
@@ -79,9 +79,9 @@ return new class extends Migration
                 'equipments' => ['wifi', 'climatisation', 'tv', 'minibar', 'concierge'],
             ],
             [
-                'name' => 'VIP 2',
+                'name' => 'VIP 7',
                 'slug' => 'appartement-vip-2',
-                'description' => 'Appartement VIP 2 du Manoir, plus exclusif, avec ambiance feutree, confort renforce et galerie dediee.',
+                'description' => 'Appartement VIP 7 du Manoir, plus exclusif, avec ambiance feutree, confort renforce et galerie dediee.',
                 'max_occupants' => 2,
                 'apartment_number' => 7,
                 'base_price' => 40000,

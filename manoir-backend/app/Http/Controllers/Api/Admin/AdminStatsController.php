@@ -21,18 +21,9 @@ class AdminStatsController extends Controller
         $totalRevenue = Payment::where('status', 'success')->sum('amount');
 
         $today = now()->format('Y-m-d');
-        $occupiedRoomsCount = Reservation::where(function ($query) {
-            $query->whereIn('status', ['CONFIRMEE', 'SEJOUR_PAYE'])
-                ->orWhere(function ($query) {
-                    $query->where('status', 'VALIDEE_PAIEMENT_REQUIS')
-                        ->where(function ($query) {
-                            $query->whereNull('payment_deadline')
-                                ->orWhere('payment_deadline', '>', now());
-                        });
-                });
-        })
+        $occupiedRoomsCount = Reservation::whereIn('status', ['CONFIRMEE', 'SEJOUR_PAYE'])
             ->where('check_in', '<=', $today)
-            ->where('check_out', '>=', $today)
+            ->where('check_out', '>', $today)
             ->distinct('room_id')
             ->count('room_id');
 

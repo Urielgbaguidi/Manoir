@@ -40,6 +40,7 @@ Route::middleware('api.token')->group(function () {
     Route::get('/reservations/{id}/payments', [ReservationController::class, 'payments']);
     Route::post('/reservations/{id}/invoice-download', [ReservationController::class, 'markInvoiceDownloaded']);
     Route::post('/reservations/{id}/cancel', [ReservationController::class, 'cancel']);
+    Route::post('/reservations/{id}/extension', [ReservationController::class, 'requestExtension']);
 
     // Paiements
     Route::post('/reservations/{reservationId}/payments/initiate', [PaymentController::class, 'initiate']);
@@ -55,9 +56,13 @@ Route::post('/payments/{paymentId}/webhook', [PaymentController::class, 'webhook
 // Routes admin (protégées par middleware admin)
 Route::middleware(['api.token', 'admin'])->prefix('admin')->group(function () {
     Route::get('/reservations', [AdminReservationController::class, 'index']);
+    Route::get('/occupied-rooms', [AdminReservationController::class, 'occupiedRooms']);
     Route::post('/reservations/{id}/approve', [AdminReservationController::class, 'approve']);
     Route::post('/reservations/{id}/reject', [AdminReservationController::class, 'reject']);
+    Route::post('/reservations/{id}/release-room', [AdminReservationController::class, 'releaseRoom']);
     Route::post('/reservations/{id}/mark-refunded', [AdminReservationController::class, 'markRefunded']);
+    Route::post('/reservations/{id}/extension/approve', [AdminReservationController::class, 'approveExtension']);
+    Route::post('/reservations/{id}/extension/reject', [AdminReservationController::class, 'rejectExtension']);
     Route::post('/reservations/check-conflicts', [AdminReservationController::class, 'checkConflicts']);
 
     // Gestion des chambres

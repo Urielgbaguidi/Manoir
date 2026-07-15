@@ -18,7 +18,8 @@ export type ReservationStatus =
   | 'EXPIREE'
   | 'SEJOUR_PAYE'
   | 'ANNULEE'
-  | 'REMBOURSEE';
+  | 'REMBOURSEE'
+  | 'LIBEREE';
 
 export type RoomCategoryType = 'vip' | 'deux_chambres' | 'une_chambre';
 
@@ -82,15 +83,25 @@ export interface Reservation {
   stay_paid_at?: string;
   cancelled_at?: string;
   refunded_at?: string;
+  released_at?: string | null;
+  released_by_admin_id?: number | null;
+  release_notes?: string | null;
   deposit_invoice_number?: string;
   stay_invoice_number?: string;
   cancellation_document_number?: string;
   deposit_invoice_downloaded?: boolean;
   stay_invoice_downloaded?: boolean;
+  extension_status?: 'EN_ATTENTE' | 'APPROUVEE' | 'REFUSEE' | null;
+  extension_previous_check_out?: string | null;
+  extension_requested_check_out?: string | null;
+  extension_requested_at?: string | null;
+  extension_processed_at?: string | null;
+  extension_admin_notes?: string | null;
   created_at: string;
   updated_at: string;
   room?: Room;
   user?: User;
+  released_by_admin?: User;
   payments?: Payment[];
   notifications?: Notification[];
 }
@@ -300,6 +311,13 @@ class ApiClient {
     });
   }
 
+  async requestStayExtension(reservationId: string, newCheckOut: string): Promise<{ message: string; reservation: Reservation }> {
+    return this.request<{ message: string; reservation: Reservation }>(`/reservations/${reservationId}/extension`, {
+      method: 'POST',
+      body: JSON.stringify({ new_check_out: newCheckOut }),
+    });
+  }
+
   async markInvoiceDownloaded(reservationId: string, paymentType: 'deposit' | 'stay'): Promise<{ message: string; reservation: Reservation }> {
     return this.request<{ message: string; reservation: Reservation }>(`/reservations/${reservationId}/invoice-download`, {
       method: 'POST',
@@ -370,6 +388,10 @@ class ApiClient {
     return this.request<{ data: Reservation[] }>(`/admin/reservations${query ? `?${query}` : ''}`);
   }
 
+  async getOccupiedRooms(): Promise<{ data: Reservation[] }> {
+    return this.request<{ data: Reservation[] }>('/admin/occupied-rooms');
+  }
+
   async approveReservation(id: number, data: { admin_notes?: string }): Promise<{ message: string; reservation: Reservation }> {
     return this.request<{ message: string; reservation: Reservation }>(`/admin/reservations/${id}/approve`, {
       method: 'POST',
@@ -384,9 +406,30 @@ class ApiClient {
     });
   }
 
+  async approveReservationExtension(id: number, data: { admin_notes?: string }): Promise<{ message: string; reservation: Reservation }> {
+    return this.request<{ message: string; reservation: Reservation }>(`/admin/reservations/${id}/extension/approve`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async rejectReservationExtension(id: number, data: { admin_notes: string }): Promise<{ message: string; reservation: Reservation }> {
+    return this.request<{ message: string; reservation: Reservation }>(`/admin/reservations/${id}/extension/reject`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   async markReservationRefunded(id: number): Promise<{ message: string; reservation: Reservation }> {
     return this.request<{ message: string; reservation: Reservation }>(`/admin/reservations/${id}/mark-refunded`, {
       method: 'POST',
+    });
+  }
+
+  async releaseOccupiedRoom(id: number, data: { release_notes?: string }): Promise<{ message: string; reservation: Reservation }> {
+    return this.request<{ message: string; reservation: Reservation }>(`/admin/reservations/${id}/release-room`, {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   }
 

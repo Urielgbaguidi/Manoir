@@ -39,8 +39,13 @@ const toDraft = (category: RoomCategory): Draft => ({
 });
 
 const formatCurrency = (value: number) => `${value.toLocaleString('fr-FR')} F`;
-const roomLabel = (room: RoomDraft) =>
-  room.name.toLowerCase().startsWith('appartement') ? room.name : `Appartement ${room.name}`;
+const roomLabel = (room: RoomDraft) => {
+  if (room.type === 'vip' && room.apartment_number) {
+    return `Appartement VIP ${room.apartment_number}`;
+  }
+
+  return room.name.toLowerCase().startsWith('appartement') ? room.name : `Appartement ${room.name}`;
+};
 
 export default function AdminRoomsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -469,7 +474,7 @@ export default function AdminRoomsPage() {
                       </h3>
                     </div>
                     <p className="max-w-2xl text-sm leading-6 text-charcoal/60">
-                      Les photos, videos, descriptions et prix modifies ici sont ceux que le client voit apres avoir choisi VIP 1 ou VIP 2.
+                      Les photos, videos, descriptions et prix modifies ici sont ceux que le client voit apres avoir choisi VIP 3 ou VIP 7.
                     </p>
                   </div>
 

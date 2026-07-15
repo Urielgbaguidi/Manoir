@@ -31,11 +31,20 @@ class Reservation extends Model
         'stay_paid_at',
         'cancelled_at',
         'refunded_at',
+        'released_at',
+        'released_by_admin_id',
+        'release_notes',
         'deposit_invoice_number',
         'stay_invoice_number',
         'cancellation_document_number',
         'deposit_invoice_downloaded',
         'stay_invoice_downloaded',
+        'extension_status',
+        'extension_previous_check_out',
+        'extension_requested_check_out',
+        'extension_requested_at',
+        'extension_processed_at',
+        'extension_admin_notes',
     ];
 
     protected function casts(): array
@@ -49,8 +58,13 @@ class Reservation extends Model
             'stay_paid_at' => 'datetime',
             'cancelled_at' => 'datetime',
             'refunded_at' => 'datetime',
+            'released_at' => 'datetime',
             'deposit_invoice_downloaded' => 'boolean',
             'stay_invoice_downloaded' => 'boolean',
+            'extension_previous_check_out' => 'date',
+            'extension_requested_check_out' => 'date',
+            'extension_requested_at' => 'datetime',
+            'extension_processed_at' => 'datetime',
         ];
     }
 
@@ -69,6 +83,11 @@ class Reservation extends Model
         return $this->hasMany(Payment::class);
     }
 
+    public function releasedByAdmin(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'released_by_admin_id');
+    }
+
     public function notifications(): HasMany
     {
         return $this->hasMany(Notification::class);
@@ -76,9 +95,14 @@ class Reservation extends Model
 
     public function isExpired(): bool
     {
-        return $this->status === 'VALIDEE_PAIEMENT_REQUIS'
-            && $this->payment_deadline
-            && now()->greaterThan($this->payment_deadline);
+        if ($this->status !== 'VALIDEE_PAIEMENT_REQUIS') {
+            return false;
+        }
+
+        $paymentDeadlinePassed = $this->payment_deadline && now()->greaterThanOrEqualTo($this->payment_deadline);
+        $arrivalDateReached = now()->startOfDay()->greaterThanOrEqualTo($this->check_in->copy()->startOfDay());
+
+        return $paymentDeadlinePassed || $arrivalDateReached;
     }
 
     public function expireIfPaymentDeadlinePassed(): bool
@@ -94,8 +118,10 @@ class Reservation extends Model
     {
         $query = self::query()
             ->where('status', 'VALIDEE_PAIEMENT_REQUIS')
-            ->whereNotNull('payment_deadline')
-            ->where('payment_deadline', '<=', now());
+            ->where(function ($query) {
+                $query->where('payment_deadline', '<=', now())
+                    ->orWhereDate('check_in', '<=', now()->toDateString());
+            });
 
         if ($userId) {
             $query->where('user_id', $userId);
@@ -107,5 +133,16 @@ class Reservation extends Model
     public function nightsCount(): int
     {
         return max(1, $this->check_in->diffInDays($this->check_out));
+    }
+
+    public function canRequestStayExtension(): bool
+    {
+        return $this->status === 'CONFIRMEE'
+            && $this->room_id
+            && ! $this->stay_paid_at
+            && ! $this->stay_invoice_number
+            && $this->extension_status !== 'EN_ATTENTE'
+            && now()->startOfDay()->greaterThanOrEqualTo($this->check_in->copy()->addDay()->startOfDay())
+            && now()->startOfDay()->lessThan($this->check_out->copy()->startOfDay());
     }
 }

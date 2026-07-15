@@ -92,7 +92,10 @@ class AdminRoomCategoryController extends Controller
             ->orderBy('id');
 
         if ($category->type === 'vip') {
-            $query->whereIn('slug', ['appartement-vip-1', 'appartement-vip-2']);
+            $query->where(function ($query) {
+                $query->whereIn('slug', ['appartement-vip-1', 'appartement-vip-2', 'vip-3', 'vip-7'])
+                    ->orWhereIn('apartment_number', [3, 7]);
+            });
         }
 
         $category->setRelation(
