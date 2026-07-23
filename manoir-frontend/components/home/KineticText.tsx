@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { cn } from "@/lib/utils";
 
 type KineticTextProps = {
   text: string;
@@ -9,12 +10,9 @@ type KineticTextProps = {
   once?: boolean;
 };
 
-export default function KineticText({
-  text,
-  className,
-  delay = 0,
-  once = true
-}: KineticTextProps) {
+const NBSP = " ";
+
+export default function KineticText({ text, className, delay = 0, once = true }: KineticTextProps) {
   const letters = Array.from(text);
 
   return (
@@ -32,7 +30,7 @@ export default function KineticText({
           }
         }
       }}
-      className={className}
+      className="inline"
     >
       {letters.map((letter, index) => (
         <motion.span
@@ -47,9 +45,9 @@ export default function KineticText({
               transition: { duration: 0.72, ease: [0.22, 1, 0.36, 1] }
             }
           }}
-          className="inline-block"
+          className={cn("inline-block", className)}
         >
-          {letter === " " ? "\u00A0" : letter}
+          {letter === " " ? NBSP : letter}
         </motion.span>
       ))}
     </motion.span>

@@ -28,6 +28,12 @@ class ApiTokenMiddleware
             ], 401);
         }
 
+        if ($user->api_token_expires_at && $user->api_token_expires_at->isPast()) {
+            return response()->json([
+                'message' => 'Session expiree. Veuillez vous reconnecter.',
+            ], 401);
+        }
+
         Auth::setUser($user);
         $request->setUserResolver(fn () => $user);
 

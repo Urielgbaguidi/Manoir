@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useCallback, useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Calendar,
   Check,
@@ -10,43 +10,43 @@ import {
   FileText,
   Settings,
   Sparkles,
-  XCircle,
-} from 'lucide-react';
-import { ApiError, api, Reservation } from '@/lib/api';
-import { useAuth } from '@/context/AuthContext';
-import { useToast } from '@/context/ToastContext';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+  XCircle
+} from "lucide-react";
+import { ApiError, api, Reservation } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 
-type PaymentType = 'deposit' | 'stay';
-type PaymentStep = 'processing' | 'success' | 'failed';
+type PaymentType = "deposit" | "stay";
+type PaymentStep = "processing" | "success" | "failed";
 
 const categoryLabels: Record<string, string> = {
-  vip: 'Appartement VIP',
-  deux_chambres: 'Appartement 2 Chambres',
-  une_chambre: 'Appartement 1 Chambre',
+  vip: "Appartement VIP",
+  deux_chambres: "Appartement 2 Chambres",
+  une_chambre: "Appartement 1 Chambre"
 };
 
 const statusLabels: Record<string, string> = {
-  EN_ATTENTE: 'Votre demande est en cours d\'examen',
-  VALIDEE_PAIEMENT_REQUIS: 'Caution a regler',
-  CONFIRMEE: 'Reservation confirmee',
-  REFUSEE: 'Demande refusee',
-  EXPIREE: 'Delai de paiement expire',
-  SEJOUR_PAYE: 'Sejour paye',
-  ANNULEE: 'Reservation annulee',
-  REMBOURSEE: 'Remboursement effectue',
-  LIBEREE: 'Appartement libere par l\'administration',
+  EN_ATTENTE: "Votre demande est en cours d'examen",
+  VALIDEE_PAIEMENT_REQUIS: "Caution a regler",
+  CONFIRMEE: "Reservation confirmee",
+  REFUSEE: "Demande refusee",
+  EXPIREE: "Delai de paiement expire",
+  SEJOUR_PAYE: "Sejour paye",
+  ANNULEE: "Reservation annulee",
+  REMBOURSEE: "Remboursement effectue",
+  LIBEREE: "Appartement libere par l'administration"
 };
 
-const formatCurrency = (value = 0) => `${Number(value || 0).toLocaleString('fr-FR')} FCFA`;
+const formatCurrency = (value = 0) => `${Number(value || 0).toLocaleString("fr-FR")} FCFA`;
 
 const parseReservationDate = (value?: string) => {
   if (!value) return null;
 
   const datePart = value.slice(0, 10);
   if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
-    const [year, month, day] = datePart.split('-').map(Number);
+    const [year, month, day] = datePart.split("-").map(Number);
     return new Date(year, month - 1, day);
   }
 
@@ -55,16 +55,16 @@ const parseReservationDate = (value?: string) => {
 };
 
 const formatReservationDate = (value: string) =>
-  parseReservationDate(value)?.toLocaleDateString('fr-FR') || 'Date indisponible';
+  parseReservationDate(value)?.toLocaleDateString("fr-FR") || "Date indisponible";
 
 const formatReservationDateTime = (value?: string) =>
-  parseReservationDate(value)?.toLocaleString('fr-FR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }) || 'Date indisponible';
+  parseReservationDate(value)?.toLocaleString("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }) || "Date indisponible";
 
 const countNights = (checkIn: string, checkOut: string) => {
   const start = parseReservationDate(checkIn);
@@ -86,11 +86,11 @@ const diffDays = (from?: string, to?: string) => {
 
 const todayDateString = () => {
   const today = new Date();
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 };
 
 const dateInputValue = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
 const addDays = (date: Date, days: number) => {
   const nextDate = new Date(date);
@@ -105,7 +105,10 @@ const paymentCountdown = (deadline?: string, approvedAt?: string, nowMs = Date.n
   if (Number.isNaN(deadlineMs)) return null;
 
   const approvedMs = approvedAt ? new Date(approvedAt).getTime() : deadlineMs - 24 * 60 * 60 * 1000;
-  const totalMs = Math.max(1, deadlineMs - (Number.isNaN(approvedMs) ? deadlineMs - 24 * 60 * 60 * 1000 : approvedMs));
+  const totalMs = Math.max(
+    1,
+    deadlineMs - (Number.isNaN(approvedMs) ? deadlineMs - 24 * 60 * 60 * 1000 : approvedMs)
+  );
   const remainingMs = Math.max(0, deadlineMs - nowMs);
   const totalSeconds = Math.floor(remainingMs / 1000);
   const hours = Math.floor(totalSeconds / 3600);
@@ -119,7 +122,7 @@ const paymentCountdown = (deadline?: string, approvedAt?: string, nowMs = Date.n
     minutes,
     seconds,
     percent,
-    isUrgent: remainingMs > 0 && remainingMs <= 2 * 60 * 60 * 1000,
+    isUrgent: remainingMs > 0 && remainingMs <= 2 * 60 * 60 * 1000
   };
 };
 
@@ -130,14 +133,17 @@ const hasArrivalDateReached = (reservation: Reservation, nowMs = Date.now()) => 
 };
 
 const isDepositPaymentExpired = (reservation: Reservation, nowMs = Date.now()) =>
-  reservation.status === 'VALIDEE_PAIEMENT_REQUIS'
-  && (
-    Boolean(paymentCountdown(reservation.payment_deadline, reservation.approved_at, nowMs)?.expired)
-    || hasArrivalDateReached(reservation, nowMs)
-  );
+  reservation.status === "VALIDEE_PAIEMENT_REQUIS" &&
+  (Boolean(
+    paymentCountdown(reservation.payment_deadline, reservation.approved_at, nowMs)?.expired
+  ) ||
+    hasArrivalDateReached(reservation, nowMs));
 
-const effectiveReservationStatus = (reservation: Reservation, nowMs = Date.now()): Reservation['status'] =>
-  isDepositPaymentExpired(reservation, nowMs) ? 'EXPIREE' : reservation.status;
+const effectiveReservationStatus = (
+  reservation: Reservation,
+  nowMs = Date.now()
+): Reservation["status"] =>
+  isDepositPaymentExpired(reservation, nowMs) ? "EXPIREE" : reservation.status;
 
 export default function ReservationsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -145,23 +151,23 @@ export default function ReservationsPage() {
   const router = useRouter();
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
+  const [activeTab, setActiveTab] = useState<"active" | "history">("active");
   const [activeReservation, setActiveReservation] = useState<Reservation | null>(null);
-  const [activePaymentType, setActivePaymentType] = useState<PaymentType>('deposit');
-  const [paymentStep, setPaymentStep] = useState<PaymentStep>('processing');
-  const [paymentError, setPaymentError] = useState('');
-  const [processingText, setProcessingText] = useState('');
+  const [activePaymentType, setActivePaymentType] = useState<PaymentType>("deposit");
+  const [paymentStep, setPaymentStep] = useState<PaymentStep>("processing");
+  const [paymentError, setPaymentError] = useState("");
+  const [processingText, setProcessingText] = useState("");
   const [cancellingReservation, setCancellingReservation] = useState<Reservation | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [extensionReservation, setExtensionReservation] = useState<Reservation | null>(null);
-  const [extensionDate, setExtensionDate] = useState('');
+  const [extensionDate, setExtensionDate] = useState("");
   const [requestingExtension, setRequestingExtension] = useState(false);
-  const [extensionError, setExtensionError] = useState('');
+  const [extensionError, setExtensionError] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/auth/login');
+      router.push("/auth/login");
     }
   }, [user, authLoading, router]);
 
@@ -171,10 +177,10 @@ export default function ReservationsPage() {
       setReservations(data);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
-        router.push('/auth/login?message=session-expired&redirect=/espace-client');
+        router.push("/auth/login?message=session-expired&redirect=/espace-client");
         return;
       }
-      showToast('Impossible de charger vos reservations.', 'error');
+      showToast("Impossible de charger vos reservations.", "error");
     } finally {
       setLoading(false);
     }
@@ -199,48 +205,54 @@ export default function ReservationsPage() {
 
     if (room?.apartment_number) {
       const label =
-        reservation.category_type === 'vip'
+        reservation.category_type === "vip"
           ? room.name
-          : reservation.category_type === 'deux_chambres'
-            ? '2 Chambres'
-            : reservation.category_type === 'une_chambre'
-              ? '1 Chambre'
+          : reservation.category_type === "deux_chambres"
+            ? "2 Chambres"
+            : reservation.category_type === "une_chambre"
+              ? "1 Chambre"
               : room.name;
 
       return `Appartement N°${room.apartment_number} — ${label}`;
     }
 
-    return categoryLabels[reservation.category_type || ''] || room?.name || 'Appartement';
+    return categoryLabels[reservation.category_type || ""] || room?.name || "Appartement";
   };
 
   const getPaymentAmount = (reservation: Reservation, type: PaymentType) =>
-    type === 'deposit'
-      ? reservation.deposit_amount ?? reservation.total_price
-      : reservation.stay_amount ?? 0;
+    type === "deposit"
+      ? (reservation.deposit_amount ?? reservation.total_price)
+      : (reservation.stay_amount ?? 0);
 
   const cancellationPreview = (reservation: Reservation) => {
-    const depositAmount = reservation.status === 'CONFIRMEE' ? reservation.deposit_amount ?? reservation.total_price : 0;
+    const depositAmount =
+      reservation.status === "CONFIRMEE"
+        ? (reservation.deposit_amount ?? reservation.total_price)
+        : 0;
     const dailyRate = reservation.deposit_daily_rate ?? 0;
     const cancellationDate = todayDateString();
     const consumedDays = diffDays(reservation.created_at, cancellationDate);
 
-    if (reservation.status !== 'CONFIRMEE') {
+    if (reservation.status !== "CONFIRMEE") {
       return {
         depositAmount: 0,
         consumedDays: 0,
         retainedAmount: 0,
         refundAmount: 0,
-        cancellationDate,
+        cancellationDate
       };
     }
 
-    if (diffDays(reservation.check_in, cancellationDate) > 0 || cancellationDate >= reservation.check_in.slice(0, 10)) {
+    if (
+      diffDays(reservation.check_in, cancellationDate) > 0 ||
+      cancellationDate >= reservation.check_in.slice(0, 10)
+    ) {
       return {
         depositAmount,
         consumedDays,
         retainedAmount: depositAmount,
         refundAmount: 0,
-        cancellationDate,
+        cancellationDate
       };
     }
 
@@ -251,12 +263,16 @@ export default function ReservationsPage() {
       consumedDays,
       retainedAmount,
       refundAmount: Math.max(0, depositAmount - retainedAmount),
-      cancellationDate,
+      cancellationDate
     };
   };
 
   const canCancelReservation = (reservation: Reservation) => {
-    const statusAllowsCancellation = ['EN_ATTENTE', 'VALIDEE_PAIEMENT_REQUIS', 'CONFIRMEE'].includes(effectiveReservationStatus(reservation, nowMs));
+    const statusAllowsCancellation = [
+      "EN_ATTENTE",
+      "VALIDEE_PAIEMENT_REQUIS",
+      "CONFIRMEE"
+    ].includes(effectiveReservationStatus(reservation, nowMs));
     const arrivalDate = reservation.check_in.slice(0, 10);
 
     return statusAllowsCancellation && todayDateString() < arrivalDate;
@@ -264,11 +280,15 @@ export default function ReservationsPage() {
 
   const extensionMinimumDate = (reservation: Reservation) => {
     const checkoutDate = parseReservationDate(reservation.check_out);
-    return checkoutDate ? dateInputValue(addDays(checkoutDate, 1)) : '';
+    return checkoutDate ? dateInputValue(addDays(checkoutDate, 1)) : "";
   };
 
   const canRequestStayExtension = (reservation: Reservation) => {
-    if (reservation.status !== 'CONFIRMEE' || hasStayInvoice(reservation) || reservation.extension_status === 'EN_ATTENTE') {
+    if (
+      reservation.status !== "CONFIRMEE" ||
+      hasStayInvoice(reservation) ||
+      reservation.extension_status === "EN_ATTENTE"
+    ) {
       return false;
     }
 
@@ -286,14 +306,19 @@ export default function ReservationsPage() {
 
   const extensionPreview = (reservation: Reservation, nextCheckOut = extensionDate) => {
     const currentNights = countNights(reservation.check_in, reservation.check_out);
-    const newNights = nextCheckOut ? countNights(reservation.check_in, nextCheckOut) : currentNights;
-    const pricePerNight = Number(reservation.room?.base_price || (currentNights ? (reservation.stay_amount || 0) / currentNights : 0));
+    const newNights = nextCheckOut
+      ? countNights(reservation.check_in, nextCheckOut)
+      : currentNights;
+    const pricePerNight = Number(
+      reservation.room?.base_price ||
+        (currentNights ? (reservation.stay_amount || 0) / currentNights : 0)
+    );
 
     return {
       currentNights,
       newNights,
       additionalNights: Math.max(0, newNights - currentNights),
-      newStayAmount: Math.max(0, newNights * pricePerNight),
+      newStayAmount: Math.max(0, newNights * pricePerNight)
     };
   };
 
@@ -301,31 +326,36 @@ export default function ReservationsPage() {
     const minimumDate = extensionMinimumDate(reservation);
     setExtensionReservation(reservation);
     setExtensionDate(minimumDate);
-    setExtensionError('');
+    setExtensionError("");
   };
 
   const handleSubmitExtension = async () => {
     if (!extensionReservation) return;
 
     if (!extensionDate || extensionDate <= extensionReservation.check_out.slice(0, 10)) {
-      setExtensionError('Choisissez une nouvelle date de depart apres la date actuelle.');
+      setExtensionError("Choisissez une nouvelle date de depart apres la date actuelle.");
       return;
     }
 
     setRequestingExtension(true);
-    setExtensionError('');
+    setExtensionError("");
 
     try {
-      const response = await api.requestStayExtension(extensionReservation.id.toString(), extensionDate);
+      const response = await api.requestStayExtension(
+        extensionReservation.id.toString(),
+        extensionDate
+      );
       setReservations((currentReservations) =>
         currentReservations.map((reservation) =>
           reservation.id === response.reservation.id ? response.reservation : reservation
         )
       );
-      showToast('Votre demande de prolongation a ete envoyee a l\'administrateur.', 'success');
+      showToast("Votre demande de prolongation a ete envoyee a l'administrateur.", "success");
       setExtensionReservation(null);
     } catch (error) {
-      setExtensionError(error instanceof Error ? error.message : 'La demande de prolongation a echoue.');
+      setExtensionError(
+        error instanceof Error ? error.message : "La demande de prolongation a echoue."
+      );
     } finally {
       setRequestingExtension(false);
     }
@@ -342,41 +372,57 @@ export default function ReservationsPage() {
           reservation.id === response.reservation.id ? response.reservation : reservation
         )
       );
-      showToast('Votre reservation a ete annulee.', 'success');
+      showToast("Votre reservation a ete annulee.", "success");
       setCancellingReservation(null);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "L'annulation a echoue.", 'error');
+      showToast(error instanceof Error ? error.message : "L'annulation a echoue.", "error");
     } finally {
       setCancelling(false);
     }
   };
 
   const successfulPayment = (reservation: Reservation, type: PaymentType) =>
-    reservation.payments?.find((payment) => payment.payment_type === type && payment.status === 'success');
+    reservation.payments?.find(
+      (payment) => payment.payment_type === type && payment.status === "success"
+    );
 
   const hasDepositInvoice = (reservation: Reservation) =>
-    Boolean(reservation.deposit_invoice_number || successfulPayment(reservation, 'deposit')?.invoice_number);
+    Boolean(
+      reservation.deposit_invoice_number ||
+      successfulPayment(reservation, "deposit")?.invoice_number
+    );
 
   const hasStayInvoice = (reservation: Reservation) =>
-    Boolean(reservation.stay_invoice_number || successfulPayment(reservation, 'stay')?.invoice_number);
+    Boolean(
+      reservation.stay_invoice_number || successfulPayment(reservation, "stay")?.invoice_number
+    );
 
   const invoiceNumber = (reservation: Reservation, type: PaymentType) => {
-    const year = parseReservationDate(reservation.created_at)?.getFullYear() || new Date().getFullYear();
-    const sequence = reservation.id.toString().padStart(5, '0');
+    const year =
+      parseReservationDate(reservation.created_at)?.getFullYear() || new Date().getFullYear();
+    const sequence = reservation.id.toString().padStart(5, "0");
 
-    if (type === 'stay') {
-      return reservation.stay_invoice_number || successfulPayment(reservation, 'stay')?.invoice_number || `FAC-SEJ-${year}-${sequence}`;
+    if (type === "stay") {
+      return (
+        reservation.stay_invoice_number ||
+        successfulPayment(reservation, "stay")?.invoice_number ||
+        `FAC-SEJ-${year}-${sequence}`
+      );
     }
 
-    return reservation.deposit_invoice_number || successfulPayment(reservation, 'deposit')?.invoice_number || `FAC-${year}-${sequence}`;
+    return (
+      reservation.deposit_invoice_number ||
+      successfulPayment(reservation, "deposit")?.invoice_number ||
+      `FAC-${year}-${sequence}`
+    );
   };
 
   const svgEscape = (value: string) =>
     value
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
 
   const fetchAssetDataUrl = async (src: string) => {
     const response = await fetch(src);
@@ -399,7 +445,7 @@ export default function ReservationsPage() {
     });
 
   const dataUrlToBytes = (dataUrl: string) => {
-    const base64 = dataUrl.split(',')[1] || '';
+    const base64 = dataUrl.split(",")[1] || "";
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
 
@@ -425,10 +471,10 @@ export default function ReservationsPage() {
 
     const addText = (text: string) => addBytes(encoder.encode(text));
 
-    const addObject = (body: string | Uint8Array, before = '', after = '') => {
+    const addObject = (body: string | Uint8Array, before = "", after = "") => {
       offsets.push(size);
       addText(`${offsets.length} 0 obj\n${before}`);
-      if (typeof body === 'string') {
+      if (typeof body === "string") {
         addText(body);
       } else {
         addBytes(body);
@@ -436,42 +482,58 @@ export default function ReservationsPage() {
       addText(`${after}\nendobj\n`);
     };
 
-    addText('%PDF-1.4\n');
-    addObject('<< /Type /Catalog /Pages 2 0 R >>\n');
-    addObject('<< /Type /Pages /Kids [3 0 R] /Count 1 >>\n');
-    addObject('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im1 5 0 R >> >> /Contents 4 0 R >>\n');
-    addObject('q 595 0 0 842 0 0 cm /Im1 Do Q\n', '<< /Length 33 >>\nstream\n', 'endstream');
-    addObject(jpegBytes, `<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`, '\nendstream');
+    addText("%PDF-1.4\n");
+    addObject("<< /Type /Catalog /Pages 2 0 R >>\n");
+    addObject("<< /Type /Pages /Kids [3 0 R] /Count 1 >>\n");
+    addObject(
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im1 5 0 R >> >> /Contents 4 0 R >>\n"
+    );
+    addObject("q 595 0 0 842 0 0 cm /Im1 Do Q\n", "<< /Length 33 >>\nstream\n", "endstream");
+    addObject(
+      jpegBytes,
+      `<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`,
+      "\nendstream"
+    );
 
     const xrefOffset = size;
     addText(`xref\n0 ${offsets.length + 1}\n0000000000 65535 f \n`);
-    offsets.forEach((offset) => addText(`${offset.toString().padStart(10, '0')} 00000 n \n`));
-    addText(`trailer\n<< /Size ${offsets.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+    offsets.forEach((offset) => addText(`${offset.toString().padStart(10, "0")} 00000 n \n`));
+    addText(
+      `trailer\n<< /Size ${offsets.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`
+    );
 
-    return new Blob(parts, { type: 'application/pdf' });
+    return new Blob(parts, { type: "application/pdf" });
   };
 
   const buildInvoiceSvg = (reservation: Reservation, type: PaymentType, logoDataUrl: string) => {
-    const isStay = type === 'stay';
-    const accent = '#b45309';
-    const footerEnd = '#c2410c';
-    const headerStart = '#fff7ed';
-    const headerEnd = '#ffedd5';
-    const title = isStay ? 'Facture Séjour' : 'Facture Caution';
+    const isStay = type === "stay";
+    const accent = "#b45309";
+    const footerEnd = "#c2410c";
+    const headerStart = "#fff7ed";
+    const headerEnd = "#ffedd5";
+    const title = isStay ? "Facture Séjour" : "Facture Caution";
     const amount = getPaymentAmount(reservation, type);
     const nights = countNights(reservation.check_in, reservation.check_out);
-    const unitPrice = isStay ? (nights > 0 ? amount / nights : 0) : reservation.deposit_daily_rate ?? 0;
+    const unitPrice = isStay
+      ? nights > 0
+        ? amount / nights
+        : 0
+      : (reservation.deposit_daily_rate ?? 0);
     const quantity = isStay
-      ? `${nights} nuit${nights > 1 ? 's' : ''}`
+      ? `${nights} nuit${nights > 1 ? "s" : ""}`
       : `${unitPrice > 0 ? Math.round(amount / unitPrice) : 0} jour(s)`;
     const client = reservation.user || user;
-    const documentDate = formatReservationDateTime(isStay ? reservation.stay_paid_at || new Date().toISOString() : reservation.paid_at || new Date().toISOString());
-    const description = isStay ? 'Frais de séjour' : 'Caution de réservation';
+    const documentDate = formatReservationDateTime(
+      isStay
+        ? reservation.stay_paid_at || new Date().toISOString()
+        : reservation.paid_at || new Date().toISOString()
+    );
+    const description = isStay ? "Frais de séjour" : "Caution de réservation";
     const titleText = svgEscape(title);
     const numberText = svgEscape(invoiceNumber(reservation, type));
-    const clientName = svgEscape(client?.name || 'Client');
-    const clientPhone = svgEscape(client?.phone || 'Non renseigné');
-    const clientEmail = svgEscape(client?.email || 'Non renseigné');
+    const clientName = svgEscape(client?.name || "Client");
+    const clientPhone = svgEscape(client?.phone || "Non renseigné");
+    const clientEmail = svgEscape(client?.email || "Non renseigné");
     const apartment = svgEscape(getReservationTitle(reservation));
     const arrival = svgEscape(formatReservationDate(reservation.check_in));
     const departure = svgEscape(formatReservationDate(reservation.check_out));
@@ -482,7 +544,7 @@ export default function ReservationsPage() {
       ? `
         <text x="660" y="532" font-family="Arial, sans-serif" font-size="22" fill="#374151">Arrivée : ${arrival}</text>
         <text x="660" y="570" font-family="Arial, sans-serif" font-size="22" fill="#374151">Départ : ${departure}</text>
-        <text x="660" y="608" font-family="Arial, sans-serif" font-size="22" fill="#374151">Durée : ${nights} nuit${nights > 1 ? 's' : ''}</text>
+        <text x="660" y="608" font-family="Arial, sans-serif" font-size="22" fill="#374151">Durée : ${nights} nuit${nights > 1 ? "s" : ""}</text>
         <text x="660" y="646" font-family="Arial, sans-serif" font-size="22" fill="#374151">Date de demande : ${requestDate}</text>
       `
       : `
@@ -509,7 +571,7 @@ export default function ReservationsPage() {
         <rect x="0" y="0" width="1240" height="310" fill="url(#headerGradient)" />
         <rect x="0" y="300" width="1240" height="10" fill="${accent}" />
 
-        ${logoDataUrl ? `<image href="${logoDataUrl}" x="70" y="72" width="150" height="150" preserveAspectRatio="xMidYMid meet" />` : ''}
+        ${logoDataUrl ? `<image href="${logoDataUrl}" x="70" y="72" width="150" height="150" preserveAspectRatio="xMidYMid meet" />` : ""}
         <text x="250" y="95" font-family="Georgia, serif" font-size="56" font-weight="700" fill="#111827">LE MANOIR</text>
         <text x="250" y="135" font-family="Arial, sans-serif" font-size="22" font-style="italic" fill="#4b5563">Ce lieu a été façonné par des mains, porté par des cœurs...</text>
         <text x="250" y="182" font-family="Arial, sans-serif" font-size="20" fill="#374151">Cotonou, Bénin</text>
@@ -538,7 +600,7 @@ export default function ReservationsPage() {
         <rect x="80" y="780" width="1080" height="5" fill="${accent}" />
         <rect x="80" y="835" width="1080" height="70" fill="#f9fafb" />
         <text x="115" y="879" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#374151">Description</text>
-        <text x="585" y="879" font-family="Arial, sans-serif" font-size="20" font-weight="700" text-anchor="middle" fill="#374151">${isStay ? 'Nombre de nuits' : 'Nombre de jours'}</text>
+        <text x="585" y="879" font-family="Arial, sans-serif" font-size="20" font-weight="700" text-anchor="middle" fill="#374151">${isStay ? "Nombre de nuits" : "Nombre de jours"}</text>
         <text x="815" y="879" font-family="Arial, sans-serif" font-size="20" font-weight="700" text-anchor="end" fill="#374151">Prix unitaire</text>
         <text x="1125" y="879" font-family="Arial, sans-serif" font-size="20" font-weight="700" text-anchor="end" fill="#374151">Montant</text>
         <line x1="80" y1="905" x2="1160" y2="905" stroke="#e5e7eb" stroke-width="2" />
@@ -566,25 +628,25 @@ export default function ReservationsPage() {
   const buildInvoicePdf = async (reservation: Reservation, type: PaymentType) => {
     const width = 1240;
     const height = 1754;
-    const logoDataUrl = await fetchAssetDataUrl('/assets/logo.jpg').catch(() => '');
+    const logoDataUrl = await fetchAssetDataUrl("/assets/logo.jpg").catch(() => "");
     const svg = buildInvoiceSvg(reservation, type, logoDataUrl);
-    const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+    const svgUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
 
     try {
       const image = await loadImage(svgUrl);
-      const canvas = document.createElement('canvas');
+      const canvas = document.createElement("canvas");
       canvas.width = width;
       canvas.height = height;
-      const context = canvas.getContext('2d');
+      const context = canvas.getContext("2d");
 
       if (!context) {
-        throw new Error('Impossible de generer le PDF.');
+        throw new Error("Impossible de generer le PDF.");
       }
 
-      context.fillStyle = '#ffffff';
+      context.fillStyle = "#ffffff";
       context.fillRect(0, 0, width, height);
       context.drawImage(image, 0, 0, width, height);
-      const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+      const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.95);
 
       return createPdfFromJpeg(dataUrlToBytes(jpegDataUrl), width, height);
     } finally {
@@ -595,9 +657,10 @@ export default function ReservationsPage() {
   const handleDownloadInvoice = async (reservation: Reservation, type: PaymentType) => {
     try {
       const number = invoiceNumber(reservation, type);
-      const fileName = type === 'stay' ? `Facture-Sejour-${number}.pdf` : `Facture-Caution-${number}.pdf`;
+      const fileName =
+        type === "stay" ? `Facture-Sejour-${number}.pdf` : `Facture-Caution-${number}.pdf`;
       const url = URL.createObjectURL(await buildInvoicePdf(reservation, type));
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = url;
       link.download = fileName;
       document.body.appendChild(link);
@@ -612,132 +675,149 @@ export default function ReservationsPage() {
         )
       );
       showToast(
-        type === 'stay'
-          ? 'Votre facture de séjour a été téléchargée avec succès !'
-          : 'Votre facture a été téléchargée avec succès !',
-        'success'
+        type === "stay"
+          ? "Votre facture de séjour a été téléchargée avec succès !"
+          : "Votre facture a été téléchargée avec succès !",
+        "success"
       );
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Impossible de télécharger la facture.', 'error');
+      showToast(
+        error instanceof Error ? error.message : "Impossible de télécharger la facture.",
+        "error"
+      );
     }
   };
 
   const handleOpenPayment = async (reservation: Reservation, type: PaymentType) => {
-    if (type === 'deposit' && isDepositPaymentExpired(reservation, Date.now())) {
+    if (type === "deposit" && isDepositPaymentExpired(reservation, Date.now())) {
       setReservations((currentReservations) =>
         currentReservations.map((currentReservation) =>
           currentReservation.id === reservation.id
-            ? { ...currentReservation, status: 'EXPIREE' }
+            ? { ...currentReservation, status: "EXPIREE" }
             : currentReservation
         )
       );
-      showToast("Le delai de paiement est expire. L'appartement est de nouveau disponible.", 'error');
+      showToast(
+        "Le delai de paiement est expire. L'appartement est de nouveau disponible.",
+        "error"
+      );
       loadReservations();
       return;
     }
 
     setActiveReservation(reservation);
     setActivePaymentType(type);
-    setPaymentError('');
-    setPaymentStep('processing');
+    setPaymentError("");
+    setPaymentStep("processing");
 
     try {
-      setProcessingText('Validation du paiement...');
+      setProcessingText("Validation du paiement...");
       const initResponse = await api.initiatePayment(reservation.id.toString(), {
-        payment_method: 'mobile_money',
-        provider: 'fedapay',
+        payment_method: "mobile_money",
+        provider: "fedapay",
         payment_type: type,
-        phone_number: user?.phone || '+2290100000000',
+        phone_number: user?.phone || "+2290100000000"
       });
 
-      setProcessingText('Confirmation du paiement...');
-      const webhookUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/payments/${initResponse.payment.id}/webhook`;
+      setProcessingText("Confirmation du paiement...");
+      const webhookUrl = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/payments/${initResponse.payment.id}/webhook`;
       const response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          status: 'success',
+          status: "success",
           transaction_id: initResponse.payment.transaction_id,
-          provider_reference: `REF_${Math.floor(Math.random() * 1000000)}`,
-        }),
+          provider_reference: `REF_${Math.floor(Math.random() * 1000000)}`
+        })
       });
 
       if (!response.ok) {
-        throw new Error('La validation du paiement a echoue.');
+        throw new Error("La validation du paiement a echoue.");
       }
 
       await new Promise((resolve) => setTimeout(resolve, 350));
-      setPaymentStep('success');
+      setPaymentStep("success");
       setReservations((currentReservations) =>
         currentReservations.map((currentReservation) =>
           currentReservation.id === reservation.id
             ? {
                 ...currentReservation,
-                status: type === 'stay' ? 'SEJOUR_PAYE' : 'CONFIRMEE',
-                ...(type === 'stay' ? { stay_paid_at: new Date().toISOString() } : { paid_at: new Date().toISOString() }),
+                status: type === "stay" ? "SEJOUR_PAYE" : "CONFIRMEE",
+                ...(type === "stay"
+                  ? { stay_paid_at: new Date().toISOString() }
+                  : { paid_at: new Date().toISOString() })
               }
             : currentReservation
         )
       );
-      showToast(type === 'deposit' ? 'Caution payee. Reservation confirmee.' : 'Sejour paye avec succes.', 'success');
-      if (type === 'stay') {
-        setActiveTab('history');
+      showToast(
+        type === "deposit" ? "Caution payee. Reservation confirmee." : "Sejour paye avec succes.",
+        "success"
+      );
+      if (type === "stay") {
+        setActiveTab("history");
       }
       loadReservations();
     } catch (err) {
-      setPaymentStep('failed');
-      setPaymentError(err instanceof Error ? err.message : 'Le paiement a echoue.');
+      setPaymentStep("failed");
+      setPaymentError(err instanceof Error ? err.message : "Le paiement a echoue.");
     }
   };
 
   const activeReservations = reservations.filter((reservation) =>
-    ['EN_ATTENTE', 'VALIDEE_PAIEMENT_REQUIS', 'CONFIRMEE'].includes(effectiveReservationStatus(reservation, nowMs))
+    ["EN_ATTENTE", "VALIDEE_PAIEMENT_REQUIS", "CONFIRMEE"].includes(
+      effectiveReservationStatus(reservation, nowMs)
+    )
   );
   const historyReservations = reservations.filter((reservation) =>
-    ['REFUSEE', 'EXPIREE', 'SEJOUR_PAYE', 'ANNULEE', 'REMBOURSEE', 'LIBEREE'].includes(effectiveReservationStatus(reservation, nowMs))
+    ["REFUSEE", "EXPIREE", "SEJOUR_PAYE", "ANNULEE", "REMBOURSEE", "LIBEREE"].includes(
+      effectiveReservationStatus(reservation, nowMs)
+    )
   );
-  const visibleReservations = activeTab === 'active' ? activeReservations : historyReservations;
+  const visibleReservations = activeTab === "active" ? activeReservations : historyReservations;
 
   const renderTimeline = (reservation: Reservation) => {
     const steps = [
-      { key: 'submitted', label: 'Demande' },
-      { key: 'approved', label: 'Validation' },
-      { key: 'deposit', label: 'Caution' },
-      { key: 'stay', label: 'Sejour' },
+      { key: "submitted", label: "Demande" },
+      { key: "approved", label: "Validation" },
+      { key: "deposit", label: "Caution" },
+      { key: "stay", label: "Sejour" }
     ];
 
     let completedStepIndex = 0;
     let nextStepIndex = 1;
-    let errorLabel = '';
+    let errorLabel = "";
 
     const status = effectiveReservationStatus(reservation, nowMs);
 
-    if (status === 'VALIDEE_PAIEMENT_REQUIS') {
+    if (status === "VALIDEE_PAIEMENT_REQUIS") {
       completedStepIndex = 1;
       nextStepIndex = 2;
     }
-    if (status === 'CONFIRMEE') {
+    if (status === "CONFIRMEE") {
       completedStepIndex = 2;
       nextStepIndex = 3;
     }
-    if (status === 'SEJOUR_PAYE') {
+    if (status === "SEJOUR_PAYE") {
       completedStepIndex = 3;
       nextStepIndex = 3;
     }
-    if (status === 'REFUSEE') errorLabel = 'Demande refusee';
-    if (status === 'EXPIREE') errorLabel = 'Delai expire';
-    if (status === 'ANNULEE') errorLabel = 'Reservation annulee';
-    if (status === 'REMBOURSEE') errorLabel = 'Remboursement effectue';
-    if (status === 'LIBEREE') errorLabel = 'Appartement libere';
+    if (status === "REFUSEE") errorLabel = "Demande refusee";
+    if (status === "EXPIREE") errorLabel = "Delai expire";
+    if (status === "ANNULEE") errorLabel = "Reservation annulee";
+    if (status === "REMBOURSEE") errorLabel = "Remboursement effectue";
+    if (status === "LIBEREE") errorLabel = "Appartement libere";
 
     if (errorLabel) {
       return (
-        <div className="rounded-2xl border border-terracotta/25 bg-terracotta/10 p-4 text-xs text-terracotta">
+        <div className="rounded-2xl border border-terracotta/40 bg-terracotta/15 p-4 text-xs text-terracotta-light">
           <div className="flex items-center gap-3">
             <XCircle className="h-5 w-5 flex-shrink-0" />
             <div>
               <p className="font-bold uppercase tracking-wider">{errorLabel}</p>
-              <p className="mt-0.5 text-[10px] text-bark/60">Vous pouvez faire une nouvelle demande depuis le catalogue.</p>
+              <p className="mt-0.5 text-[10px] text-cream/60">
+                Vous pouvez faire une nouvelle demande depuis le catalogue.
+              </p>
             </div>
           </div>
         </div>
@@ -746,9 +826,9 @@ export default function ReservationsPage() {
 
     return (
       <div className="relative flex w-full items-center justify-between pt-5">
-        <div className="absolute left-0 right-0 top-8 z-0 h-0.5 bg-bark/10" />
+        <div className="absolute left-0 right-0 top-8 z-0 h-0.5 bg-white/10" />
         <div
-          className="absolute left-0 top-8 z-0 h-0.5 bg-bark transition-all duration-700"
+          className="absolute left-0 top-8 z-0 h-0.5 bg-gradient-to-r from-gold-light to-gold transition-all duration-700"
           style={{ width: `${(completedStepIndex / (steps.length - 1)) * 100}%` }}
         />
         {steps.map((step, index) => {
@@ -757,14 +837,24 @@ export default function ReservationsPage() {
 
           return (
             <div key={step.key} className="relative z-10 flex flex-col items-center">
-              <div className={`flex h-6 w-6 items-center justify-center rounded-full border-2 ${
-                isDone ? 'border-bark bg-bark text-cream' :
-                isActive ? 'border-bark bg-cream text-bark' :
-                'border-bark/20 bg-cream-dark text-bark/30'
-              }`}>
-                {isDone ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : <span className="text-[9px] font-bold">{index + 1}</span>}
+              <div
+                className={`flex h-6 w-6 items-center justify-center rounded-full border-2 ${
+                  isDone
+                    ? "border-gold bg-gradient-to-br from-gold-light to-gold text-night"
+                    : isActive
+                      ? "border-gold bg-white/5 text-gold-light"
+                      : "border-gold/20 bg-white/5 text-cream/30"
+                }`}
+              >
+                {isDone ? (
+                  <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                ) : (
+                  <span className="text-[9px] font-bold">{index + 1}</span>
+                )}
               </div>
-              <span className={`mt-2 hidden text-[9px] uppercase tracking-wider sm:block ${isDone || isActive ? 'font-bold text-bark' : 'text-bark/40'}`}>
+              <span
+                className={`mt-2 hidden text-[9px] uppercase tracking-wider sm:block ${isDone || isActive ? "font-bold text-cream" : "text-cream/40"}`}
+              >
                 {step.label}
               </span>
             </div>
@@ -776,35 +866,43 @@ export default function ReservationsPage() {
 
   if (authLoading || loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-cream">
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-bark border-t-transparent" />
+      <div className="flex min-h-screen items-center justify-center bg-night">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-gold border-t-transparent" />
       </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-cream px-6 py-28 text-charcoal md:px-10 grain-layer">
+    <main className="relative min-h-screen px-6 py-32 text-cream md:px-10">
       <div className="mx-auto max-w-7xl">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="mb-10">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className="mb-10"
+        >
           <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
             <div className="space-y-4">
-              <div className="inline-flex items-center gap-2 rounded-full border border-bark/10 bg-bark/5 px-4 py-2 backdrop-blur-md">
-                <Sparkles className="h-4 w-4 text-bark" />
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-bark">Espace Client</span>
+              <div className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-white/5 px-4 py-2 backdrop-blur-md">
+                <Sparkles className="h-4 w-4 text-gold-light" />
+                <span className="eyebrow text-[10px] tracking-widest text-cream/85">
+                  Espace Client
+                </span>
               </div>
               <div>
-                <h1 className="mb-4 font-display text-4xl font-bold uppercase tracking-tight text-bark md:text-6xl">
-                  Mes Reservations
+                <h1 className="mb-4 font-display text-4xl font-semibold uppercase tracking-tight text-cream md:text-6xl">
+                  Mes <span className="text-gradient-gold">Reservations</span>
                 </h1>
-                <p className="max-w-2xl text-lg text-bark/60">
-                  Suivez vos demandes, payez votre caution ou votre sejour, et retrouvez vos documents.
+                <p className="max-w-2xl text-lg text-cream/60">
+                  Suivez vos demandes, payez votre caution ou votre sejour, et retrouvez vos
+                  documents.
                 </p>
               </div>
             </div>
 
             <Link
               href="/espace-client/profil"
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-bark/20 bg-cream-dark/60 px-5 py-3 text-[10px] font-black uppercase tracking-[0.22em] text-bark transition hover:border-bark hover:bg-bark hover:text-cream md:mt-1"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-gold/20 bg-white/5 px-5 py-3 text-[10px] font-black uppercase tracking-[0.22em] text-cream transition hover:border-gold/40 hover:bg-white/10 hover:text-gold-light md:mt-1"
             >
               <Settings size={14} />
               Gerer mon profil
@@ -812,23 +910,50 @@ export default function ReservationsPage() {
           </div>
         </motion.div>
 
-        <div className="mb-10 flex gap-4 border-b border-bark/10 pb-4 text-sm font-black uppercase tracking-widest">
-          <button onClick={() => setActiveTab('active')} className={`relative pb-4 transition-colors ${activeTab === 'active' ? 'text-bark' : 'text-bark/40 hover:text-bark'}`}>
+        <div className="mb-10 flex gap-4 border-b border-gold/15 pb-4 text-sm font-black uppercase tracking-widest">
+          <button
+            onClick={() => setActiveTab("active")}
+            className={`relative pb-4 transition-colors ${activeTab === "active" ? "text-cream" : "text-cream/45 hover:text-gold-light"}`}
+          >
             En cours ({activeReservations.length})
-            {activeTab === 'active' && <motion.div layoutId="tab-underline" className="absolute bottom-[-1px] left-0 right-0 h-0.5 bg-bark" />}
+            {activeTab === "active" && (
+              <motion.div
+                layoutId="tab-underline"
+                className="absolute bottom-[-1px] left-0 right-0 h-0.5 bg-gradient-to-r from-gold-light to-gold"
+              />
+            )}
           </button>
-          <button onClick={() => setActiveTab('history')} className={`relative pb-4 transition-colors ${activeTab === 'history' ? 'text-bark' : 'text-bark/40 hover:text-bark'}`}>
+          <button
+            onClick={() => setActiveTab("history")}
+            className={`relative pb-4 transition-colors ${activeTab === "history" ? "text-cream" : "text-cream/45 hover:text-gold-light"}`}
+          >
             Historique ({historyReservations.length})
-            {activeTab === 'history' && <motion.div layoutId="tab-underline" className="absolute bottom-[-1px] left-0 right-0 h-0.5 bg-bark" />}
+            {activeTab === "history" && (
+              <motion.div
+                layoutId="tab-underline"
+                className="absolute bottom-[-1px] left-0 right-0 h-0.5 bg-gradient-to-r from-gold-light to-gold"
+              />
+            )}
           </button>
         </div>
 
         {visibleReservations.length === 0 ? (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-3xl border border-bark/10 bg-cream-dark/50 py-20 text-center backdrop-blur-md">
-            <Calendar className="mx-auto mb-6 h-16 w-16 text-bark/20" />
-            <h3 className="mb-2 font-display text-2xl font-bold uppercase text-bark">Aucune reservation</h3>
-            <p className="mx-auto mb-8 max-w-sm text-bark/50">Il n'y a aucune reservation dans cette section pour le moment.</p>
-            <Link href="/rooms" className="inline-flex items-center gap-2 border border-bark px-6 py-4 text-xs font-black uppercase tracking-[0.28em] transition hover:bg-bark hover:text-cream">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="glass-dark glass-edge rounded-3xl py-20 text-center"
+          >
+            <Calendar className="mx-auto mb-6 h-16 w-16 text-cream/30" />
+            <h3 className="mb-2 font-display text-2xl font-bold uppercase text-cream">
+              Aucune reservation
+            </h3>
+            <p className="mx-auto mb-8 max-w-sm text-cream/50">
+              Il n'y a aucune reservation dans cette section pour le moment.
+            </p>
+            <Link
+              href="/rooms"
+              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-gold-light to-gold px-8 py-4 text-xs font-bold uppercase tracking-[0.25em] text-night transition hover:brightness-105"
+            >
               Voir les appartements
             </Link>
           </motion.div>
@@ -840,114 +965,147 @@ export default function ReservationsPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05, duration: 0.5 }}
-                className="space-y-8 rounded-3xl border border-bark/10 bg-cream-dark/30 p-8 backdrop-blur-md transition-all duration-300 hover:border-bark/20"
+                className="glass-warm glass-edge space-y-8 rounded-3xl p-8 transition-all duration-300"
               >
                 <div className="flex flex-col justify-between gap-8 lg:flex-row lg:items-start">
                   <div className="flex-1 space-y-6">
                     <div className="flex flex-wrap items-center gap-3">
-                      <h3 className="font-display text-2xl font-bold uppercase tracking-wide text-bark">
+                      <h3 className="font-display text-2xl font-bold uppercase tracking-wide text-cream">
                         {getReservationTitle(reservation)}
                       </h3>
-                      <span className="rounded-full border border-bark/10 bg-bark/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-bark/60">
-                        {statusLabels[effectiveReservationStatus(reservation, nowMs)] || effectiveReservationStatus(reservation, nowMs)}
+                      <span className="rounded-full border border-gold/20 bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-cream/70">
+                        {statusLabels[effectiveReservationStatus(reservation, nowMs)] ||
+                          effectiveReservationStatus(reservation, nowMs)}
                       </span>
                     </div>
 
-                    <div className="grid gap-6 border-t border-bark/5 pt-4 sm:grid-cols-2">
+                    <div className="grid gap-6 border-t border-gold/10 pt-4 sm:grid-cols-2">
                       <div className="flex items-center gap-4">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-bark/10 bg-bark/5">
-                          <Calendar className="h-5 w-5 text-bark/70" />
+                        <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-gold/15 bg-white/5">
+                          <Calendar className="h-5 w-5 text-gold/80" />
                         </div>
                         <div>
-                          <p className="text-[10px] uppercase tracking-widest text-bark/40">Arrivee</p>
-                          <p className="font-semibold text-bark">{formatReservationDate(reservation.check_in)}</p>
+                          <p className="text-[10px] uppercase tracking-widest text-cream/45">
+                            Arrivee
+                          </p>
+                          <p className="font-semibold text-cream">
+                            {formatReservationDate(reservation.check_in)}
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-bark/10 bg-bark/5">
-                          <Calendar className="h-5 w-5 text-bark/70" />
+                        <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-gold/15 bg-white/5">
+                          <Calendar className="h-5 w-5 text-gold/80" />
                         </div>
                         <div>
-                          <p className="text-[10px] uppercase tracking-widest text-bark/40">Depart</p>
-                          <p className="font-semibold text-bark">{formatReservationDate(reservation.check_out)}</p>
+                          <p className="text-[10px] uppercase tracking-widest text-cream/45">
+                            Depart
+                          </p>
+                          <p className="font-semibold text-cream">
+                            {formatReservationDate(reservation.check_out)}
+                          </p>
                         </div>
                       </div>
                     </div>
 
                     <div className="grid gap-4 sm:grid-cols-3">
-                      <div className="rounded-2xl border border-bark/5 bg-bark/5 p-4">
-                        <p className="text-[9px] uppercase tracking-widest text-bark/40">Caution</p>
-                        <p className="mt-1 font-display text-xl font-bold text-bark">{formatCurrency(reservation.deposit_amount ?? reservation.total_price)}</p>
+                      <div className="rounded-2xl border border-gold/10 bg-white/5 p-4">
+                        <p className="text-[9px] uppercase tracking-widest text-cream/45">
+                          Caution
+                        </p>
+                        <p className="mt-1 font-display text-xl font-bold text-cream">
+                          {formatCurrency(reservation.deposit_amount ?? reservation.total_price)}
+                        </p>
                       </div>
-                      <div className="rounded-2xl border border-bark/5 bg-bark/5 p-4">
-                        <p className="text-[9px] uppercase tracking-widest text-bark/40">Sejour</p>
-                        <p className="mt-1 font-display text-xl font-bold text-bark">{formatCurrency(reservation.stay_amount)}</p>
+                      <div className="rounded-2xl border border-gold/10 bg-white/5 p-4">
+                        <p className="text-[9px] uppercase tracking-widest text-cream/45">Sejour</p>
+                        <p className="mt-1 font-display text-xl font-bold text-cream">
+                          {formatCurrency(reservation.stay_amount)}
+                        </p>
                       </div>
-                      <div className="rounded-2xl border border-bark/5 bg-bark/5 p-4">
-                        <p className="text-[9px] uppercase tracking-widest text-bark/40">Nuits</p>
-                        <p className="mt-1 font-display text-xl font-bold text-bark">{countNights(reservation.check_in, reservation.check_out)}</p>
+                      <div className="rounded-2xl border border-gold/10 bg-white/5 p-4">
+                        <p className="text-[9px] uppercase tracking-widest text-cream/45">Nuits</p>
+                        <p className="mt-1 font-display text-xl font-bold text-cream">
+                          {countNights(reservation.check_in, reservation.check_out)}
+                        </p>
                       </div>
                     </div>
 
-                    {reservation.status === 'EN_ATTENTE' && (
-                      <p className="rounded-2xl border border-bark/10 bg-cream p-4 text-sm text-bark/65">
+                    {reservation.status === "EN_ATTENTE" && (
+                      <p className="rounded-2xl border border-gold/15 bg-white/5 p-4 text-sm text-cream/70">
                         Votre demande est en cours d'examen.
                       </p>
                     )}
 
                     {reservation.special_requests && (
-                      <div className="rounded-2xl border border-bark/5 bg-bark/5 p-4 text-xs text-bark/70">
-                        <span className="mb-1 block text-[9px] uppercase tracking-wider text-bark/40">Demandes speciales</span>
+                      <div className="rounded-2xl border border-gold/15 bg-white/5 p-4 text-xs text-cream/70">
+                        <span className="mb-1 block text-[9px] uppercase tracking-wider text-gold/70">
+                          Demandes speciales
+                        </span>
                         {reservation.special_requests}
                       </div>
                     )}
 
                     {reservation.admin_notes && (
-                      <div className="rounded-2xl border border-terracotta/10 bg-terracotta/5 p-4 text-xs text-terracotta">
-                        <span className="mb-1 block text-[9px] uppercase tracking-wider text-terracotta/50">Message de l'administration</span>
+                      <div className="rounded-2xl border border-terracotta/25 bg-terracotta/10 p-4 text-xs text-terracotta-light">
+                        <span className="mb-1 block text-[9px] uppercase tracking-wider text-terracotta-light/70">
+                          Message de l'administration
+                        </span>
                         {reservation.admin_notes}
                       </div>
                     )}
                   </div>
 
-                  <div className="flex min-w-[260px] flex-col gap-3 border-t border-bark/10 pt-6 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
-                    {reservation.payment_deadline && reservation.status === 'VALIDEE_PAIEMENT_REQUIS' && (
+                  <div className="flex min-w-[260px] flex-col gap-3 border-t border-gold/15 pt-6 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+                    {reservation.payment_deadline &&
+                      reservation.status === "VALIDEE_PAIEMENT_REQUIS" &&
                       (() => {
-                        const countdown = paymentCountdown(reservation.payment_deadline, reservation.approved_at, nowMs);
+                        const countdown = paymentCountdown(
+                          reservation.payment_deadline,
+                          reservation.approved_at,
+                          nowMs
+                        );
 
                         return (
-                          <div className={`mb-2 rounded-2xl border p-4 text-xs ${
-                            countdown?.expired
-                              ? 'border-terracotta/25 bg-terracotta/10 text-terracotta'
-                              : countdown?.isUrgent
-                                ? 'border-terracotta/25 bg-terracotta/5 text-terracotta'
-                                : 'border-bark/10 bg-bark/5 text-bark'
-                          }`}>
+                          <div
+                            className={`mb-2 rounded-2xl border p-4 text-xs ${
+                              countdown?.expired
+                                ? "border-terracotta/40 bg-terracotta/15 text-terracotta-light"
+                                : countdown?.isUrgent
+                                  ? "border-terracotta/30 bg-terracotta/10 text-terracotta-light"
+                                  : "border-gold/20 bg-white/5 text-cream"
+                            }`}
+                          >
                             <div className="flex items-start gap-3">
                               <Clock className="mt-0.5 h-4 w-4 flex-shrink-0" />
                               <div className="min-w-0 flex-1">
                                 <p className="font-semibold">
-                                  Autorisation valable jusqu'au {new Date(reservation.payment_deadline).toLocaleString('fr-FR')}
+                                  Autorisation valable jusqu'au{" "}
+                                  {new Date(reservation.payment_deadline).toLocaleString("fr-FR")}
                                 </p>
                                 <p className="mt-1 text-[10px] uppercase tracking-widest opacity-60">
                                   Temps restant pour payer la caution de réservation
                                 </p>
 
                                 {countdown?.expired ? (
-                                  <p className="mt-3 rounded-xl border border-terracotta/20 bg-terracotta/10 px-3 py-2 text-[11px] font-bold">
-                                    Delai expire. Le paiement est desactive et l'appartement est de nouveau disponible.
+                                  <p className="mt-3 rounded-xl border border-terracotta/30 bg-terracotta/15 px-3 py-2 text-[11px] font-bold">
+                                    Delai expire. Le paiement est desactive et l'appartement est de
+                                    nouveau disponible.
                                   </p>
                                 ) : countdown ? (
                                   <>
                                     <div className="mt-3 grid grid-cols-3 gap-2">
                                       {[
-                                        { label: 'Heures', value: countdown.hours },
-                                        { label: 'Minutes', value: countdown.minutes },
-                                        { label: 'Secondes', value: countdown.seconds },
+                                        { label: "Heures", value: countdown.hours },
+                                        { label: "Minutes", value: countdown.minutes },
+                                        { label: "Secondes", value: countdown.seconds }
                                       ].map((item) => (
-                                        <div key={item.label} className="rounded-xl border border-current/10 bg-cream/60 px-3 py-2 text-center">
+                                        <div
+                                          key={item.label}
+                                          className="rounded-xl border border-current/10 bg-white/5 px-3 py-2 text-center"
+                                        >
                                           <p className="font-display text-lg font-bold leading-none">
-                                            {String(item.value).padStart(2, '0')}
+                                            {String(item.value).padStart(2, "0")}
                                           </p>
                                           <p className="mt-1 text-[8px] font-black uppercase tracking-widest opacity-55">
                                             {item.label}
@@ -958,7 +1116,7 @@ export default function ReservationsPage() {
                                     <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-current/10">
                                       <div
                                         className={`h-full rounded-full transition-all duration-500 ${
-                                          countdown.isUrgent ? 'bg-terracotta' : 'bg-bark'
+                                          countdown.isUrgent ? "bg-terracotta" : "bg-gold"
                                         }`}
                                         style={{ width: `${countdown.percent}%` }}
                                       />
@@ -969,39 +1127,45 @@ export default function ReservationsPage() {
                             </div>
                           </div>
                         );
-                      })()
-                    )}
+                      })()}
 
-                    {reservation.status === 'VALIDEE_PAIEMENT_REQUIS' && !hasDepositInvoice(reservation) && (
-                      <div className="space-y-3 rounded-2xl border border-bark/10 bg-bark/5 p-4">
-                        <p className="text-sm font-bold text-bark">Bon de Réservation</p>
-                        <a href={`/reservations/${reservation.id}/invoice?type=booking`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-bark/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-bark transition hover:bg-bark hover:text-cream">
-                          <FileText size={14} />
-                          Voir le bon
-                        </a>
-                        {isDepositPaymentExpired(reservation, nowMs) ? (
-                          <button
-                            type="button"
-                            disabled
-                            className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-bark/35 px-5 py-4 text-center text-[10px] font-black uppercase leading-5 tracking-[0.14em] text-cream/80 sm:text-xs"
+                    {reservation.status === "VALIDEE_PAIEMENT_REQUIS" &&
+                      !hasDepositInvoice(reservation) && (
+                        <div className="space-y-3 rounded-2xl border border-gold/15 bg-white/5 p-4">
+                          <p className="text-sm font-bold text-cream">Bon de Réservation</p>
+                          <a
+                            href={`/reservations/${reservation.id}/invoice?type=booking`}
+                            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-cream transition hover:border-gold/40 hover:bg-white/10 hover:text-gold-light"
                           >
-                            Delai expire
-                          </button>
-                        ) : (
-                          <button onClick={() => handleOpenPayment(reservation, 'deposit')} className="flex w-full items-center justify-center gap-2 rounded-xl bg-bark px-5 py-4 text-center text-[10px] font-black uppercase leading-5 tracking-[0.14em] text-cream transition hover:bg-bark-light sm:text-xs">
-                            Payer la caution de réservation
-                          </button>
-                        )}
-                      </div>
-                    )}
+                            <FileText size={14} />
+                            Voir le bon
+                          </a>
+                          {isDepositPaymentExpired(reservation, nowMs) ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-full bg-white/10 px-5 py-4 text-center text-[10px] font-bold uppercase leading-5 tracking-[0.14em] text-cream/40 sm:text-xs"
+                            >
+                              Delai expire
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleOpenPayment(reservation, "deposit")}
+                              className="flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-br from-gold-light to-gold px-5 py-4 text-center text-[10px] font-bold uppercase leading-5 tracking-[0.14em] text-night transition hover:brightness-105 sm:text-xs"
+                            >
+                              Payer la caution de réservation
+                            </button>
+                          )}
+                        </div>
+                      )}
 
                     {hasDepositInvoice(reservation) && (
-                      <div className="space-y-3 rounded-2xl border border-olive/15 bg-olive/5 p-4">
-                        <p className="text-sm font-bold text-bark">Facture Caution</p>
+                      <div className="space-y-3 rounded-2xl border border-olive/25 bg-olive/10 p-4">
+                        <p className="text-sm font-bold text-cream">Facture Caution</p>
                         {reservation.deposit_invoice_downloaded ? (
                           <a
                             href={`/reservations/${reservation.id}/invoice?type=deposit`}
-                            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-bark/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-bark transition hover:bg-bark hover:text-cream"
+                            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-cream transition hover:border-gold/40 hover:bg-white/10 hover:text-gold-light"
                           >
                             <FileText size={14} />
                             Voir la Facture de Caution
@@ -1009,8 +1173,8 @@ export default function ReservationsPage() {
                         ) : (
                           <button
                             type="button"
-                            onClick={() => handleDownloadInvoice(reservation, 'deposit')}
-                            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-bark/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-bark transition hover:bg-bark hover:text-cream"
+                            onClick={() => handleDownloadInvoice(reservation, "deposit")}
+                            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-cream transition hover:border-gold/40 hover:bg-white/10 hover:text-gold-light"
                           >
                             <Download size={14} />
                             Télécharger la facture
@@ -1019,34 +1183,44 @@ export default function ReservationsPage() {
                       </div>
                     )}
 
-                    {reservation.status === 'CONFIRMEE' && !hasStayInvoice(reservation) && (
-                      <div className="space-y-3 rounded-2xl border border-bark/10 bg-bark/5 p-4">
-                        <p className="text-sm font-bold text-bark">Bon du Séjour</p>
-                        <a href={`/reservations/${reservation.id}/invoice?type=stay-voucher`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-bark/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-bark transition hover:bg-bark hover:text-cream">
+                    {reservation.status === "CONFIRMEE" && !hasStayInvoice(reservation) && (
+                      <div className="space-y-3 rounded-2xl border border-gold/15 bg-white/5 p-4">
+                        <p className="text-sm font-bold text-cream">Bon du Séjour</p>
+                        <a
+                          href={`/reservations/${reservation.id}/invoice?type=stay-voucher`}
+                          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-cream transition hover:border-gold/40 hover:bg-white/10 hover:text-gold-light"
+                        >
                           <FileText size={14} />
                           Voir le bon
                         </a>
-                        <button onClick={() => handleOpenPayment(reservation, 'stay')} className="flex w-full items-center justify-center gap-2 rounded-xl bg-bark px-6 py-4 text-xs font-black uppercase tracking-[0.2em] text-cream transition hover:bg-bark-light">
+                        <button
+                          onClick={() => handleOpenPayment(reservation, "stay")}
+                          className="flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-br from-gold-light to-gold px-6 py-4 text-xs font-bold uppercase tracking-[0.2em] text-night transition hover:brightness-105"
+                        >
                           Payer mon séjour
                         </button>
-                        {reservation.extension_status === 'EN_ATTENTE' && reservation.extension_requested_check_out && (
-                          <div className="rounded-xl border border-bark/10 bg-cream p-3 text-xs leading-relaxed text-bark/70">
-                            <p className="font-bold text-bark">Prolongation en attente</p>
-                            <p>Nouvelle date demandée : {formatReservationDate(reservation.extension_requested_check_out)}</p>
-                            <p>L'administrateur doit encore valider cette demande.</p>
-                          </div>
-                        )}
-                        {reservation.extension_status === 'REFUSEE' && (
-                          <div className="rounded-xl border border-terracotta/20 bg-terracotta/5 p-3 text-xs leading-relaxed text-terracotta">
+                        {reservation.extension_status === "EN_ATTENTE" &&
+                          reservation.extension_requested_check_out && (
+                            <div className="rounded-xl border border-gold/15 bg-white/5 p-3 text-xs leading-relaxed text-cream/70">
+                              <p className="font-bold text-cream">Prolongation en attente</p>
+                              <p>
+                                Nouvelle date demandée :{" "}
+                                {formatReservationDate(reservation.extension_requested_check_out)}
+                              </p>
+                              <p>L'administrateur doit encore valider cette demande.</p>
+                            </div>
+                          )}
+                        {reservation.extension_status === "REFUSEE" && (
+                          <div className="rounded-xl border border-terracotta/30 bg-terracotta/10 p-3 text-xs leading-relaxed text-terracotta-light">
                             <p className="font-bold">Prolongation refusée</p>
-                            <p>{reservation.extension_admin_notes || 'Aucun motif précisé.'}</p>
+                            <p>{reservation.extension_admin_notes || "Aucun motif précisé."}</p>
                           </div>
                         )}
                         {canRequestStayExtension(reservation) && (
                           <button
                             type="button"
                             onClick={() => openExtensionModal(reservation)}
-                            className="flex w-full items-center justify-center gap-2 rounded-xl border border-bark/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-bark transition hover:bg-bark hover:text-cream"
+                            className="flex w-full items-center justify-center gap-2 rounded-xl border border-gold/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-cream transition hover:border-gold/40 hover:bg-white/10 hover:text-gold-light"
                           >
                             Prolonger mon séjour
                           </button>
@@ -1055,12 +1229,12 @@ export default function ReservationsPage() {
                     )}
 
                     {hasStayInvoice(reservation) && (
-                      <div className="space-y-3 rounded-2xl border border-olive/15 bg-olive/5 p-4">
-                        <p className="text-sm font-bold text-bark">Facture Séjour</p>
+                      <div className="space-y-3 rounded-2xl border border-olive/25 bg-olive/10 p-4">
+                        <p className="text-sm font-bold text-cream">Facture Séjour</p>
                         {reservation.stay_invoice_downloaded ? (
                           <a
                             href={`/reservations/${reservation.id}/invoice?type=stay`}
-                            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-bark/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-bark transition hover:bg-bark hover:text-cream"
+                            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-cream transition hover:border-gold/40 hover:bg-white/10 hover:text-gold-light"
                           >
                             <FileText size={14} />
                             Voir la Facture du Séjour
@@ -1068,8 +1242,8 @@ export default function ReservationsPage() {
                         ) : (
                           <button
                             type="button"
-                            onClick={() => handleDownloadInvoice(reservation, 'stay')}
-                            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-bark/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-bark transition hover:bg-bark hover:text-cream"
+                            onClick={() => handleDownloadInvoice(reservation, "stay")}
+                            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-cream transition hover:border-gold/40 hover:bg-white/10 hover:text-gold-light"
                           >
                             <Download size={14} />
                             Télécharger la facture
@@ -1078,15 +1252,16 @@ export default function ReservationsPage() {
                       </div>
                     )}
 
-                    {(reservation.status === 'ANNULEE' || reservation.status === 'REMBOURSEE') && (
-                      <div className="space-y-3 rounded-2xl border border-terracotta/15 bg-terracotta/5 p-4">
-                        <p className="text-sm font-bold text-bark">Bon d'Annulation</p>
-                        <p className="text-xs leading-relaxed text-bark/60">
-                          Montant a rembourser : {formatCurrency(reservation.cancellation_refund_amount)}
+                    {(reservation.status === "ANNULEE" || reservation.status === "REMBOURSEE") && (
+                      <div className="space-y-3 rounded-2xl border border-terracotta/25 bg-terracotta/10 p-4">
+                        <p className="text-sm font-bold text-cream">Bon d'Annulation</p>
+                        <p className="text-xs leading-relaxed text-cream/60">
+                          Montant a rembourser :{" "}
+                          {formatCurrency(reservation.cancellation_refund_amount)}
                         </p>
                         <a
                           href={`/reservations/${reservation.id}/invoice?type=cancellation`}
-                          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-bark/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-bark transition hover:bg-bark hover:text-cream"
+                          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-cream transition hover:border-gold/40 hover:bg-white/10 hover:text-gold-light"
                         >
                           <FileText size={14} />
                           Voir le bon
@@ -1098,7 +1273,7 @@ export default function ReservationsPage() {
                       <button
                         type="button"
                         onClick={() => setCancellingReservation(reservation)}
-                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-terracotta/30 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-terracotta transition hover:bg-terracotta hover:text-white"
+                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-terracotta/40 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-terracotta-light transition hover:bg-terracotta hover:text-white"
                       >
                         <XCircle size={14} />
                         Annuler ma reservation
@@ -1107,9 +1282,7 @@ export default function ReservationsPage() {
                   </div>
                 </div>
 
-                <div className="border-t border-bark/5 pt-6">
-                  {renderTimeline(reservation)}
-                </div>
+                <div className="border-t border-gold/10 pt-6">{renderTimeline(reservation)}</div>
               </motion.article>
             ))}
           </div>
@@ -1123,7 +1296,7 @@ export default function ReservationsPage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => paymentStep !== 'processing' && setActiveReservation(null)}
+              onClick={() => paymentStep !== "processing" && setActiveReservation(null)}
               className="absolute inset-0 bg-black/80 backdrop-blur-md"
             />
 
@@ -1131,51 +1304,75 @@ export default function ReservationsPage() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-md overflow-hidden rounded-3xl border border-bark/10 bg-cream p-8 shadow-2xl"
+              className="relative w-full max-w-md overflow-hidden glass-dark glass-edge rounded-3xl p-8"
             >
-              {paymentStep === 'processing' && (
+              {paymentStep === "processing" && (
                 <div className="flex flex-col items-center justify-center space-y-6 py-16">
-                  <div className="h-12 w-12 animate-spin rounded-full border-4 border-bark border-t-transparent" />
+                  <div className="h-12 w-12 animate-spin rounded-full border-4 border-gold border-t-transparent" />
                   <div className="space-y-2 text-center">
-                    <h3 className="font-display text-lg font-bold uppercase tracking-wider text-bark">Traitement securise</h3>
-                    <p className="animate-pulse text-xs font-medium text-bark/50">{processingText}</p>
+                    <h3 className="font-display text-lg font-bold uppercase tracking-wider text-cream">
+                      Traitement securise
+                    </h3>
+                    <p className="animate-pulse text-xs font-medium text-cream/50">
+                      {processingText}
+                    </p>
                   </div>
                 </div>
               )}
 
-              {paymentStep === 'success' && (
+              {paymentStep === "success" && (
                 <div className="flex flex-col items-center justify-center space-y-6 py-10 text-center">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-olive/30 bg-olive/10 text-olive">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-olive/40 bg-olive/15 text-olive-light">
                     <Check size={32} />
                   </div>
                   <div>
-                    <h3 className="font-display text-2xl font-bold uppercase tracking-wider text-olive">Paiement reussi</h3>
-                    <p className="mx-auto mt-2 max-w-xs text-xs leading-relaxed text-bark/50">La transaction a ete validee avec succes.</p>
+                    <h3 className="font-display text-2xl font-bold uppercase tracking-wider text-olive-light">
+                      Paiement reussi
+                    </h3>
+                    <p className="mx-auto mt-2 max-w-xs text-xs leading-relaxed text-cream/50">
+                      La transaction a ete validee avec succes.
+                    </p>
                   </div>
-                  <button type="button" onClick={() => setActiveReservation(null)} className="w-full rounded-xl bg-bark py-4 text-xs font-black uppercase tracking-wider text-cream transition hover:bg-bark-light">
+                  <button
+                    type="button"
+                    onClick={() => setActiveReservation(null)}
+                    className="w-full rounded-full bg-gradient-to-br from-gold-light to-gold py-4 text-xs font-bold uppercase tracking-wider text-night transition hover:brightness-105"
+                  >
                     Fermer
                   </button>
                 </div>
               )}
 
-              {paymentStep === 'failed' && (
+              {paymentStep === "failed" && (
                 <div className="flex flex-col items-center justify-center space-y-6 py-10 text-center">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-terracotta/30 bg-terracotta/10 text-terracotta">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-terracotta/40 bg-terracotta/15 text-terracotta-light">
                     <XCircle size={32} />
                   </div>
                   <div>
-                    <h3 className="font-display text-2xl font-bold uppercase tracking-wider text-terracotta">Paiement echoue</h3>
-                    <p className="mx-auto mt-2 max-w-xs text-xs leading-relaxed text-bark/50">{paymentError}</p>
+                    <h3 className="font-display text-2xl font-bold uppercase tracking-wider text-terracotta-light">
+                      Paiement echoue
+                    </h3>
+                    <p className="mx-auto mt-2 max-w-xs text-xs leading-relaxed text-cream/50">
+                      {paymentError}
+                    </p>
                   </div>
                   <button
                     type="button"
-                    disabled={Boolean(activeReservation && activePaymentType === 'deposit' && isDepositPaymentExpired(activeReservation, nowMs))}
-                    onClick={() => activeReservation && handleOpenPayment(activeReservation, activePaymentType)}
-                    className="w-full rounded-xl bg-bark py-4 text-xs font-black uppercase tracking-wider text-cream transition hover:bg-bark-light disabled:cursor-not-allowed disabled:bg-bark/35 disabled:text-cream/80"
+                    disabled={Boolean(
+                      activeReservation &&
+                      activePaymentType === "deposit" &&
+                      isDepositPaymentExpired(activeReservation, nowMs)
+                    )}
+                    onClick={() =>
+                      activeReservation && handleOpenPayment(activeReservation, activePaymentType)
+                    }
+                    className="w-full rounded-full bg-gradient-to-br from-gold-light to-gold py-4 text-xs font-bold uppercase tracking-wider text-night transition hover:brightness-105 disabled:cursor-not-allowed disabled:from-white/10 disabled:to-white/10 disabled:text-cream/40"
                   >
-                    {activeReservation && activePaymentType === 'deposit' && isDepositPaymentExpired(activeReservation, nowMs)
-                      ? 'Delai expire'
-                      : 'Reessayer le paiement'}
+                    {activeReservation &&
+                    activePaymentType === "deposit" &&
+                    isDepositPaymentExpired(activeReservation, nowMs)
+                      ? "Delai expire"
+                      : "Reessayer le paiement"}
                   </button>
                 </div>
               )}
@@ -1199,7 +1396,7 @@ export default function ReservationsPage() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-xl rounded-3xl border border-bark/10 bg-cream p-8 text-charcoal shadow-2xl"
+              className="relative w-full max-w-xl glass-dark glass-edge rounded-3xl p-8 text-cream"
             >
               {(() => {
                 const preview = cancellationPreview(cancellingReservation);
@@ -1207,49 +1404,75 @@ export default function ReservationsPage() {
                 return (
                   <div className="space-y-6">
                     <div>
-                      <h3 className="font-display text-2xl font-bold uppercase tracking-wide text-bark">
+                      <h3 className="font-display text-2xl font-bold uppercase tracking-wide text-cream">
                         Annuler ma reservation
                       </h3>
-                      <p className="mt-1 text-[10px] uppercase tracking-widest text-bark/50">
+                      <p className="mt-1 text-[10px] uppercase tracking-widest text-cream/50">
                         Reservation #{cancellingReservation.id}
                       </p>
                     </div>
 
-                    <div className="rounded-2xl border border-bark/10 bg-bark/5 p-4 text-xs leading-relaxed text-bark/70">
-                      <p><strong>Appartement :</strong> {getReservationTitle(cancellingReservation)}</p>
-                      <p><strong>Dates :</strong> du {formatReservationDate(cancellingReservation.check_in)} au {formatReservationDate(cancellingReservation.check_out)}</p>
-                      <p><strong>Date de demande :</strong> {formatReservationDate(cancellingReservation.created_at)}</p>
+                    <div className="rounded-2xl border border-gold/15 bg-white/5 p-4 text-xs leading-relaxed text-cream/70">
+                      <p>
+                        <strong>Appartement :</strong> {getReservationTitle(cancellingReservation)}
+                      </p>
+                      <p>
+                        <strong>Dates :</strong> du{" "}
+                        {formatReservationDate(cancellingReservation.check_in)} au{" "}
+                        {formatReservationDate(cancellingReservation.check_out)}
+                      </p>
+                      <p>
+                        <strong>Date de demande :</strong>{" "}
+                        {formatReservationDate(cancellingReservation.created_at)}
+                      </p>
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-2xl border border-bark/5 bg-bark/5 p-4">
-                        <p className="text-[9px] uppercase tracking-widest text-bark/40">Caution payée</p>
-                        <p className="mt-1 font-display text-xl font-bold text-bark">{formatCurrency(preview.depositAmount)}</p>
+                      <div className="rounded-2xl border border-gold/10 bg-white/5 p-4">
+                        <p className="text-[9px] uppercase tracking-widest text-cream/45">
+                          Caution payée
+                        </p>
+                        <p className="mt-1 font-display text-xl font-bold text-cream">
+                          {formatCurrency(preview.depositAmount)}
+                        </p>
                       </div>
-                      <div className="rounded-2xl border border-bark/5 bg-bark/5 p-4">
-                        <p className="text-[9px] uppercase tracking-widest text-bark/40">Jours consommés</p>
-                        <p className="mt-1 font-display text-xl font-bold text-bark">{preview.consumedDays}</p>
+                      <div className="rounded-2xl border border-gold/10 bg-white/5 p-4">
+                        <p className="text-[9px] uppercase tracking-widest text-cream/45">
+                          Jours consommés
+                        </p>
+                        <p className="mt-1 font-display text-xl font-bold text-cream">
+                          {preview.consumedDays}
+                        </p>
                       </div>
-                      <div className="rounded-2xl border border-bark/5 bg-bark/5 p-4">
-                        <p className="text-[9px] uppercase tracking-widest text-bark/40">Montant retenu</p>
-                        <p className="mt-1 font-display text-xl font-bold text-bark">{formatCurrency(preview.retainedAmount)}</p>
+                      <div className="rounded-2xl border border-gold/10 bg-white/5 p-4">
+                        <p className="text-[9px] uppercase tracking-widest text-cream/45">
+                          Montant retenu
+                        </p>
+                        <p className="mt-1 font-display text-xl font-bold text-cream">
+                          {formatCurrency(preview.retainedAmount)}
+                        </p>
                       </div>
-                      <div className="rounded-2xl border border-olive/15 bg-olive/5 p-4">
-                        <p className="text-[9px] uppercase tracking-widest text-bark/40">Montant rembourse</p>
-                        <p className="mt-1 font-display text-xl font-bold text-olive">{formatCurrency(preview.refundAmount)}</p>
+                      <div className="rounded-2xl border border-olive/25 bg-olive/10 p-4">
+                        <p className="text-[9px] uppercase tracking-widest text-cream/45">
+                          Montant rembourse
+                        </p>
+                        <p className="mt-1 font-display text-xl font-bold text-olive-light">
+                          {formatCurrency(preview.refundAmount)}
+                        </p>
                       </div>
                     </div>
 
-                    <p className="rounded-2xl border border-terracotta/15 bg-terracotta/5 p-4 text-sm leading-relaxed text-terracotta">
-                      Etes-vous sur de vouloir annuler ? Vous serez rembourse de {formatCurrency(preview.refundAmount)} dans un delai de 48h a 72h.
+                    <p className="rounded-2xl border border-terracotta/30 bg-terracotta/10 p-4 text-sm leading-relaxed text-terracotta-light">
+                      Etes-vous sur de vouloir annuler ? Vous serez rembourse de{" "}
+                      {formatCurrency(preview.refundAmount)} dans un delai de 48h a 72h.
                     </p>
 
-                    <div className="flex gap-3 border-t border-bark/5 pt-4">
+                    <div className="flex gap-3 border-t border-gold/10 pt-4">
                       <button
                         type="button"
                         disabled={cancelling}
                         onClick={() => setCancellingReservation(null)}
-                        className="flex-1 rounded-xl border border-bark/10 py-4 text-xs font-bold uppercase tracking-wider text-bark/70 transition hover:bg-bark/5 disabled:opacity-50"
+                        className="flex-1 rounded-xl border border-gold/20 py-4 text-xs font-bold uppercase tracking-wider text-cream/70 transition hover:border-gold/40 hover:bg-white/5 hover:text-cream disabled:opacity-50"
                       >
                         Retour
                       </button>
@@ -1259,7 +1482,7 @@ export default function ReservationsPage() {
                         onClick={handleConfirmCancellation}
                         className="flex-1 rounded-xl bg-terracotta py-4 text-xs font-black uppercase tracking-wider text-white transition hover:bg-terracotta/90 disabled:opacity-50"
                       >
-                        {cancelling ? 'Annulation...' : "Confirmer l'annulation"}
+                        {cancelling ? "Annulation..." : "Confirmer l'annulation"}
                       </button>
                     </div>
                   </div>
@@ -1285,7 +1508,7 @@ export default function ReservationsPage() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-xl rounded-3xl border border-bark/10 bg-cream p-8 text-charcoal shadow-2xl"
+              className="relative w-full max-w-xl glass-dark glass-edge rounded-3xl p-8 text-cream"
             >
               {(() => {
                 const preview = extensionPreview(extensionReservation);
@@ -1294,22 +1517,30 @@ export default function ReservationsPage() {
                 return (
                   <div className="space-y-6">
                     <div>
-                      <h3 className="font-display text-2xl font-bold uppercase tracking-wide text-bark">
+                      <h3 className="font-display text-2xl font-bold uppercase tracking-wide text-cream">
                         Prolonger mon séjour
                       </h3>
-                      <p className="mt-1 text-[10px] uppercase tracking-widest text-bark/50">
+                      <p className="mt-1 text-[10px] uppercase tracking-widest text-cream/50">
                         Réservation #{extensionReservation.id}
                       </p>
                     </div>
 
-                    <div className="rounded-2xl border border-bark/10 bg-bark/5 p-4 text-xs leading-relaxed text-bark/70">
-                      <p><strong>Appartement :</strong> {getReservationTitle(extensionReservation)}</p>
-                      <p><strong>Arrivée :</strong> {formatReservationDate(extensionReservation.check_in)}</p>
-                      <p><strong>Départ actuel :</strong> {formatReservationDate(extensionReservation.check_out)}</p>
+                    <div className="rounded-2xl border border-gold/15 bg-white/5 p-4 text-xs leading-relaxed text-cream/70">
+                      <p>
+                        <strong>Appartement :</strong> {getReservationTitle(extensionReservation)}
+                      </p>
+                      <p>
+                        <strong>Arrivée :</strong>{" "}
+                        {formatReservationDate(extensionReservation.check_in)}
+                      </p>
+                      <p>
+                        <strong>Départ actuel :</strong>{" "}
+                        {formatReservationDate(extensionReservation.check_out)}
+                      </p>
                     </div>
 
                     <label className="block">
-                      <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-bark/60">
+                      <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-gold/80">
                         Nouvelle date de départ
                       </span>
                       <input
@@ -1318,39 +1549,57 @@ export default function ReservationsPage() {
                         value={extensionDate}
                         onChange={(event) => {
                           setExtensionDate(event.target.value);
-                          setExtensionError('');
+                          setExtensionError("");
                         }}
-                        className="w-full rounded-xl border border-bark/15 bg-transparent px-4 py-4 text-sm font-semibold text-bark outline-none transition focus:border-bark"
+                        className="glass-input w-full rounded-xl px-4 py-4 text-sm font-semibold outline-none"
                       />
                     </label>
 
                     <div className="grid gap-3 sm:grid-cols-3">
-                      <div className="rounded-2xl border border-bark/5 bg-bark/5 p-4">
-                        <p className="text-[9px] uppercase tracking-widest text-bark/40">Nuits actuelles</p>
-                        <p className="mt-1 font-display text-xl font-bold text-bark">{preview.currentNights}</p>
+                      <div className="rounded-2xl border border-gold/10 bg-white/5 p-4">
+                        <p className="text-[9px] uppercase tracking-widest text-cream/45">
+                          Nuits actuelles
+                        </p>
+                        <p className="mt-1 font-display text-xl font-bold text-cream">
+                          {preview.currentNights}
+                        </p>
                       </div>
-                      <div className="rounded-2xl border border-bark/5 bg-bark/5 p-4">
-                        <p className="text-[9px] uppercase tracking-widest text-bark/40">Nuits ajoutees</p>
-                        <p className="mt-1 font-display text-xl font-bold text-bark">{preview.additionalNights}</p>
+                      <div className="rounded-2xl border border-gold/10 bg-white/5 p-4">
+                        <p className="text-[9px] uppercase tracking-widest text-cream/45">
+                          Nuits ajoutees
+                        </p>
+                        <p className="mt-1 font-display text-xl font-bold text-cream">
+                          {preview.additionalNights}
+                        </p>
                       </div>
-                      <div className="rounded-2xl border border-olive/15 bg-olive/5 p-4">
-                        <p className="text-[9px] uppercase tracking-widest text-bark/40">Nouveau sejour</p>
-                        <p className="mt-1 font-display text-xl font-bold text-olive">{formatCurrency(preview.newStayAmount)}</p>
+                      <div className="rounded-2xl border border-olive/25 bg-olive/10 p-4">
+                        <p className="text-[9px] uppercase tracking-widest text-cream/45">
+                          Nouveau sejour
+                        </p>
+                        <p className="mt-1 font-display text-xl font-bold text-olive-light">
+                          {formatCurrency(preview.newStayAmount)}
+                        </p>
                       </div>
                     </div>
 
-                    <p className="rounded-2xl border border-bark/10 bg-cream-dark/60 p-4 text-sm leading-relaxed text-bark/70">
-                      La demande sera envoyée à l'administrateur. Si l'appartement reste libre sur la nouvelle période, l'administrateur pourra accepter et le Bon du Séjour sera automatiquement mis à jour.
+                    <p className="rounded-2xl border border-gold/15 bg-white/5 p-4 text-sm leading-relaxed text-cream/70">
+                      La demande sera envoyée à l'administrateur. Si l'appartement reste libre sur
+                      la nouvelle période, l'administrateur pourra accepter et le Bon du Séjour sera
+                      automatiquement mis à jour.
                     </p>
 
-                    {extensionError && <p className="text-xs font-semibold text-terracotta">{extensionError}</p>}
+                    {extensionError && (
+                      <p className="text-xs font-semibold text-terracotta-light">
+                        {extensionError}
+                      </p>
+                    )}
 
-                    <div className="flex gap-3 border-t border-bark/5 pt-4">
+                    <div className="flex gap-3 border-t border-gold/10 pt-4">
                       <button
                         type="button"
                         disabled={requestingExtension}
                         onClick={() => setExtensionReservation(null)}
-                        className="flex-1 rounded-xl border border-bark/10 py-4 text-xs font-bold uppercase tracking-wider text-bark/70 transition hover:bg-bark/5 disabled:opacity-50"
+                        className="flex-1 rounded-xl border border-gold/20 py-4 text-xs font-bold uppercase tracking-wider text-cream/70 transition hover:border-gold/40 hover:bg-white/5 hover:text-cream disabled:opacity-50"
                       >
                         Retour
                       </button>
@@ -1358,9 +1607,9 @@ export default function ReservationsPage() {
                         type="button"
                         disabled={requestingExtension}
                         onClick={handleSubmitExtension}
-                        className="flex-1 rounded-xl bg-bark py-4 text-xs font-black uppercase tracking-wider text-cream transition hover:bg-bark/90 disabled:opacity-50"
+                        className="flex-1 rounded-full bg-gradient-to-br from-gold-light to-gold py-4 text-xs font-bold uppercase tracking-wider text-night transition hover:brightness-105 disabled:opacity-50"
                       >
-                        {requestingExtension ? 'Envoi...' : 'Envoyer la demande'}
+                        {requestingExtension ? "Envoi..." : "Envoyer la demande"}
                       </button>
                     </div>
                   </div>

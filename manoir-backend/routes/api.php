@@ -7,15 +7,18 @@ use App\Http\Controllers\Api\Admin\AdminStatsController;
 use App\Http\Controllers\Api\Admin\AdminUserController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\InvoiceController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ReservationController;
 use App\Http\Controllers\Api\RoomCategoryController;
 use App\Http\Controllers\Api\RoomController;
 use Illuminate\Support\Facades\Route;
 
-// Routes publiques d'authentification
-Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login', [AuthController::class, 'login']);
+// Routes publiques d'authentification (limitées: 6 tentatives / minute / IP)
+Route::middleware('throttle:6,1')->group(function () {
+    Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/login', [AuthController::class, 'login']);
+});
 
 // Routes publiques de consultation
 Route::get('/rooms', [RoomController::class, 'index']);
@@ -48,6 +51,11 @@ Route::middleware('api.token')->group(function () {
 
     // Factures
     Route::get('/payments/{paymentId}/invoice', [InvoiceController::class, 'show']);
+
+    // Notifications in-app
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
 });
 
 // Webhook pour les paiements (pas d'authentification, mais signature vérifiée)

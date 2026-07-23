@@ -17,8 +17,17 @@ class AdminStatsController extends Controller
 
         $totalReservations = Reservation::count();
         $totalRooms = Room::count();
+        // Seul le parc réellement réservable doit servir de dénominateur au taux
+        // d'occupation : on exclut les chambres désactivées / auto-créées.
+        $bookableRoomsCount = Room::where('status', 'available')->count();
         $totalUsers = User::count();
         $totalRevenue = Payment::where('status', 'success')->sum('amount');
+
+        // CA du mois en cours : somme des paiements validés sur le mois courant
+        // (paid_at est toujours renseigné lorsqu'un paiement passe en "success").
+        $revenueThisMonth = Payment::where('status', 'success')
+            ->whereBetween('paid_at', [now()->startOfMonth(), now()->endOfMonth()])
+            ->sum('amount');
 
         $today = now()->format('Y-m-d');
         $occupiedRoomsCount = Reservation::whereIn('status', ['CONFIRMEE', 'SEJOUR_PAYE'])
@@ -27,7 +36,9 @@ class AdminStatsController extends Controller
             ->distinct('room_id')
             ->count('room_id');
 
-        $occupancyRate = $totalRooms > 0 ? round(($occupiedRoomsCount / $totalRooms) * 100, 1) : 0;
+        $occupancyRate = $bookableRoomsCount > 0
+            ? round(($occupiedRoomsCount / $bookableRoomsCount) * 100, 1)
+            : 0;
 
         $recentReservations = Reservation::with(['user', 'room'])
             ->orderByDesc('created_at')
@@ -43,8 +54,10 @@ class AdminStatsController extends Controller
             'stats' => [
                 'total_reservations' => $totalReservations,
                 'total_rooms' => $totalRooms,
+                'bookable_rooms_count' => $bookableRoomsCount,
                 'total_users' => $totalUsers,
                 'total_revenue' => $totalRevenue,
+                'revenue_this_month' => $revenueThisMonth,
                 'occupancy_rate' => $occupancyRate,
                 'occupied_rooms_count' => $occupiedRoomsCount,
             ],

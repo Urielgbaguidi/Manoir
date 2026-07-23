@@ -1,14 +1,20 @@
-'use client';
+"use client";
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { ApiError, api, User } from '@/lib/api';
-import { useRouter } from 'next/navigation';
+import React, { createContext, useContext, useState, useEffect } from "react";
+import { ApiError, api, User } from "@/lib/api";
+import { useRouter } from "next/navigation";
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string, redirectTo?: string) => Promise<void>;
-  register: (name: string, email: string, phone: string, password: string, redirectTo?: string) => Promise<void>;
+  register: (
+    name: string,
+    email: string,
+    phone: string,
+    password: string,
+    redirectTo?: string
+  ) => Promise<void>;
   logout: (redirectTo?: string) => Promise<void>;
   refreshUser: () => Promise<User | null>;
   isAdmin: boolean;
@@ -30,7 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(profile);
         } catch (error) {
           if (!(error instanceof ApiError && error.status === 401)) {
-            console.warn('Impossible de charger le profil utilisateur.');
+            console.warn("Impossible de charger le profil utilisateur.");
           }
           api.clearToken();
           setUser(null);
@@ -46,7 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await api.login(email, password);
       setUser(response.user);
-      router.push(response.user.is_admin ? '/admin' : redirectTo || '/espace-client');
+      router.push(response.user.is_admin ? "/admin" : redirectTo || "/espace-client");
     } catch (error) {
       setUser(null);
       throw error;
@@ -55,12 +61,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const register = async (name: string, email: string, phone: string, password: string, redirectTo?: string) => {
+  const register = async (
+    name: string,
+    email: string,
+    phone: string,
+    password: string,
+    redirectTo?: string
+  ) => {
     setLoading(true);
     try {
       const response = await api.register({ name, email, phone, password });
       setUser(response.user);
-      router.push(redirectTo || '/');
+      router.push(redirectTo || "/");
     } catch (error) {
       setUser(null);
       throw error;
@@ -69,13 +81,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const logout = async (redirectTo = '/') => {
+  const logout = async (redirectTo = "/") => {
     setLoading(true);
     try {
       await api.logout();
     } catch (error) {
       if (!(error instanceof ApiError && error.status === 401)) {
-        console.warn('Déconnexion distante indisponible, session locale nettoyée.');
+        console.warn("Déconnexion distante indisponible, session locale nettoyée.");
       }
     } finally {
       setUser(null);
@@ -102,7 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 }

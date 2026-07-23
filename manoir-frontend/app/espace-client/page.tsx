@@ -1,1 +1,1 @@
-export { default } from '../reservations/page';
+export { default } from "../reservations/page";

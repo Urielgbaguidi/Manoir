@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
-import { Cormorant_Garamond, Inter } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Bricolage_Grotesque, Inter } from "next/font/google";
 import Footer from "@/components/layout/Footer";
 import Navbar from "@/components/layout/Navbar";
+import AmbientBackground from "@/components/visual/AmbientBackground";
 import { AuthProvider } from "@/context/AuthContext";
 import { ToastProvider } from "@/context/ToastContext";
 import "./globals.css";
@@ -12,18 +13,22 @@ const inter = Inter({
   display: "swap"
 });
 
-const cormorant = Cormorant_Garamond({
+const bricolage = Bricolage_Grotesque({
   subsets: ["latin"],
   variable: "--font-display",
   display: "swap",
-  weight: ["400", "500", "600", "700"]
+  weight: ["400", "500", "600", "700", "800"]
 });
 
 export const metadata: Metadata = {
-  title: "Le Manoir | Hotel de luxe",
+  title: "Le Manoir | Maison d'hôtes de prestige — Cotonou",
   description:
-    "Le Manoir, experience hoteliere immersive en noir et blanc, suites de prestige et reservation en ligne.",
-  keywords: ["Le Manoir", "hotel", "suites", "luxe", "reservation"]
+    "Le Manoir, une parenthèse enchantée au cœur de Cotonou. Appartements de prestige, séjours d'exception et réservation en ligne.",
+  keywords: ["Le Manoir", "maison d'hôtes", "appartements", "luxe", "Cotonou", "réservation"]
+};
+
+export const viewport: Viewport = {
+  themeColor: "#120D07"
 };
 
 export default function RootLayout({
@@ -32,8 +37,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr" className={`${inter.variable} ${cormorant.variable}`}>
-      <body className="font-body antialiased">
+    <html lang="fr" data-theme="dark" className={`${inter.variable} ${bricolage.variable}`}>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var t=localStorage.getItem('theme')||'dark';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();"
+          }}
+        />
+      </head>
+      <body className="relative min-h-screen bg-night font-body text-cream/90 antialiased">
+        <AmbientBackground />
         <AuthProvider>
           <ToastProvider>
             <Navbar />
@@ -45,5 +59,3 @@ export default function RootLayout({
     </html>
   );
 }
-
-

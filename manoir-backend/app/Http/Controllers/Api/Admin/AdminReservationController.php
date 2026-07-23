@@ -7,6 +7,7 @@ use App\Mail\RefundCompleted;
 use App\Mail\ReservationApproved;
 use App\Mail\ReservationRejected;
 use App\Models\Reservation;
+use App\Models\Room;
 use App\Models\RoomCategory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -34,7 +35,11 @@ class AdminReservationController extends Controller
             $query->where('category_type', $request->category_type);
         }
 
-        return response()->json($query->orderByDesc('created_at')->paginate(20));
+        // Les filtres front (statut, etc.) s'appliquent sur l'ensemble renvoye :
+        // on ne plafonne plus a 20 (perte de donnees). Page large + pagination possible.
+        $perPage = min(max((int) $request->input('per_page', 200), 1), 500);
+
+        return response()->json($query->orderByDesc('created_at')->paginate($perPage));
     }
 
     public function occupiedRooms(): JsonResponse
@@ -132,35 +137,40 @@ class AdminReservationController extends Controller
         $checkIn = $reservation->check_in->toDateString();
         $checkOut = $reservation->check_out->toDateString();
 
-        if (! $reservation->room->isAvailableForDates($checkIn, $checkOut, $reservation->id)) {
-            if ($category->type === 'vip') {
-                return response()->json([
-                    'message' => 'Cet appartement VIP est deja bloque pour ces dates.',
-                ], 422);
-            }
+        // Verrou + verification + mise a jour dans UNE seule transaction : deux
+        // validations concurrentes de la meme chambre sont serialisees (anti double-booking).
+        try {
+            DB::transaction(function () use ($reservation, $request, $category, $checkIn, $checkOut) {
+                // Verrouille la chambre visee pour la duree de la transaction.
+                Room::whereKey($reservation->room_id)->lockForUpdate()->first();
 
-            $alternateRoom = $category->availableRoomForDates($checkIn, $checkOut, null, $reservation->id);
+                if (! $reservation->room->isAvailableForDates($checkIn, $checkOut, $reservation->id)) {
+                    if ($category->type === 'vip') {
+                        throw new \RuntimeException('Cet appartement VIP est deja bloque pour ces dates.');
+                    }
 
-            if (! $alternateRoom) {
-                return response()->json([
-                    'message' => 'Aucun appartement libre pour ces dates.',
-                ], 422);
-            }
+                    $alternateRoom = $category->availableRoomForDates($checkIn, $checkOut, null, $reservation->id);
 
-            $reservation->update([
-                'room_id' => $alternateRoom->id,
-            ]);
-            $reservation->setRelation('room', $alternateRoom);
+                    if (! $alternateRoom) {
+                        throw new \RuntimeException('Aucun appartement libre pour ces dates.');
+                    }
+
+                    $reservation->update([
+                        'room_id' => $alternateRoom->id,
+                    ]);
+                    $reservation->setRelation('room', $alternateRoom);
+                }
+
+                $reservation->update([
+                    'status' => 'VALIDEE_PAIEMENT_REQUIS',
+                    'admin_notes' => $request->admin_notes,
+                    'approved_at' => now(),
+                    'payment_deadline' => now()->addHours(24),
+                ]);
+            });
+        } catch (\RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
         }
-
-        DB::transaction(function () use ($reservation, $request) {
-            $reservation->update([
-                'status' => 'VALIDEE_PAIEMENT_REQUIS',
-                'admin_notes' => $request->admin_notes,
-                'approved_at' => now(),
-                'payment_deadline' => now()->addHours(24),
-            ]);
-        });
 
         try {
             Mail::to($reservation->user->email)->send(new ReservationApproved($reservation->fresh(['room', 'user'])));

@@ -32,6 +32,7 @@ class AuthController extends Controller
         $token = Str::random(64);
         $user->forceFill([
             'api_token' => hash('sha256', $token),
+            'api_token_expires_at' => now()->addDays(30),
         ])->save();
 
         return response()->json([
@@ -58,6 +59,7 @@ class AuthController extends Controller
         $token = Str::random(64);
         $user->forceFill([
             'api_token' => hash('sha256', $token),
+            'api_token_expires_at' => now()->addDays(30),
         ])->save();
 
         return response()->json([

@@ -25,6 +25,7 @@ class ReservationController extends Controller
             'check_in' => 'required|date|after_or_equal:today',
             'check_out' => 'required|date|after:check_in',
             'room_id' => 'nullable|integer|exists:rooms,id',
+            'guests' => 'nullable|integer|min:1',
             'special_requests' => 'nullable|string|max:1000',
         ]);
 
@@ -47,12 +48,29 @@ class ReservationController extends Controller
 
         $checkIn = Carbon::parse($request->check_in)->startOfDay();
         $checkOut = Carbon::parse($request->check_out)->startOfDay();
-        $today = now()->startOfDay();
         $nights = max(1, $checkIn->diffInDays($checkOut));
-        $daysBeforeArrival = max(0, $today->diffInDays($checkIn, false));
+
+        // Garde-fou: duree de sejour raisonnable.
+        if ($nights > 90) {
+            return response()->json([
+                'message' => 'La duree du sejour ne peut exceder 90 nuits.',
+            ], 422);
+        }
+
+        // Nombre de voyageurs reellement controle (<= capacite de l'appartement).
+        $maxGuests = (int) $room->max_occupants;
+        $guests = (int) ($request->integer('guests') ?: $maxGuests);
+        if ($guests < 1 || $guests > $maxGuests) {
+            return response()->json([
+                'message' => "Le nombre de voyageurs doit etre compris entre 1 et {$maxGuests}.",
+            ], 422);
+        }
+
         $depositPerDay = (int) ($room->deposit ?: $category->deposit_per_day);
         $pricePerNight = (int) ($room->base_price ?: $category->price_per_night);
-        $depositAmount = $daysBeforeArrival * $depositPerDay;
+        // Caution basee sur la duree du sejour (nuits) et non plus sur le delai
+        // avant arrivee, qui pouvait gonfler la caution de facon aberrante.
+        $depositAmount = $nights * $depositPerDay;
         $stayAmount = $nights * $pricePerNight;
 
         $reservation = Reservation::create([
@@ -61,7 +79,7 @@ class ReservationController extends Controller
             'category_type' => $category->type,
             'check_in' => $request->check_in,
             'check_out' => $request->check_out,
-            'guests' => $room->max_occupants,
+            'guests' => $guests,
             'total_price' => $depositAmount,
             'deposit_daily_rate' => $depositPerDay,
             'deposit_amount' => $depositAmount,

@@ -119,9 +119,15 @@ class PaymentController extends Controller
         return response()->json(['status' => 'failed']);
     }
 
-    public function checkStatus(string $paymentId): JsonResponse
+    public function checkStatus(Request $request, string $paymentId): JsonResponse
     {
         $payment = Payment::with('reservation')->findOrFail($paymentId);
+
+        // Empeche l'acces au statut/montant du paiement d'un autre utilisateur (IDOR).
+        $user = $request->user();
+        if (! $user || (! $user->is_admin && $payment->reservation->user_id !== $user->id)) {
+            return response()->json(['message' => 'Acces non autorise.'], 403);
+        }
 
         return response()->json([
             'status' => $payment->status,
