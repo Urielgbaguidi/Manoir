@@ -389,6 +389,38 @@ class ApiClient {
     );
   }
 
+  async downloadReservationDocumentPdf(
+    reservationId: string,
+    type: "booking" | "deposit" | "stay-voucher" | "stay" | "cancellation"
+  ): Promise<{ blob: Blob; filename: string }> {
+    const headers: HeadersInit = {};
+    const token = this.getToken();
+    if (token) {
+      (headers as Record<string, string>).Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL}/reservations/${reservationId}/invoice-pdf?type=${type}`,
+      { headers }
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({
+        message: "Impossible de télécharger cette facture."
+      }));
+      throw new ApiError(error.message || `Erreur ${response.status}`, response.status);
+    }
+
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const encodedFilename = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+    const basicFilename = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+    const filename = encodedFilename
+      ? decodeURIComponent(encodedFilename)
+      : basicFilename || `facture-${reservationId}.pdf`;
+
+    return { blob: await response.blob(), filename };
+  }
+
   async getInvoice(paymentId: string): Promise<{ invoice: Record<string, unknown> }> {
     return this.request<{ invoice: Record<string, unknown> }>(`/payments/${paymentId}/invoice`);
   }

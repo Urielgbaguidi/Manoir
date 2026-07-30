@@ -3,6 +3,7 @@
 import { Bell, Check } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useRouter } from "next/navigation";
 import { api, Notification } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +35,7 @@ const isUnread = (notification: Notification) => notification.status !== "read";
  */
 export default function NotificationBell() {
   const { user } = useAuth();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -64,6 +66,21 @@ export default function NotificationBell() {
     }
   }, [user, load]);
 
+  // Actualise le badge pendant que l'utilisateur reste connecté et dès qu'il
+  // revient sur l'onglet.
+  useEffect(() => {
+    if (!user) return;
+
+    const interval = window.setInterval(load, 30_000);
+    const onFocus = () => load();
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [user, load]);
+
   // Fermeture au clic extérieur + touche Échap.
   useEffect(() => {
     if (!open) return;
@@ -92,10 +109,17 @@ export default function NotificationBell() {
   };
 
   const handleMarkRead = async (notification: Notification) => {
-    if (!isUnread(notification)) return;
     try {
-      await api.markNotificationRead(notification.id);
-      await load();
+      if (isUnread(notification)) {
+        await api.markNotificationRead(notification.id);
+        await load();
+      }
+
+      const actionUrl = notification.metadata?.action_url;
+      if (typeof actionUrl === "string" && actionUrl.startsWith("/")) {
+        setOpen(false);
+        router.push(actionUrl);
+      }
     } catch {
       /* ignore : l'état sera resynchronisé au prochain chargement */
     }
@@ -168,7 +192,7 @@ export default function NotificationBell() {
                         onClick={() => handleMarkRead(notification)}
                         className={cn(
                           "flex w-full gap-3 border-b border-gold/10 px-4 py-3 text-left transition last:border-b-0 hover:bg-white/5",
-                          unread ? "cursor-pointer" : "cursor-default"
+                          "cursor-pointer"
                         )}
                       >
                         <span

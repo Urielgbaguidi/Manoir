@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ReservationController;
+use App\Http\Controllers\Api\ReservationInvoicePdfController;
 use App\Http\Controllers\Api\RoomCategoryController;
 use App\Http\Controllers\Api\RoomController;
 use Illuminate\Support\Facades\Route;
@@ -41,6 +42,7 @@ Route::middleware('api.token')->group(function () {
     Route::post('/reservations', [ReservationController::class, 'store']);
     Route::get('/reservations', [ReservationController::class, 'myReservations']);
     Route::get('/reservations/{id}', [ReservationController::class, 'show']);
+    Route::get('/reservations/{id}/invoice-pdf', [ReservationInvoicePdfController::class, 'download']);
     Route::get('/reservations/{id}/payments', [ReservationController::class, 'payments']);
     Route::post('/reservations/{id}/invoice-download', [ReservationController::class, 'markInvoiceDownloaded']);
     Route::post('/reservations/{id}/cancel', [ReservationController::class, 'cancel']);

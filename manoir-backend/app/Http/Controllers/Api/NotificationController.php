@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Notification;
+use App\Services\ReservationNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -16,6 +17,10 @@ class NotificationController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
+
+        // Crée aussi les notifications des réservations déjà existantes afin
+        // que l'activation de la fonctionnalité soit immédiatement visible.
+        ReservationNotificationService::syncForUser($user->id);
 
         $notifications = Notification::where('user_id', $user->id)
             ->orderByDesc('created_at')

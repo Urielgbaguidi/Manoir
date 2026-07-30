@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
 use App\Models\Reservation;
+use App\Services\ReservationNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -107,6 +108,17 @@ class PaymentController extends Controller
                     ]);
                 }
             });
+
+            $confirmedPayment = $payment->fresh(['reservation']);
+            $confirmedReservation = $confirmedPayment->reservation;
+            $amount = number_format((int) $confirmedPayment->amount, 0, ',', ' ');
+            ReservationNotificationService::sendOnce(
+                $confirmedReservation,
+                $confirmedPayment->payment_type === 'stay' ? 'stay_paid' : 'deposit_paid',
+                $confirmedPayment->payment_type === 'stay'
+                    ? "Le paiement de {$amount} FCFA pour votre séjour #{$confirmedReservation->id} est confirmé. Votre facture de séjour est disponible."
+                    : "Votre caution de {$amount} FCFA pour la réservation #{$confirmedReservation->id} est payée. Votre réservation est maintenant confirmée et la facture est disponible."
+            );
 
             return response()->json(['status' => 'success']);
         }

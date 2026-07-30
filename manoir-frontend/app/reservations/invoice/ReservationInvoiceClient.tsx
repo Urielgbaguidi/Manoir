@@ -136,6 +136,7 @@ export default function ReservationInvoicePage() {
   const [reservation, setReservation] = useState<Reservation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const requestedType = searchParams.get("type") as DocumentType | null;
   const documentType: DocumentType =
@@ -273,6 +274,28 @@ export default function ReservationInvoicePage() {
         footer: "bg-gradient-to-r from-amber-700 to-orange-700"
       };
 
+  const handlePdf = async () => {
+    setDownloadingPdf(true);
+    try {
+      const { blob, filename } = await api.downloadReservationDocumentPdf(
+        reservation.id.toString(),
+        documentType
+      );
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Impossible de télécharger la facture.");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
   return (
     <div className="invoice-print-page min-h-screen py-28 md:py-32">
       <div className="mx-auto mb-4 max-w-4xl px-4 print:hidden">
@@ -284,10 +307,12 @@ export default function ReservationInvoicePage() {
             Retour aux réservations
           </Link>
           <button
-            onClick={() => window.print()}
-            className={`rounded-lg px-6 py-2 text-white transition-colors ${theme.button}`}
+            type="button"
+            onClick={handlePdf}
+            disabled={downloadingPdf}
+            className={`rounded-lg px-6 py-2 text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${theme.button}`}
           >
-            Imprimer / PDF
+            {downloadingPdf ? "Création du PDF..." : "Télécharger le PDF"}
           </button>
         </div>
       </div>
