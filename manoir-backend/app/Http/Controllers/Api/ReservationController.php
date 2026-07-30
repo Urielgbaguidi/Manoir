@@ -66,11 +66,11 @@ class ReservationController extends Controller
             ], 422);
         }
 
-        $depositPerDay = (int) ($room->deposit ?: $category->deposit_per_day);
-        $pricePerNight = (int) ($room->base_price ?: $category->price_per_night);
-        // Caution basee sur la duree du sejour (nuits) et non plus sur le delai
-        // avant arrivee, qui pouvait gonfler la caution de facon aberrante.
-        $depositAmount = $nights * $depositPerDay;
+        $depositPerDay = $category->type === 'vip' ? (int) ($room->deposit ?: $category->deposit_per_day) : (int) $category->deposit_per_day;
+        $pricePerNight = $category->type === 'vip' ? (int) ($room->base_price ?: $category->price_per_night) : (int) $category->price_per_night;
+        // Calcul de la caution: caution par jour x nombre de jours entre la demande et l'arrivee
+        $daysUntilCheckIn = max(1, now()->startOfDay()->diffInDays($checkIn));
+        $depositAmount = $daysUntilCheckIn * $depositPerDay;
         $stayAmount = $nights * $pricePerNight;
 
         $reservation = Reservation::create([

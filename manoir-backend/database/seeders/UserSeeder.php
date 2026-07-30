@@ -16,6 +16,7 @@ class UserSeeder extends Seeder
             'email' => 'admin@manoir.com',
             'password' => Hash::make('password123'),
             'is_admin' => true,
+            'is_super_admin' => true,
         ]);
 
         // Client test
@@ -24,6 +25,7 @@ class UserSeeder extends Seeder
             'email' => 'client@test.com',
             'password' => Hash::make('password123'),
             'is_admin' => false,
+            'is_super_admin' => false,
         ]);
     }
 }

@@ -97,12 +97,6 @@ const formatAdminDateTime = (value?: string) =>
 // Partie "YYYY-MM-DD" d'une date ISO, pour comparer aux valeurs des champs <input type="date">.
 const isoDatePart = (value?: string) => (value ? value.slice(0, 10) : "");
 
-// Echappe une cellule CSV (delimiteur ";", compatible Excel FR).
-const csvCell = (value: unknown) => {
-  const str = value === null || value === undefined ? "" : String(value);
-  return /[";\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
-};
-
 const countStayDays = (reservation: Reservation) => {
   const start = parseAdminDate(reservation.check_in);
   const end = parseAdminDate(reservation.check_out);
@@ -145,6 +139,7 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [exportingReport, setExportingReport] = useState(false);
 
   useEffect(() => {
     if (!authLoading) {
@@ -372,48 +367,34 @@ export default function AdminDashboard() {
     return true;
   });
 
-  const handleExportCsv = () => {
-    const headers = [
-      "Ref",
-      "Client",
-      "Email",
-      "Telephone",
-      "Categorie",
-      "Arrivee",
-      "Depart",
-      "Statut",
-      "Caution (FCFA)",
-      "Sejour (FCFA)",
-      "Total (FCFA)"
-    ];
+  const handleExportPdf = async () => {
+    if (filteredReservations.length === 0 || exportingReport) return;
 
-    const rows = filteredReservations.map((reservation) => [
-      `#${reservation.id}`,
-      reservation.user?.name ?? "",
-      reservation.user?.email ?? "",
-      reservation.user?.phone ?? "",
-      reservationApartmentLabel(reservation),
-      formatAdminDate(reservation.check_in),
-      formatAdminDate(reservation.check_out),
-      statusLabels[reservation.status] || reservation.status,
-      reservation.deposit_amount ?? reservation.total_price ?? 0,
-      reservation.stay_amount ?? 0,
-      reservation.total_price ?? 0
-    ]);
+    setExportingReport(true);
+    try {
+      const activeFilter = filtersList.find((filter) => filter.key === statusFilter);
+      const { blob, filename } = await api.downloadAdminReservationsReport({
+        reservation_ids: filteredReservations.map((reservation) => reservation.id),
+        filter_label: activeFilter?.label || "Toutes",
+        search: searchQuery.trim() || undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined
+      });
 
-    const csv = [headers, ...rows].map((row) => row.map(csvCell).join(";")).join("\r\n");
-
-    // BOM en tete pour qu'Excel lise correctement l'UTF-8 (accents).
-    const bom = String.fromCharCode(0xfeff);
-    const blob = new Blob([bom + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `reservations-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast("Le rapport PDF a été généré avec succès.", "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Impossible de générer le rapport PDF.", "error");
+    } finally {
+      setExportingReport(false);
+    }
   };
 
   if (authLoading || loading) {
@@ -724,12 +705,12 @@ export default function AdminDashboard() {
                 )}
                 <button
                   type="button"
-                  onClick={handleExportCsv}
-                  disabled={filteredReservations.length === 0}
+                  onClick={handleExportPdf}
+                  disabled={filteredReservations.length === 0 || exportingReport}
                   className="flex items-center gap-2 rounded-full bg-gradient-to-br from-gold-light to-gold px-5 py-3 text-[10px] font-black uppercase tracking-widest text-night transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <Download size={14} />
-                  Export CSV
+                  <Download size={14} className={exportingReport ? "animate-bounce" : ""} />
+                  {exportingReport ? "Création du PDF..." : "Export PDF"}
                 </button>
               </div>
             </div>
@@ -757,7 +738,7 @@ export default function AdminDashboard() {
                 <div
                   id={`admin-filter-help-${filter.key}`}
                   role="tooltip"
-                  className="pointer-events-none absolute left-1/2 top-[calc(100%+0.5rem)] z-40 w-72 -translate-x-1/2 rounded-2xl border border-gold/20 bg-night-700 px-4 py-3 text-left text-[11px] font-semibold normal-case leading-relaxed tracking-normal text-cream opacity-0 shadow-2xl shadow-black/50 transition-opacity duration-150 delay-0 group-hover:delay-1000 group-hover:opacity-100 group-focus-within:delay-1000 group-focus-within:opacity-100"
+                  className="admin-filter-tooltip pointer-events-none absolute left-1/2 top-[calc(100%+0.5rem)] z-40 w-72 -translate-x-1/2 rounded-2xl border border-gold/20 bg-night-700 px-4 py-3 text-left text-[11px] font-semibold normal-case leading-relaxed tracking-normal opacity-0 shadow-2xl shadow-black/50 transition-opacity duration-150 delay-0 group-hover:delay-1000 group-hover:opacity-100 group-focus-within:delay-1000 group-focus-within:opacity-100"
                 >
                   <span className="absolute -top-1.5 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 border-l border-t border-gold/20 bg-night-700" />
                   {filter.description}

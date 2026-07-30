@@ -387,9 +387,18 @@ export default function RoomCategoryDetailPage() {
   const videos = activeRoom?.videos?.length ? activeRoom.videos : (category?.videos ?? []);
   const activeImage = images[activeImageIndex] ?? images[0];
 
+  const daysUntilCheckIn = useMemo(() => {
+    if (!checkIn) return 1;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const checkInDate = new Date(`${checkIn}T00:00:00`);
+    const diff = Math.ceil((checkInDate.getTime() - today.getTime()) / 86400000);
+    return Math.max(1, diff);
+  }, [checkIn]);
+
   const nights = useMemo(() => dayDiff(checkIn, checkOut), [checkIn, checkOut]);
-  // Caution basée sur la durée du séjour (nuits) — alignée avec le backend.
-  const depositAmount = nights * depositPerDay;
+  // Calcul de la caution: caution par jour x nombre de jours entre la demande et l'arrivee
+  const depositAmount = daysUntilCheckIn * depositPerDay;
   const stayAmount = nights * pricePerNight;
 
   const beginReservation = () => {
@@ -877,29 +886,6 @@ export default function RoomCategoryDetailPage() {
 
                       <div>
                         <label
-                          htmlFor="guests"
-                          className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-gold/80"
-                        >
-                          Voyageurs
-                        </label>
-                        <select
-                          id="guests"
-                          value={guests}
-                          onChange={(event) => setGuests(Number(event.target.value))}
-                          className="glass-input w-full rounded-xl px-4 py-3.5 text-sm outline-none cursor-pointer"
-                        >
-                          {Array.from({ length: maxGuests }, (_, index) => index + 1).map(
-                            (count) => (
-                              <option key={count} value={count} className="bg-night text-cream">
-                                {count} voyageur{count > 1 ? "s" : ""}
-                              </option>
-                            )
-                          )}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label
                           htmlFor="special-requests"
                           className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-gold/80"
                         >
@@ -947,8 +933,8 @@ export default function RoomCategoryDetailPage() {
                             <div className="space-y-2 border-t border-olive/10 pt-3 text-cream">
                               <div className="flex items-center justify-between gap-4">
                                 <span className="text-[10px] uppercase tracking-wider text-cream/45">
-                                  Caution ({nights} nuit
-                                  {nights > 1 ? "s" : ""} x {formatCurrency(depositPerDay)})
+                                  Caution ({daysUntilCheckIn} jour
+                                  {daysUntilCheckIn > 1 ? "s" : ""} x {formatCurrency(depositPerDay)})
                                 </span>
                                 <span className="font-display text-lg font-bold">
                                   {formatCurrency(depositAmount)}

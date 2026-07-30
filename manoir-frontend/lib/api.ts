@@ -142,6 +142,7 @@ export interface User {
   email: string;
   phone?: string;
   is_admin: boolean;
+  is_super_admin: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -477,6 +478,40 @@ class ApiClient {
     }
     const query = queryParams.toString();
     return this.request<{ data: Reservation[] }>(`/admin/reservations${query ? `?${query}` : ""}`);
+  }
+
+  async downloadAdminReservationsReport(data: {
+    reservation_ids: number[];
+    filter_label: string;
+    search?: string;
+    date_from?: string;
+    date_to?: string;
+  }): Promise<{ blob: Blob; filename: string }> {
+    const headers: HeadersInit = { "Content-Type": "application/json" };
+    const token = this.getToken();
+    if (token) {
+      (headers as Record<string, string>).Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/admin/reservations/report`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(data)
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: "Impossible de générer le PDF." }));
+      throw new ApiError(error.message || `Erreur ${response.status}`, response.status);
+    }
+
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const encodedFilename = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+    const basicFilename = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+    const filename = encodedFilename
+      ? decodeURIComponent(encodedFilename)
+      : basicFilename || `rapport-reservations-${new Date().toISOString().slice(0, 10)}.pdf`;
+
+    return { blob: await response.blob(), filename };
   }
 
   async getOccupiedRooms(): Promise<{ data: Reservation[] }> {

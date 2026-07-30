@@ -28,7 +28,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#120D07"
+  themeColor: "#F5F0E6"
 };
 
 export default function RootLayout({
@@ -37,12 +37,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr" data-theme="dark" className={`${inter.variable} ${bricolage.variable}`}>
+    <html
+      lang="fr"
+      data-theme="light"
+      suppressHydrationWarning
+      className={`${inter.variable} ${bricolage.variable}`}
+    >
       <head>
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){try{var t=localStorage.getItem('theme')||'dark';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();"
+              "(function(){try{var t=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();"
           }}
         />
       </head>

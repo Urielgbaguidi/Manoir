@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Admin\AdminReservationController;
+use App\Http\Controllers\Api\Admin\AdminReservationReportController;
 use App\Http\Controllers\Api\Admin\AdminRoomCategoryController;
 use App\Http\Controllers\Api\Admin\AdminRoomController;
 use App\Http\Controllers\Api\Admin\AdminStatsController;
@@ -64,6 +65,7 @@ Route::post('/payments/{paymentId}/webhook', [PaymentController::class, 'webhook
 // Routes admin (protégées par middleware admin)
 Route::middleware(['api.token', 'admin'])->prefix('admin')->group(function () {
     Route::get('/reservations', [AdminReservationController::class, 'index']);
+    Route::post('/reservations/report', [AdminReservationReportController::class, 'download']);
     Route::get('/occupied-rooms', [AdminReservationController::class, 'occupiedRooms']);
     Route::post('/reservations/{id}/approve', [AdminReservationController::class, 'approve']);
     Route::post('/reservations/{id}/reject', [AdminReservationController::class, 'reject']);
