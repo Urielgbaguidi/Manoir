@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 
 class AdminUserController extends Controller
 {
@@ -17,14 +16,20 @@ class AdminUserController extends Controller
         return response()->json($users);
     }
 
-    public function toggleAdmin(string $id): JsonResponse
+    public function toggleAdmin(string $id, Request $request): JsonResponse
     {
         $user = User::findOrFail($id);
 
-        if ($user->id === Auth::id()) {
+        if (! $request->user()->is_super_admin) {
             return response()->json([
-                'message' => 'Vous ne pouvez pas modifier votre propre statut administrateur.',
-            ], 422);
+                'message' => 'Seul le super administrateur peut nommer ou déclasser un administrateur.',
+            ], 403);
+        }
+
+        if ($user->is_super_admin) {
+            return response()->json([
+                'message' => 'Le super administrateur ne peut pas être déclassé.',
+            ], 403);
         }
 
         $user->is_admin = ! $user->is_admin;
@@ -43,6 +48,13 @@ class AdminUserController extends Controller
         ]);
 
         $user = User::findOrFail($id);
+
+        if ($user->is_admin && ! $request->user()->is_super_admin) {
+            return response()->json([
+                'message' => 'Un administrateur ne peut pas modifier un autre administrateur.',
+            ], 403);
+        }
+
         $user->update([
             'name' => trim($data['name']),
         ]);
@@ -53,14 +65,26 @@ class AdminUserController extends Controller
         ]);
     }
 
-    public function destroy(string $id): JsonResponse
+    public function destroy(string $id, Request $request): JsonResponse
     {
         $user = User::findOrFail($id);
 
-        if ($user->id === Auth::id()) {
+        if ($user->is_super_admin) {
+            return response()->json([
+                'message' => 'Le compte du super administrateur ne peut pas être supprimé.',
+            ], 403);
+        }
+
+        if ($user->id === $request->user()->id) {
             return response()->json([
                 'message' => 'Vous ne pouvez pas supprimer votre propre compte.',
             ], 422);
+        }
+
+        if ($user->is_admin && ! $request->user()->is_super_admin) {
+            return response()->json([
+                'message' => 'Un administrateur ne peut pas supprimer un autre administrateur.',
+            ], 403);
         }
 
         $user->delete();

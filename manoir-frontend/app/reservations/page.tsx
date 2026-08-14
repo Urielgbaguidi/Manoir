@@ -1134,7 +1134,7 @@ export default function ReservationsPage() {
                         <div className="space-y-3 rounded-2xl border border-gold/15 bg-white/5 p-4">
                           <p className="text-sm font-bold text-cream">Bon de Réservation</p>
                           <a
-                            href={`/reservations/${reservation.id}/invoice?type=booking`}
+                            href={`/reservations/invoice?id=${reservation.id}&type=booking`}
                             className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-cream transition hover:border-gold/40 hover:bg-white/10 hover:text-gold-light"
                           >
                             <FileText size={14} />
@@ -1164,7 +1164,7 @@ export default function ReservationsPage() {
                         <p className="text-sm font-bold text-cream">Facture Caution</p>
                         {reservation.deposit_invoice_downloaded ? (
                           <a
-                            href={`/reservations/${reservation.id}/invoice?type=deposit`}
+                            href={`/reservations/invoice?id=${reservation.id}&type=deposit`}
                             className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-cream transition hover:border-gold/40 hover:bg-white/10 hover:text-gold-light"
                           >
                             <FileText size={14} />
@@ -1187,7 +1187,7 @@ export default function ReservationsPage() {
                       <div className="space-y-3 rounded-2xl border border-gold/15 bg-white/5 p-4">
                         <p className="text-sm font-bold text-cream">Bon du Séjour</p>
                         <a
-                          href={`/reservations/${reservation.id}/invoice?type=stay-voucher`}
+                          href={`/reservations/invoice?id=${reservation.id}&type=stay-voucher`}
                           className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-cream transition hover:border-gold/40 hover:bg-white/10 hover:text-gold-light"
                         >
                           <FileText size={14} />
@@ -1233,7 +1233,7 @@ export default function ReservationsPage() {
                         <p className="text-sm font-bold text-cream">Facture Séjour</p>
                         {reservation.stay_invoice_downloaded ? (
                           <a
-                            href={`/reservations/${reservation.id}/invoice?type=stay`}
+                            href={`/reservations/invoice?id=${reservation.id}&type=stay`}
                             className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-cream transition hover:border-gold/40 hover:bg-white/10 hover:text-gold-light"
                           >
                             <FileText size={14} />
@@ -1260,7 +1260,7 @@ export default function ReservationsPage() {
                           {formatCurrency(reservation.cancellation_refund_amount)}
                         </p>
                         <a
-                          href={`/reservations/${reservation.id}/invoice?type=cancellation`}
+                          href={`/reservations/invoice?id=${reservation.id}&type=cancellation`}
                           className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-cream transition hover:border-gold/40 hover:bg-white/10 hover:text-gold-light"
                         >
                           <FileText size={14} />

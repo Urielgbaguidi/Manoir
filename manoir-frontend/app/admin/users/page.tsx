@@ -46,6 +46,11 @@ export default function AdminUsersPage() {
   };
 
   const handleToggleAdmin = async (user: User) => {
+    if (!currentUser?.is_super_admin) {
+      alert("Seul le super administrateur peut gérer les rôles administrateur.");
+      return;
+    }
+
     if (user.id === currentUser?.id) {
       alert("Vous ne pouvez pas modifier votre propre rôle administrateur.");
       return;
@@ -94,6 +99,16 @@ export default function AdminUsersPage() {
   };
 
   const handleDeleteUser = async (user: User) => {
+    if (user.is_super_admin) {
+      alert("Le compte du super administrateur ne peut pas être supprimé.");
+      return;
+    }
+
+    if (user.is_admin && !currentUser?.is_super_admin) {
+      alert("Vous ne pouvez pas supprimer un autre administrateur.");
+      return;
+    }
+
     if (user.id === currentUser?.id) {
       alert("Vous ne pouvez pas supprimer votre propre compte.");
       return;
@@ -233,36 +248,42 @@ export default function AdminUsersPage() {
                             : "bg-transparent text-cream/60 border-gold/15"
                         }`}
                       >
-                        {u.is_admin ? "Admin" : "Client"}
+                        {u.is_super_admin ? "Super admin" : u.is_admin ? "Admin" : "Client"}
                       </span>
                     </td>
                     <td className="p-6 text-right">
                       {u.id !== currentUser?.id ? (
                         <div className="inline-flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => startEditingUser(u)}
-                            className="flex items-center gap-1.5 px-3 py-2 border border-gold/15 hover:border-gold text-gold/80 hover:text-gold-light text-[10px] font-black uppercase tracking-wider rounded-xl transition"
-                            title="Modifier le nom"
-                          >
-                            <Edit3 size={12} /> Modifier
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleAdmin(u)}
-                            className="flex items-center gap-1.5 px-3 py-2 border border-gold/15 hover:border-gold text-gold/80 hover:text-gold-light text-[10px] font-black uppercase tracking-wider rounded-xl transition"
-                            title={u.is_admin ? "Rendre client" : "Rendre admin"}
-                          >
-                            <Shield size={12} /> {u.is_admin ? "Déclasser" : "Nommer Admin"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteUser(u)}
-                            className="p-2 border border-terracotta/40 hover:border-terracotta text-terracotta-light hover:bg-terracotta/15 rounded-xl transition"
-                            title="Supprimer"
-                          >
-                            <Trash2 size={12} />
-                          </button>
+                          {(!u.is_admin || currentUser?.is_super_admin) && (
+                            <button
+                              type="button"
+                              onClick={() => startEditingUser(u)}
+                              className="flex items-center gap-1.5 px-3 py-2 border border-gold/15 hover:border-gold text-gold/80 hover:text-gold-light text-[10px] font-black uppercase tracking-wider rounded-xl transition"
+                              title="Modifier le nom"
+                            >
+                              <Edit3 size={12} /> Modifier
+                            </button>
+                          )}
+                          {currentUser?.is_super_admin && !u.is_super_admin && (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleAdmin(u)}
+                              className="flex items-center gap-1.5 px-3 py-2 border border-gold/15 hover:border-gold text-gold/80 hover:text-gold-light text-[10px] font-black uppercase tracking-wider rounded-xl transition"
+                              title={u.is_admin ? "Rendre client" : "Rendre admin"}
+                            >
+                              <Shield size={12} /> {u.is_admin ? "Déclasser" : "Nommer Admin"}
+                            </button>
+                          )}
+                          {!u.is_super_admin && (!u.is_admin || currentUser?.is_super_admin) && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteUser(u)}
+                              className="p-2 border border-terracotta/40 hover:border-terracotta text-terracotta-light hover:bg-terracotta/15 rounded-xl transition"
+                              title="Supprimer"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <span className="text-xs text-cream/35 italic">Actif</span>

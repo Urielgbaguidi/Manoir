@@ -7,6 +7,7 @@ use App\Mail\ReservationCancelled;
 use App\Models\Payment;
 use App\Models\Reservation;
 use App\Models\RoomCategory;
+use App\Services\ReservationNotificationService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -66,11 +67,11 @@ class ReservationController extends Controller
             ], 422);
         }
 
-        $depositPerDay = (int) ($room->deposit ?: $category->deposit_per_day);
-        $pricePerNight = (int) ($room->base_price ?: $category->price_per_night);
-        // Caution basee sur la duree du sejour (nuits) et non plus sur le delai
-        // avant arrivee, qui pouvait gonfler la caution de facon aberrante.
-        $depositAmount = $nights * $depositPerDay;
+        $depositPerDay = $category->type === 'vip' ? (int) ($room->deposit ?: $category->deposit_per_day) : (int) $category->deposit_per_day;
+        $pricePerNight = $category->type === 'vip' ? (int) ($room->base_price ?: $category->price_per_night) : (int) $category->price_per_night;
+        // Calcul de la caution: caution par jour x nombre de jours entre la demande et l'arrivee
+        $daysUntilCheckIn = max(1, now()->startOfDay()->diffInDays($checkIn));
+        $depositAmount = $daysUntilCheckIn * $depositPerDay;
         $stayAmount = $nights * $pricePerNight;
 
         $reservation = Reservation::create([
@@ -87,6 +88,12 @@ class ReservationController extends Controller
             'status' => 'EN_ATTENTE',
             'special_requests' => $request->special_requests,
         ]);
+
+        ReservationNotificationService::sendOnce(
+            $reservation,
+            'reservation_submitted',
+            "Votre demande de réservation #{$reservation->id} a bien été envoyée. L’administration va l’examiner."
+        );
 
         return response()->json([
             'message' => $room->apartment_number
@@ -165,6 +172,12 @@ class ReservationController extends Controller
 
         $reservation = $reservation->fresh(['room', 'payments', 'user']);
 
+        ReservationNotificationService::sendOnce(
+            $reservation,
+            'reservation_cancelled',
+            "Votre réservation #{$reservation->id} est annulée. Le remboursement prévu est de ".number_format((int) $calculation['refund_amount'], 0, ',', ' ')." FCFA sous 48h à 72h."
+        );
+
         try {
             Mail::to($reservation->user->email)->send(new ReservationCancelled($reservation));
             $adminEmail = config('mail.from.address');
@@ -227,6 +240,12 @@ class ReservationController extends Controller
             'extension_processed_at' => null,
             'extension_admin_notes' => null,
         ]);
+
+        ReservationNotificationService::sendOnce(
+            $reservation,
+            'extension_requested',
+            "Votre demande de prolongation pour la réservation #{$reservation->id}, jusqu’au {$newCheckOut->format('d/m/Y')}, a été envoyée à l’administration."
+        );
 
         return response()->json([
             'message' => 'Votre demande de prolongation a ete envoyee a l\'administrateur.',

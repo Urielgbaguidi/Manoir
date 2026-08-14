@@ -9,6 +9,7 @@ use App\Mail\ReservationRejected;
 use App\Models\Reservation;
 use App\Models\Room;
 use App\Models\RoomCategory;
+use App\Services\ReservationNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -92,6 +93,12 @@ class AdminReservationController extends Controller
             'released_by_admin_id' => $request->user()?->id,
             'release_notes' => $request->release_notes,
         ]);
+
+        ReservationNotificationService::sendOnce(
+            $reservation,
+            'stay_released',
+            "Votre séjour lié à la réservation #{$reservation->id} est terminé. Merci d’avoir choisi Le Manoir."
+        );
 
         return response()->json([
             'message' => 'Appartement libere. Il est de nouveau disponible pour les prochaines demandes.',
@@ -178,6 +185,14 @@ class AdminReservationController extends Controller
             Log::warning('Failed to send approval email: '.$exception->getMessage());
         }
 
+        $approvedReservation = $reservation->fresh(['room', 'user', 'payments']);
+        $depositAmount = number_format((int) ($approvedReservation->deposit_amount ?? $approvedReservation->total_price), 0, ',', ' ');
+        ReservationNotificationService::sendOnce(
+            $approvedReservation,
+            'reservation_approved',
+            "Votre demande #{$approvedReservation->id} a été acceptée. Payez la caution de {$depositAmount} FCFA dans votre espace client avant le {$approvedReservation->payment_deadline->format('d/m/Y à H:i')} pour confirmer la réservation."
+        );
+
         return response()->json([
             'message' => 'Demande confirmee. Le client a 24h pour payer la caution de réservation.',
             'reservation' => $reservation->fresh(['room', 'user', 'payments']),
@@ -209,6 +224,12 @@ class AdminReservationController extends Controller
             Log::warning('Failed to send rejection email: '.$exception->getMessage());
         }
 
+        ReservationNotificationService::sendOnce(
+            $reservation,
+            'reservation_rejected',
+            "Votre demande de réservation #{$reservation->id} a été refusée. Motif : {$request->admin_notes}."
+        );
+
         return response()->json([
             'message' => 'Demande refusee. Le motif a ete envoye au client.',
             'reservation' => $reservation->fresh(['room', 'user', 'payments']),
@@ -237,6 +258,12 @@ class AdminReservationController extends Controller
         } catch (\Exception $exception) {
             Log::warning('Failed to send refund completed email: '.$exception->getMessage());
         }
+
+        ReservationNotificationService::sendOnce(
+            $reservation,
+            'refund_completed',
+            "Le remboursement de ".number_format((int) ($reservation->cancellation_refund_amount ?? 0), 0, ',', ' ')." FCFA pour la réservation #{$reservation->id} a été confirmé."
+        );
 
         return response()->json([
             'message' => 'Remboursement marque comme effectue.',
@@ -295,6 +322,12 @@ class AdminReservationController extends Controller
             'extension_admin_notes' => $request->admin_notes,
         ]);
 
+        ReservationNotificationService::sendOnce(
+            $reservation,
+            'extension_approved',
+            "Votre demande de prolongation #{$reservation->id} a été acceptée. Votre nouveau départ est prévu le {$requestedCheckOut->format('d/m/Y')} et le montant du séjour est maintenant de ".number_format((int) $reservation->stay_amount, 0, ',', ' ')." FCFA."
+        );
+
         return response()->json([
             'message' => 'Prolongation acceptee. La date de depart et le montant du sejour ont ete mis a jour.',
             'reservation' => $reservation->fresh(['room', 'user', 'payments']),
@@ -320,6 +353,12 @@ class AdminReservationController extends Controller
             'extension_processed_at' => now(),
             'extension_admin_notes' => $request->admin_notes,
         ]);
+
+        ReservationNotificationService::sendOnce(
+            $reservation,
+            'extension_rejected',
+            "Votre demande de prolongation #{$reservation->id} a été refusée. Motif : {$request->admin_notes}."
+        );
 
         return response()->json([
             'message' => 'Prolongation refusee avec motif.',

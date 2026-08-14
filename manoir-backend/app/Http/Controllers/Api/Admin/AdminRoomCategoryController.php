@@ -68,7 +68,10 @@ class AdminRoomCategoryController extends Controller
         ]);
 
         $path = $request->file('file')->store("room-categories/{$roomCategory->type}/{$data['kind']}", 'public');
-        $url = $request->getSchemeAndHttpHost().Storage::url($path);
+        $url = Storage::url($path);
+        if (!str_starts_with($url, 'http://') && !str_starts_with($url, 'https://')) {
+            $url = $request->getSchemeAndHttpHost().$url;
+        }
         $media = $roomCategory->{$data['kind']} ?? [];
         $media[] = $url;
 

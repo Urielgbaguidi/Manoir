@@ -99,7 +99,7 @@ export default function LogoSeal({
               type="button"
               onClick={() => setOpen(false)}
               aria-label="Fermer"
-              className="fixed right-5 top-5 grid size-11 place-items-center rounded-full border border-gold/40 text-cream transition hover:border-gold hover:bg-gold/10"
+              className="absolute right-4 top-4 z-50 grid size-11 place-items-center rounded-full border border-gold/40 text-cream transition hover:border-gold hover:bg-gold/10 md:right-6 md:top-6"
             >
               <X size={20} />
             </button>

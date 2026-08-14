@@ -653,6 +653,13 @@ body.overlay-open .grain-layer::after {
     inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
+/* Les infobulles des filtres restent sombres : leur texte doit donc rester clair,
+   même lorsque les couleurs globales sont inversées par le thème lumineux. */
+.admin-filter-tooltip,
+:root[data-theme="light"] .admin-filter-tooltip {
+  color: #fffaf0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

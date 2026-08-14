@@ -38,10 +38,11 @@ class CheckPaymentExpirations extends Command
             Notification::create([
                 'user_id' => $reservation->user_id,
                 'reservation_id' => $reservation->id,
-                'type' => 'expiration',
+                'type' => 'reservation_expired',
                 'channel' => 'system',
                 'status' => 'sent',
-                'content' => "La réservation #{$reservation->id} a expiré car le délai de paiement de 24h est dépassé.",
+                'content' => "La réservation #{$reservation->id} a expiré car la caution n’a pas été payée dans le délai prévu. L’appartement a été remis à disposition.",
+                'metadata' => ['action_url' => '/reservations'],
                 'sent_at' => now(),
             ]);
 
@@ -73,7 +74,8 @@ class CheckPaymentExpirations extends Command
                         'type' => 'payment_reminder',
                         'channel' => 'email',
                         'status' => 'sent',
-                        'content' => 'Rappel de paiement 2h avant expiration envoyé par email.',
+                        'content' => "Attention : il reste moins de 2 heures pour payer la caution de ".number_format((int) ($reservation->deposit_amount ?? $reservation->total_price), 0, ',', ' ')." FCFA de votre réservation #{$reservation->id}. Payez-la depuis votre espace client pour éviter l’expiration.",
+                        'metadata' => ['action_url' => '/reservations'],
                         'sent_at' => now(),
                     ]);
 
@@ -104,9 +106,31 @@ class CheckPaymentExpirations extends Command
                     'channel' => 'system',
                     'status' => 'sent',
                     'content' => 'Votre sejour au Manoir se termine demain. Vous pouvez regler vos frais de sejour directement sur votre espace client.',
+                    'metadata' => ['action_url' => '/reservations'],
                     'sent_at' => now(),
                 ]);
             }
+        }
+
+        $startedReservations = Reservation::where('status', 'CONFIRMEE')
+            ->whereDate('check_in', $now->toDateString())
+            ->get();
+
+        foreach ($startedReservations as $reservation) {
+            Notification::firstOrCreate(
+                [
+                    'user_id' => $reservation->user_id,
+                    'reservation_id' => $reservation->id,
+                    'type' => 'stay_started',
+                ],
+                [
+                    'channel' => 'system',
+                    'status' => 'sent',
+                    'content' => "Votre séjour au Manoir commence aujourd’hui pour la réservation #{$reservation->id}. Nous vous souhaitons la bienvenue.",
+                    'metadata' => ['action_url' => '/reservations'],
+                    'sent_at' => now(),
+                ]
+            );
         }
 
         $this->info('Vérification terminée.');

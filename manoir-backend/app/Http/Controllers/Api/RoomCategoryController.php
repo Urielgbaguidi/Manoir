@@ -49,12 +49,13 @@ class RoomCategoryController extends Controller
             $request->check_out,
             $request->integer('room_id') ?: null
         );
-        $pricePerNight = $room?->base_price ?: $roomCategory->price_per_night;
+        $pricePerNight = $roomCategory->type === 'vip' ? ($room?->base_price ?: $roomCategory->price_per_night) : $roomCategory->price_per_night;
+        $depositPerDay = $roomCategory->type === 'vip' ? ($room?->deposit ?: $roomCategory->deposit_per_day) : $roomCategory->deposit_per_day;
 
         return response()->json([
             'available' => $room !== null,
             'price' => $pricePerNight * $nights,
-            'deposit_per_day' => $room?->deposit ?: $roomCategory->deposit_per_day,
+            'deposit_per_day' => $depositPerDay,
             'available_room' => $room,
         ]);
     }

@@ -64,6 +64,10 @@ const fallbackCategories: RoomCategory[] = [
 const formatCurrency = (value: number) => `${value.toLocaleString("fr-FR")} F`;
 
 const minCategoryPrice = (category: RoomCategory) => {
+  if (category.type !== "vip") {
+    return category.price_per_night;
+  }
+
   const unitPrices = category.units
     ?.map((unit) => unit.base_price)
     .filter((price): price is number => typeof price === "number");
