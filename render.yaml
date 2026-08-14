@@ -1,0 +1,66 @@
+# Blueprint Render — API Laravel du Manoir (Docker) + base Postgres externe (Neon).
+# Déploiement : Render > New > Blueprint > sélectionner ce repo.
+# Les variables `sync: false` sont à renseigner dans le dashboard Render (secrets).
+services:
+  - type: web
+    name: manoir-api
+    runtime: docker
+    plan: free
+    region: frankfurt # le plus proche du Bénin
+    branch: main
+    dockerfilePath: ./manoir-backend/Dockerfile
+    dockerContext: ./manoir-backend
+    healthCheckPath: /up # route santé intégrée à Laravel 11+
+    # Migrations jouées à chaque déploiement (idempotent)
+    preDeployCommand: php artisan migrate --force
+    autoDeploy: true
+    envVars:
+      - key: APP_NAME
+        value: Manoir
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      # Générer en local : `php artisan key:generate --show` puis coller la valeur (base64:...)
+      - key: APP_KEY
+        sync: false
+      # URL publique de CETTE API sur Render (ex: https://manoir-api.onrender.com) — à remplir après le 1er déploiement
+      - key: APP_URL
+        sync: false
+      - key: LOG_CHANNEL
+        value: stderr
+      - key: LOG_LEVEL
+        value: warning
+
+      # --- Base de données : Neon (Postgres) ---
+      - key: DB_CONNECTION
+        value: pgsql
+      # Depuis la "Connection string" Neon (utiliser l'hôte POOLED : ...-pooler...neon.tech)
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "5432"
+      - key: DB_DATABASE
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_SSLMODE
+        value: require # Neon exige le SSL
+
+      # --- Sessions / cache / queue en base (tables créées par les migrations) ---
+      - key: SESSION_DRIVER
+        value: database
+      - key: CACHE_STORE
+        value: database
+      - key: QUEUE_CONNECTION
+        value: database
+
+      # --- CORS : origine du frontend Vercel (ex: https://le-manoir.vercel.app) ---
+      - key: FRONTEND_URL
+        sync: false
+
+      # --- Mail : par défaut vers les logs (pas de crash si non configuré) ---
+      - key: MAIL_MAILER
+        value: log
