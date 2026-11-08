@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class AdminUserPermissionsTest extends TestCase
@@ -109,13 +108,12 @@ class AdminUserPermissionsTest extends TestCase
      */
     private function authenticatedAdmin(bool $isSuperAdmin = false): array
     {
-        $token = Str::random(80);
         $user = User::factory()->create([
             'is_admin' => true,
             'is_super_admin' => $isSuperAdmin,
-            'api_token' => hash('sha256', $token),
-            'api_token_expires_at' => now()->addHour(),
         ]);
+
+        $token = $user->createToken('tests', ['*'], now()->addHour())->plainTextToken;
 
         return [$user, $token];
     }

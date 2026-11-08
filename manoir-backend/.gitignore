@@ -25,3 +25,6 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Cle du compte de service Google : donne acces aux agendas, ne jamais committer.
+/storage/google-calendar*.json

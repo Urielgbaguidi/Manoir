@@ -374,7 +374,7 @@ export default function AdminRoomsPage() {
 
                     <label className="space-y-2">
                       <span className="block text-[10px] font-bold uppercase tracking-widest text-gold/80">
-                        Caution par jour (N)
+                        Acompte (obsolete)
                       </span>
                       <input
                         type="number"
@@ -621,7 +621,7 @@ export default function AdminRoomsPage() {
 
                           <label className="space-y-2">
                             <span className="block text-[10px] font-bold uppercase tracking-widest text-gold/80">
-                              Caution par jour
+                              Acompte (obsolete)
                             </span>
                             <input
                               type="number"

@@ -50,8 +50,12 @@ class Reservation extends Model
     protected function casts(): array
     {
         return [
-            'check_in' => 'date',
-            'check_out' => 'date',
+            // 'date:Y-m-d' et non 'date' : sans format explicite, Laravel
+            // serialise une date en horodatage UTC. Une arrivee le 24 aout a
+            // Cotonou sortait en '2026-08-23T23:00:00Z', que le navigateur
+            // pouvait afficher au 23.
+            'check_in' => 'date:Y-m-d',
+            'check_out' => 'date:Y-m-d',
             'approved_at' => 'datetime',
             'payment_deadline' => 'datetime',
             'paid_at' => 'datetime',
@@ -61,10 +65,12 @@ class Reservation extends Model
             'released_at' => 'datetime',
             'deposit_invoice_downloaded' => 'boolean',
             'stay_invoice_downloaded' => 'boolean',
-            'extension_previous_check_out' => 'date',
-            'extension_requested_check_out' => 'date',
+            'extension_previous_check_out' => 'date:Y-m-d',
+            'extension_requested_check_out' => 'date:Y-m-d',
             'extension_requested_at' => 'datetime',
             'extension_processed_at' => 'datetime',
+            'google_synced_at' => 'datetime',
+            'client_hidden_at' => 'datetime',
         ];
     }
 
@@ -100,9 +106,13 @@ class Reservation extends Model
         }
 
         $paymentDeadlinePassed = $this->payment_deadline && now()->greaterThanOrEqualTo($this->payment_deadline);
-        $arrivalDateReached = now()->startOfDay()->greaterThanOrEqualTo($this->check_in->copy()->startOfDay());
 
-        return $paymentDeadlinePassed || $arrivalDateReached;
+        // Une arrivee le jour meme reste valable : un appartement libre ce soir
+        // doit pouvoir se louer ce soir. Seule une date d'arrivee DEPASSEE
+        // condamne la demande.
+        $arrivalDatePassed = $this->check_in->copy()->startOfDay()->lessThan(now()->startOfDay());
+
+        return $paymentDeadlinePassed || $arrivalDatePassed;
     }
 
     public function expireIfPaymentDeadlinePassed(): bool
@@ -120,7 +130,7 @@ class Reservation extends Model
             ->where('status', 'VALIDEE_PAIEMENT_REQUIS')
             ->where(function ($query) {
                 $query->where('payment_deadline', '<=', now())
-                    ->orWhereDate('check_in', '<=', now()->toDateString());
+                    ->orWhereDate('check_in', '<', now()->toDateString());
             });
 
         if ($userId) {
@@ -128,6 +138,65 @@ class Reservation extends Model
         }
 
         return $query->update(['status' => 'EXPIREE']);
+    }
+
+    /**
+     * Solde restant apres l'acompte.
+     *
+     * L'acompte se deduit du sejour : le client verse d'abord un pourcentage,
+     * puis ce solde. Les deux additionnes font le prix du sejour, jamais plus.
+     */
+    public function balanceAmount(): int
+    {
+        return max(0, (int) $this->stay_amount - (int) $this->deposit_amount);
+    }
+
+    /**
+     * Part du sejour representee par l'acompte, pour l'affichage (« 30 % »).
+     */
+    public function depositPercentage(): int
+    {
+        $sejour = (int) $this->stay_amount;
+
+        if ($sejour <= 0) {
+            return 0;
+        }
+
+        return (int) round(((int) $this->deposit_amount / $sejour) * 100);
+    }
+
+    /**
+     * Statuts pour lesquels le client n'a plus rien a faire ni a attendre.
+     *
+     * @var array<int, string>
+     */
+    public const STATUTS_TERMINES = [
+        'REFUSEE',
+        'EXPIREE',
+        'SEJOUR_PAYE',
+        'ANNULEE',
+        'REMBOURSEE',
+        'LIBEREE',
+    ];
+
+    /**
+     * Le client peut-il retirer cette reservation de son historique ?
+     *
+     * Une reservation encore vivante ne doit jamais pouvoir etre masquee : le
+     * client perdrait l'acces a son paiement ou a son sejour a venir. Un sejour
+     * paye ne se masque donc qu'une fois le depart passe.
+     */
+    public function peutEtreMasquee(): bool
+    {
+        if (! in_array($this->status, self::STATUTS_TERMINES, true)) {
+            return false;
+        }
+
+        if ($this->status === 'SEJOUR_PAYE') {
+            return $this->check_out->copy()->startOfDay()->lessThan(now()->startOfDay());
+        }
+
+        return true;
     }
 
     public function nightsCount(): int

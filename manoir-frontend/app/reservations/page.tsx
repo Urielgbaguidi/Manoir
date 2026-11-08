@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calendar,
@@ -10,10 +10,12 @@ import {
   FileText,
   Settings,
   Sparkles,
+  Trash2,
   XCircle
 } from "lucide-react";
 import { ApiError, api, Reservation } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import EmailVerificationBanner from "@/components/ui/EmailVerificationBanner";
 import { useToast } from "@/context/ToastContext";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -29,7 +31,7 @@ const categoryLabels: Record<string, string> = {
 
 const statusLabels: Record<string, string> = {
   EN_ATTENTE: "Votre demande est en cours d'examen",
-  VALIDEE_PAIEMENT_REQUIS: "Caution a regler",
+  VALIDEE_PAIEMENT_REQUIS: "Acompte a regler",
   CONFIRMEE: "Reservation confirmee",
   REFUSEE: "Demande refusee",
   EXPIREE: "Delai de paiement expire",
@@ -126,10 +128,23 @@ const paymentCountdown = (deadline?: string, approvedAt?: string, nowMs = Date.n
   };
 };
 
-const hasArrivalDateReached = (reservation: Reservation, nowMs = Date.now()) => {
+// L'arrivee du jour meme reste payable : un appartement libre ce soir se loue
+// ce soir, et le client a jusqu'a la fin de la journee pour verser son acompte.
+// Seule une date d'arrivee DEPASSEE ferme le paiement. La comparaison se fait
+// au jour pres : sinon une arrivee aujourd'hui paraitrait perimee des 00 h 01.
+const hasArrivalDatePassed = (reservation: Reservation, nowMs = Date.now()) => {
   const arrivalDate = parseReservationDate(reservation.check_in);
 
-  return Boolean(arrivalDate && nowMs >= arrivalDate.getTime());
+  if (!arrivalDate) return false;
+
+  const maintenant = new Date(nowMs);
+  const aujourdhui = new Date(
+    maintenant.getFullYear(),
+    maintenant.getMonth(),
+    maintenant.getDate()
+  );
+
+  return arrivalDate.getTime() < aujourdhui.getTime();
 };
 
 const isDepositPaymentExpired = (reservation: Reservation, nowMs = Date.now()) =>
@@ -137,7 +152,7 @@ const isDepositPaymentExpired = (reservation: Reservation, nowMs = Date.now()) =
   (Boolean(
     paymentCountdown(reservation.payment_deadline, reservation.approved_at, nowMs)?.expired
   ) ||
-    hasArrivalDateReached(reservation, nowMs));
+    hasArrivalDatePassed(reservation, nowMs));
 
 const effectiveReservationStatus = (
   reservation: Reservation,
@@ -164,6 +179,11 @@ export default function ReservationsPage() {
   const [requestingExtension, setRequestingExtension] = useState(false);
   const [extensionError, setExtensionError] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
+  // Une seule ouverture automatique : sans ce garde, la fenetre de paiement se
+  // rouvrirait a chaque rendu tant que le parametre reste dans l'URL.
+  const paiementOuvert = useRef(false);
+  const [nettoyage, setNettoyage] = useState(false);
+  const [videMonHistorique, setVideMonHistorique] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -275,7 +295,10 @@ export default function ReservationsPage() {
     ].includes(effectiveReservationStatus(reservation, nowMs));
     const arrivalDate = reservation.check_in.slice(0, 10);
 
-    return statusAllowsCancellation && todayDateString() < arrivalDate;
+    // Le jour de l'arrivee inclus : une reservation prise pour ce soir doit
+    // pouvoir s'annuler dans la journee, sinon le client se retrouve engage
+    // des la seconde ou il valide.
+    return statusAllowsCancellation && todayDateString() <= arrivalDate;
   };
 
   const extensionMinimumDate = (reservation: Reservation) => {
@@ -511,7 +534,7 @@ export default function ReservationsPage() {
     const footerEnd = "#c2410c";
     const headerStart = "#fff7ed";
     const headerEnd = "#ffedd5";
-    const title = isStay ? "Facture Séjour" : "Facture Caution";
+    const title = isStay ? "Facture Séjour" : "Facture Acompte";
     const amount = getPaymentAmount(reservation, type);
     const nights = countNights(reservation.check_in, reservation.check_out);
     const unitPrice = isStay
@@ -528,7 +551,7 @@ export default function ReservationsPage() {
         ? reservation.stay_paid_at || new Date().toISOString()
         : reservation.paid_at || new Date().toISOString()
     );
-    const description = isStay ? "Frais de séjour" : "Caution de réservation";
+    const description = isStay ? "Frais de séjour" : "Acompte de réservation";
     const titleText = svgEscape(title);
     const numberText = svgEscape(invoiceNumber(reservation, type));
     const clientName = svgEscape(client?.name || "Client");
@@ -658,7 +681,7 @@ export default function ReservationsPage() {
     try {
       const number = invoiceNumber(reservation, type);
       const fileName =
-        type === "stay" ? `Facture-Sejour-${number}.pdf` : `Facture-Caution-${number}.pdf`;
+        type === "stay" ? `Facture-Sejour-${number}.pdf` : `Facture-Acompte-${number}.pdf`;
       const url = URL.createObjectURL(await buildInvoicePdf(reservation, type));
       const link = document.createElement("a");
       link.href = url;
@@ -751,7 +774,7 @@ export default function ReservationsPage() {
         )
       );
       showToast(
-        type === "deposit" ? "Caution payee. Reservation confirmee." : "Sejour paye avec succes.",
+        type === "deposit" ? "Acompte paye. Reservation confirmee." : "Sejour paye avec succes.",
         "success"
       );
       if (type === "stay") {
@@ -763,6 +786,31 @@ export default function ReservationsPage() {
       setPaymentError(err instanceof Error ? err.message : "Le paiement a echoue.");
     }
   };
+
+  // Arrivee depuis « Reserver » : la fenetre de paiement s'ouvre d'elle-meme.
+  // On lit l'URL a la main plutot qu'avec useSearchParams, qui imposerait une
+  // frontiere Suspense a l'export statique.
+  useEffect(() => {
+    if (paiementOuvert.current || loading || reservations.length === 0) {
+      return;
+    }
+
+    const demande = new URLSearchParams(window.location.search).get("payer");
+
+    if (!demande) return;
+
+    const reservation = reservations.find(
+      (candidate) => String(candidate.id) === demande
+    );
+
+    if (!reservation || reservation.status !== "VALIDEE_PAIEMENT_REQUIS") {
+      return;
+    }
+
+    paiementOuvert.current = true;
+    handleOpenPayment(reservation, "deposit");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, reservations]);
 
   const activeReservations = reservations.filter((reservation) =>
     ["EN_ATTENTE", "VALIDEE_PAIEMENT_REQUIS", "CONFIRMEE"].includes(
@@ -776,11 +824,47 @@ export default function ReservationsPage() {
   );
   const visibleReservations = activeTab === "active" ? activeReservations : historyReservations;
 
+  // Retirer de l'historique ne supprime rien : la reservation, ses factures et
+  // ses documents restent en base et consultables par l'administration.
+  const retirerDeLHistorique = async (reservation: Reservation) => {
+    setNettoyage(true);
+    try {
+      const reponse = await api.hideReservation(reservation.id.toString());
+      setReservations((liste) => liste.filter((autre) => autre.id !== reservation.id));
+      showToast(reponse.message, "success");
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Impossible de retirer cette reservation.",
+        "error"
+      );
+    } finally {
+      setNettoyage(false);
+    }
+  };
+
+  const viderLHistorique = async () => {
+    setNettoyage(true);
+    try {
+      const reponse = await api.clearReservationHistory();
+      showToast(reponse.message, "success");
+      setVideMonHistorique(false);
+      await loadReservations();
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Impossible de vider l'historique.",
+        "error"
+      );
+    } finally {
+      setNettoyage(false);
+    }
+  };
+
   const renderTimeline = (reservation: Reservation) => {
+    // Plus d'etape « Validation » : reserver retient l'appartement et ouvre le
+    // paiement dans la foulee. L'attendre n'apportait rien au client.
     const steps = [
-      { key: "submitted", label: "Demande" },
-      { key: "approved", label: "Validation" },
-      { key: "deposit", label: "Caution" },
+      { key: "submitted", label: "Reservation" },
+      { key: "deposit", label: "Acompte" },
       { key: "stay", label: "Sejour" }
     ];
 
@@ -790,17 +874,13 @@ export default function ReservationsPage() {
 
     const status = effectiveReservationStatus(reservation, nowMs);
 
-    if (status === "VALIDEE_PAIEMENT_REQUIS") {
+    if (status === "CONFIRMEE") {
       completedStepIndex = 1;
       nextStepIndex = 2;
     }
-    if (status === "CONFIRMEE") {
-      completedStepIndex = 2;
-      nextStepIndex = 3;
-    }
     if (status === "SEJOUR_PAYE") {
-      completedStepIndex = 3;
-      nextStepIndex = 3;
+      completedStepIndex = 2;
+      nextStepIndex = 2;
     }
     if (status === "REFUSEE") errorLabel = "Demande refusee";
     if (status === "EXPIREE") errorLabel = "Delai expire";
@@ -875,6 +955,8 @@ export default function ReservationsPage() {
   return (
     <main className="relative min-h-screen px-6 py-32 text-cream md:px-10">
       <div className="mx-auto max-w-7xl">
+        <EmailVerificationBanner user={user} />
+
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -894,7 +976,7 @@ export default function ReservationsPage() {
                   Mes <span className="text-gradient-gold">Reservations</span>
                 </h1>
                 <p className="max-w-2xl text-lg text-cream/60">
-                  Suivez vos demandes, payez votre caution ou votre sejour, et retrouvez vos
+                  Suivez vos demandes, payez votre acompte puis le solde, et retrouvez vos
                   documents.
                 </p>
               </div>
@@ -935,6 +1017,18 @@ export default function ReservationsPage() {
               />
             )}
           </button>
+
+          {activeTab === "history" && historyReservations.length > 0 && (
+            <button
+              type="button"
+              disabled={nettoyage}
+              onClick={() => setVideMonHistorique(true)}
+              className="ml-auto inline-flex items-center gap-2 rounded-xl border border-terracotta/40 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-terracotta-light transition hover:bg-terracotta hover:text-white disabled:opacity-50"
+            >
+              <Trash2 size={14} />
+              Vider l&apos;historique
+            </button>
+          )}
         </div>
 
         {visibleReservations.length === 0 ? (
@@ -1011,16 +1105,27 @@ export default function ReservationsPage() {
                     <div className="grid gap-4 sm:grid-cols-3">
                       <div className="rounded-2xl border border-gold/10 bg-white/5 p-4">
                         <p className="text-[9px] uppercase tracking-widest text-cream/45">
-                          Caution
+                          Acompte
                         </p>
                         <p className="mt-1 font-display text-xl font-bold text-cream">
-                          {formatCurrency(reservation.deposit_amount ?? reservation.total_price)}
+                          {formatCurrency(reservation.deposit_amount ?? 0)}
                         </p>
+                        <p className="mt-0.5 text-[10px] text-cream/45">deduit du sejour</p>
                       </div>
                       <div className="rounded-2xl border border-gold/10 bg-white/5 p-4">
-                        <p className="text-[9px] uppercase tracking-widest text-cream/45">Sejour</p>
+                        <p className="text-[9px] uppercase tracking-widest text-cream/45">
+                          Solde a l&apos;arrivee
+                        </p>
                         <p className="mt-1 font-display text-xl font-bold text-cream">
-                          {formatCurrency(reservation.stay_amount)}
+                          {formatCurrency(
+                            Math.max(
+                              0,
+                              (reservation.stay_amount ?? 0) - (reservation.deposit_amount ?? 0)
+                            )
+                          )}
+                        </p>
+                        <p className="mt-0.5 text-[10px] text-cream/45">
+                          sejour {formatCurrency(reservation.stay_amount ?? 0)}
                         </p>
                       </div>
                       <div className="rounded-2xl border border-gold/10 bg-white/5 p-4">
@@ -1080,12 +1185,22 @@ export default function ReservationsPage() {
                               <Clock className="mt-0.5 h-4 w-4 flex-shrink-0" />
                               <div className="min-w-0 flex-1">
                                 <p className="font-semibold">
-                                  Autorisation valable jusqu'au{" "}
+                                  Appartement retenu jusqu&apos;au{" "}
                                   {new Date(reservation.payment_deadline).toLocaleString("fr-FR")}
                                 </p>
                                 <p className="mt-1 text-[10px] uppercase tracking-widest opacity-60">
-                                  Temps restant pour payer la caution de réservation
+                                  Temps restant pour payer l’acompte de réservation
                                 </p>
+                                {/* Le client doit savoir ce qu'il risque a
+                                    attendre : l'appartement n'est pas garanti,
+                                    il est seulement mis de cote. */}
+                                {!countdown?.expired && (
+                                  <p className="mt-2 text-[11px] leading-4 opacity-80">
+                                    Passé cette heure, l&apos;appartement repart à la location et un
+                                    autre client peut le réserver. Tant que l&apos;acompte
+                                    n&apos;est pas réglé, votre séjour n&apos;est pas garanti.
+                                  </p>
+                                )}
 
                                 {countdown?.expired ? (
                                   <p className="mt-3 rounded-xl border border-terracotta/30 bg-terracotta/15 px-3 py-2 text-[11px] font-bold">
@@ -1153,7 +1268,7 @@ export default function ReservationsPage() {
                               onClick={() => handleOpenPayment(reservation, "deposit")}
                               className="flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-br from-gold-light to-gold px-5 py-4 text-center text-[10px] font-bold uppercase leading-5 tracking-[0.14em] text-night transition hover:brightness-105 sm:text-xs"
                             >
-                              Payer la caution de réservation
+                              Payer l’acompte de réservation
                             </button>
                           )}
                         </div>
@@ -1161,14 +1276,14 @@ export default function ReservationsPage() {
 
                     {hasDepositInvoice(reservation) && (
                       <div className="space-y-3 rounded-2xl border border-olive/25 bg-olive/10 p-4">
-                        <p className="text-sm font-bold text-cream">Facture Caution</p>
+                        <p className="text-sm font-bold text-cream">Facture Acompte</p>
                         {reservation.deposit_invoice_downloaded ? (
                           <a
                             href={`/reservations/invoice?id=${reservation.id}&type=deposit`}
                             className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/20 px-5 py-3 text-[10px] font-black uppercase tracking-wider text-cream transition hover:border-gold/40 hover:bg-white/10 hover:text-gold-light"
                           >
                             <FileText size={14} />
-                            Voir la Facture de Caution
+                            Voir la Facture d’Acompte
                           </a>
                         ) : (
                           <button
@@ -1197,7 +1312,7 @@ export default function ReservationsPage() {
                           onClick={() => handleOpenPayment(reservation, "stay")}
                           className="flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-br from-gold-light to-gold px-6 py-4 text-xs font-bold uppercase tracking-[0.2em] text-night transition hover:brightness-105"
                         >
-                          Payer mon séjour
+                          Payer le solde du séjour
                         </button>
                         {reservation.extension_status === "EN_ATTENTE" &&
                           reservation.extension_requested_check_out && (
@@ -1283,6 +1398,20 @@ export default function ReservationsPage() {
                 </div>
 
                 <div className="border-t border-gold/10 pt-6">{renderTimeline(reservation)}</div>
+
+                {activeTab === "history" && (
+                  <div className="flex justify-end pt-4">
+                    <button
+                      type="button"
+                      disabled={nettoyage}
+                      onClick={() => retirerDeLHistorique(reservation)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-gold/20 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-cream/60 transition hover:border-terracotta/40 hover:text-terracotta-light disabled:opacity-50"
+                    >
+                      <Trash2 size={13} />
+                      Retirer de l&apos;historique
+                    </button>
+                  </div>
+                )}
               </motion.article>
             ))}
           </div>
@@ -1382,6 +1511,60 @@ export default function ReservationsPage() {
       </AnimatePresence>
 
       <AnimatePresence>
+        {videMonHistorique && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+          >
+            <div
+              className="absolute inset-0 bg-night/85 backdrop-blur-md"
+              onClick={() => !nettoyage && setVideMonHistorique(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md glass-dark glass-edge rounded-3xl p-8 text-cream"
+            >
+              <div className="space-y-6">
+                <div>
+                  <h3 className="font-display text-2xl font-bold uppercase tracking-wide text-cream">
+                    Vider l&apos;historique
+                  </h3>
+                  <p className="mt-3 text-sm leading-relaxed text-cream/70">
+                    {historyReservations.length === 1
+                      ? "Cette réservation sera retirée de votre liste."
+                      : `Ces ${historyReservations.length} réservations seront retirées de votre liste.`}{" "}
+                    Vos factures et documents restent conservés par Le Manoir : rien n&apos;est
+                    supprimé, seul votre affichage est nettoyé.
+                  </p>
+                </div>
+
+                <div className="flex gap-3 border-t border-gold/10 pt-4">
+                  <button
+                    type="button"
+                    disabled={nettoyage}
+                    onClick={() => setVideMonHistorique(false)}
+                    className="flex-1 rounded-xl border border-gold/20 py-4 text-xs font-bold uppercase tracking-wider text-cream/70 transition hover:border-gold/40 hover:bg-white/5 hover:text-cream disabled:opacity-50"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="button"
+                    disabled={nettoyage}
+                    onClick={viderLHistorique}
+                    className="flex-1 rounded-xl border border-terracotta/40 py-4 text-xs font-bold uppercase tracking-wider text-terracotta-light transition hover:bg-terracotta hover:text-white disabled:opacity-50"
+                  >
+                    {nettoyage ? "Nettoyage..." : "Vider"}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
         {cancellingReservation && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
             <motion.div
@@ -1430,7 +1613,7 @@ export default function ReservationsPage() {
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className="rounded-2xl border border-gold/10 bg-white/5 p-4">
                         <p className="text-[9px] uppercase tracking-widest text-cream/45">
-                          Caution payée
+                          Acompte payé
                         </p>
                         <p className="mt-1 font-display text-xl font-bold text-cream">
                           {formatCurrency(preview.depositAmount)}
@@ -1461,11 +1644,6 @@ export default function ReservationsPage() {
                         </p>
                       </div>
                     </div>
-
-                    <p className="rounded-2xl border border-terracotta/30 bg-terracotta/10 p-4 text-sm leading-relaxed text-terracotta-light">
-                      Etes-vous sur de vouloir annuler ? Vous serez rembourse de{" "}
-                      {formatCurrency(preview.refundAmount)} dans un delai de 48h a 72h.
-                    </p>
 
                     <div className="flex gap-3 border-t border-gold/10 pt-4">
                       <button

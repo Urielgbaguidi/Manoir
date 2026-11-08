@@ -3,6 +3,7 @@ import { Bricolage_Grotesque, Inter } from "next/font/google";
 import Footer from "@/components/layout/Footer";
 import Navbar from "@/components/layout/Navbar";
 import AmbientBackground from "@/components/visual/AmbientBackground";
+import NavigationProgress from "@/components/ui/NavigationProgress";
 import { AuthProvider } from "@/context/AuthContext";
 import { ToastProvider } from "@/context/ToastContext";
 import "./globals.css";
@@ -51,8 +52,19 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="relative min-h-screen bg-night font-body text-cream/90 antialiased">
+      {/*
+        suppressHydrationWarning : les extensions de navigateur (gestionnaires de
+        mots de passe, correcteurs orthographiques) ajoutent leurs propres
+        attributs sur <body> avant que React ne s'hydrate, ce qui declenche a tort
+        une erreur de correspondance serveur/client. Ne masque que les attributs de
+        cet element, pas les erreurs d'hydratation de ses enfants.
+      */}
+      <body
+        suppressHydrationWarning
+        className="relative min-h-screen bg-night font-body text-cream/90 antialiased"
+      >
         <AmbientBackground />
+        <NavigationProgress />
         <AuthProvider>
           <ToastProvider>
             <Navbar />

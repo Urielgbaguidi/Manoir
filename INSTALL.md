@@ -45,10 +45,13 @@ Lancer ensuite les migrations, les donnees de test et le serveur backend :
 ```powershell
 php artisan migrate
 php artisan db:seed --class=UserSeeder
-php artisan db:seed --class=RoomSeeder
 php artisan storage:link
 php artisan serve --host=127.0.0.1 --port=8000
 ```
+
+> Ne pas lancer `db:seed --class=RoomSeeder` : les migrations creent deja les
+> 8 appartements et les 3 categories. Le lancer provoque une erreur
+> `UNIQUE constraint failed: rooms.slug`.
 
 Le backend doit repondre sur :
 

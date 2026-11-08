@@ -1,7 +1,73 @@
 # Le Manoir — Pistes d'amélioration
 
 _Feuille de route des évolutions restantes, priorisées Impact × Effort (S ≈ heures, M ≈ 1-3 j, L ≈ chantier)._
-_Issu de l'inspection fonctionnelle complète du 2026-07-19. Les items déjà traités sont dans [RECAP-TRAVAUX.md](RECAP-TRAVAUX.md)._
+_Issu de l'inspection fonctionnelle complète du 2026-07-19, révisé par l'audit du 2026-08-18 et le test de parcours du 2026-08-19._
+_Les items déjà traités sont dans [RECAP-TRAVAUX.md](RECAP-TRAVAUX.md)._
+
+---
+
+## 🧪 État du parcours client — testé de bout en bout le 2026-08-19
+
+_Parcours réellement exécuté sur l'API en local, pas une lecture de code._
+
+### Ce qu'un client peut faire aujourd'hui
+
+| Étape | État |
+|---|---|
+| Naviguer, voir les appartements, vérifier une disponibilité | ✅ |
+| S'inscrire, se connecter | ✅ multi-appareils depuis la migration Sanctum |
+| Mot de passe oublié, confirmer son adresse email | ✅ |
+| Faire une demande de réservation | ✅ appartement attribué automatiquement |
+| Attendre la validation admin, recevoir la notification | ✅ |
+| Télécharger bon et facture | ✅ PDF de 925 Ko généré |
+| Annuler, demander une prolongation | ✅ |
+
+La mécanique métier tient debout : statuts, documents, notifications, annulations.
+
+### Ce qu'il ne peut pas faire
+
+- **Payer réellement.** `payment_url` pointe vers `https://payment.manoir.com` — vérifié : **ce domaine n'existe pas**. Aucun prestataire n'est branché.
+- **Réserver pour le jour même.** Testé : le formulaire accepte, l'admin reçoit `422 — La date d'arrivée est déjà atteinte`, le client voit `EXPIRÉE` et ne peut plus payer.
+
+### ⚠️ Le scénario de fraude, démontré en trois commandes
+
+Le danger n'est pas le paiement simulé seul, mais sa combinaison avec la formule de caution :
+
+```text
+1. Réservation 2 Chambres, 2 nuits, dans 40 jours
+   -> Séjour  :      170 000 FCFA
+   -> Caution :   12 000 000 FCFA   (40 jours x 300 000)
+
+2. curl anonyme sur le webhook, sans token ni signature
+   -> {"status":"success"}
+   -> Réservation CONFIRMÉE, facture FAC-2026-00001 émise
+
+3. Annulation immédiate
+   -> "Montant à rembourser : 12 000 000 FCFA"
+   -> L'admin clique "marquer remboursé" : accepté
+```
+
+**Le client n'a versé aucun franc.** Le système lui reconnaît pourtant une créance de 12 millions, bon d'annulation à l'appui. Si l'administrateur fait confiance au document et effectue le virement, l'argent part réellement.
+
+Ces trois étapes ont été exécutées sur l'API, elles ne sont pas théoriques.
+
+### Ordre de traitement
+
+**Avant toute mise en ligne — non négociable**
+1. Paiement réel (FedaPay ou KKiaPay) avec webhook signé, et retrait de l'appel webhook du navigateur
+2. Formule de caution — **en attente d'une décision métier**
+3. Tarifs cohérents — **en attente d'une décision métier**
+
+**Ensuite, par ordre d'utilité**
+4. Réservation le jour même
+5. Endpoint de prix autoritatif, puis branchement des prix saisonniers (code déjà écrit, jamais appelé)
+6. Factures générées côté serveur, numérotation séquentielle
+7. Expéditeur email sur le domaine du site avec DKIM
+8. SEO, calendrier de disponibilité, avis clients, anglais
+
+### Détail relevé pendant le test
+
+L'inscription prend **7 secondes** : l'envoi du mail de confirmation est synchrone. À basculer en file d'attente — c'est long pour un client qui attend devant son écran.
 
 ---
 
@@ -23,12 +89,12 @@ _Issu de l'inspection fonctionnelle complète du 2026-07-19. Les items déjà tr
 Le **numéro de facture et le PDF sont générés côté client** (`reservations/page.tsx`), donc non séquentiels et potentiellement divergents. Un `InvoiceController` autoritatif existe déjà mais n'est pas utilisé pour le téléchargement.
 → Générer numéro (table de séquence) + PDF côté serveur ; le front télécharge le document serveur.
 
-### 4. Authentification Sanctum (M/L)
-Token « maison » (un seul `sha256` par user, une nouvelle connexion invalide les autres appareils, stocké en `localStorage`). L'**expiration** a été ajoutée (gain immédiat), mais pour du multi-appareils / révocation / refresh propres → **migrer vers Laravel Sanctum**.
+### 4. ~~Authentification Sanctum~~ ✅ FAIT (2026-08-18)
+Migré vers Laravel Sanctum 4.3. Multi-appareils, révocation par session, tokens nommés d'après l'appareil. Frontend inchangé. Voir [RECAP-TRAVAUX.md](RECAP-TRAVAUX.md) section 6.
 
-### 5. Vérification d'email (M)
-`email_verified_at` existe mais **aucune vérification n'est branchée**.
-→ Flux d'email de confirmation (envoi + lien signé + gating des actions sensibles).
+### 5. ~~Vérification d'email~~ ✅ FAIT (2026-08-18)
+Lien signé, page de confirmation, bannière de renvoi, mails réels via Brevo. Le **mot de passe oublié**, absent du projet et même de cette liste, a été livré au passage.
+⚠️ Aucune action n'est bloquée tant que l'email n'est pas confirmé — le gating reste à décider.
 
 ---
 
@@ -58,9 +124,23 @@ Modale admin (`admin/page.tsx`) sans **piège de focus** ni restauration de focu
 
 ---
 
+## 🔴 Ajouts de l'audit du 2026-08-18
+
+### Formule de caution absurde (Impact : critique - Effort : S)
+La caution est calculée `jours_avant_arrivée × deposit_per_day`, en back **et** en front. Réservation test : 2 nuits à 170 000 F → caution de **4 600 000 F**. Plus le client anticipe, plus il paie.
+→ Décider la vraie règle métier (forfait ? nuits × tarif ? % du séjour ?) puis corriger back et front ensemble.
+
+### Trois sources de prix contradictoires (Impact : fort - Effort : S)
+README (2 Ch. à 35 000 F), `RoomSeeder` (118 000 F, la base réelle) et `lib/roomCategories.ts` (copie en dur côté front) se contredisent. En base, un 2 Chambres coûte **3x le prix d'un VIP** — incohérent.
+→ Faire trancher les vrais tarifs, rendre la base seule autoritative, vider le fallback front.
+
+### Réservation le jour même impossible (Impact : moyen - Effort : S)
+Le formulaire accepte `check_in` = aujourd'hui (`after_or_equal:today`), mais `expireOverduePaymentRequests` passe en `EXPIREE` toute demande dont `check_in <= aujourd'hui`. L'admin valide, la demande meurt avant que le client puisse payer.
+
+---
+
 ## 🟢 Quick wins restants (S)
 
-- **Règle de caution — donnée** : `deposit_per_day` VIP à **500 000 F** pour un séjour à 30 000 F/nuit reste élevé (donnée, pas formule) — à confirmer/ajuster.
 - **Perf** : la page réservations re-rend **chaque seconde** (`setNowMs(Date.now())`) → isoler le compte à rebours dans un composant dédié.
 - **`RoomController::getRooms`** avec dates fait `Room::all()->filter(...)` (O(chambres)) → une requête SQL unique.
 - **`AdminReservationController`** : brancher recherche/pagination **côté serveur** (aujourd'hui côté client sur ≤ 200) quand le volume grandira.
@@ -68,9 +148,21 @@ Modale admin (`admin/page.tsx`) sans **piège de focus** ni restauration de focu
 
 ---
 
-## Ordre recommandé
-1. **#1 Paiement réel** (prérequis absolu à toute mise en production).
-2. **#2 Endpoint de prix autoritatif** (débloque tarif saison + cohérence).
-3. **#3 Factures serveur** puis **#4 Sanctum**.
-4. Produit : **#8 avis dynamiques**, **#7 calendrier**, **#6 i18n** selon priorité business.
-5. **#9 SEO** + **#10/#11** fiabilité/accessibilité en continu.
+## Ordre recommandé (révisé le 2026-08-19)
+
+**Bloqué sur une décision métier — à trancher avec le propriétaire**
+1. **Formule de caution** : forfait fixe par catégorie ? nuits × tarif ? pourcentage du séjour ?
+2. **Tarifs réels par nuit** : ceux du README, ceux de la base, ou d'autres ?
+
+Ces deux réponses débloquent les corrections les plus rentables du projet (effort S, impact critique).
+
+**Technique, dans cet ordre**
+3. **Paiement réel** — prérequis absolu à toute mise en production.
+4. **Réservation le jour même** — correctif court.
+5. **Endpoint de prix autoritatif** puis branchement de `getPriceForDates`.
+6. **Factures serveur** avec numérotation séquentielle.
+7. **Expéditeur email sur le domaine du site** avec DKIM, avant l'ouverture au public.
+8. Produit : avis dynamiques, calendrier de disponibilité, i18n, selon priorité business.
+9. SEO, fiabilité réseau et accessibilité en continu.
+
+~~#4 Sanctum~~ et ~~#5 vérification d'email~~ sont faits (2026-08-18).

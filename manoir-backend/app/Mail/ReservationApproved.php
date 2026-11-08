@@ -42,11 +42,11 @@ class ReservationApproved extends Mailable
                 <ul>
                     <li>Arrivee : {$this->reservation->check_in}</li>
                     <li>Depart : {$this->reservation->check_out}</li>
-                    <li>Caution a regler : {$deposit} FCFA</li>
+                    <li>Acompte a regler : {$deposit} FCFA</li>
                     <li>Montant du sejour : {$stay} FCFA</li>
                 </ul>
                 <p>Autorisation de payer valable 24h depuis la validation.</p>
-                <p>Connectez-vous a votre espace client pour regler la caution et confirmer definitivement votre reservation.</p>
+                <p>Connectez-vous a votre espace client pour regler l'acompte et confirmer definitivement votre reservation.</p>
                 <p>L'equipe du Manoir</p>
             ",
         );

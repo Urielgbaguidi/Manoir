@@ -81,7 +81,7 @@ class ReservationInvoicePdfController extends Controller
                 }
                 ?: now(),
             'title' => match ($documentType) {
-                'deposit' => 'Facture de caution',
+                'deposit' => "Facture d'acompte",
                 'stay' => 'Facture de séjour',
                 'stay-voucher' => 'Bon du séjour',
                 'cancellation' => 'Bon d’annulation',
@@ -89,7 +89,7 @@ class ReservationInvoicePdfController extends Controller
             },
             'description' => $isCancellation
                 ? 'Remboursement après annulation'
-                : ($isDepositDocument ? 'Caution de réservation' : 'Frais de séjour'),
+                : ($isDepositDocument ? 'Acompte de réservation' : 'Frais de séjour'),
             'quantityLabel' => $isCancellation
                 ? 'Jours consommés'
                 : ($isDepositDocument ? 'Nombre de jours' : 'Nombre de nuits'),

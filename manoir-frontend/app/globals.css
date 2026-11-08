@@ -484,6 +484,14 @@ body.overlay-open .grain-layer::after {
 :root[data-theme="light"] .text-terracotta-light {
   color: #8b5a2b;
 }
+
+/* Les regles ci-dessus repeignent les accents pour le fond clair, mais elles
+   s'appliquent aussi au survol : un libelle terracotta sur un fond terracotta
+   plein devenait invisible. hover:text-white doit rester blanc, en clair comme
+   en sombre. */
+:root[data-theme="light"] .hover\:text-white:hover {
+  color: #ffffff;
+}
 :root[data-theme="light"] .text-gradient-gold {
   background: linear-gradient(120deg, #b4712a, #8b5a2b 45%, #6b7b3e);
   -webkit-background-clip: text;

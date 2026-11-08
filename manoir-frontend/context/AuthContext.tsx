@@ -52,7 +52,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await api.login(email, password);
       setUser(response.user);
-      router.push(response.user.is_admin ? "/admin" : redirectTo || "/espace-client");
+
+      if (response.user.is_admin) {
+        router.push("/admin");
+        return;
+      }
+
+      // Un client dont l'adresse n'est pas confirmee ne peut rien reserver :
+      // on l'amene a la saisie du code plutot que de le laisser buter dessus.
+      if (response.user.email_verified_at === null) {
+        router.push(
+          redirectTo
+            ? `/auth/confirmer-email?redirect=${encodeURIComponent(redirectTo)}`
+            : "/auth/confirmer-email"
+        );
+        return;
+      }
+
+      router.push(redirectTo || "/espace-client");
     } catch (error) {
       setUser(null);
       throw error;
@@ -72,7 +89,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await api.register({ name, email, phone, password });
       setUser(response.user);
-      router.push(redirectTo || "/");
+      // Le code vient d'etre envoye et le serveur refuse toute reservation tant
+      // qu'il n'est pas saisi : on passe donc TOUJOURS par la confirmation, en
+      // emportant la destination voulue pour y revenir ensuite.
+      router.push(
+        redirectTo
+          ? `/auth/confirmer-email?redirect=${encodeURIComponent(redirectTo)}`
+          : "/auth/confirmer-email"
+      );
     } catch (error) {
       setUser(null);
       throw error;

@@ -67,9 +67,10 @@ export default function NotificationBell() {
   }, [user, load]);
 
   // Actualise le badge pendant que l'utilisateur reste connecté et dès qu'il
-  // revient sur l'onglet.
+  // revient sur l'onglet. Suspendu tant que le panneau est ouvert : sinon il
+  // réécraserait les statuts et ferait disparaître les pastilles sous les yeux.
   useEffect(() => {
-    if (!user) return;
+    if (!user || open) return;
 
     const interval = window.setInterval(load, 30_000);
     const onFocus = () => load();
@@ -79,7 +80,7 @@ export default function NotificationBell() {
       window.clearInterval(interval);
       window.removeEventListener("focus", onFocus);
     };
-  }, [user, load]);
+  }, [user, load, open]);
 
   // Fermeture au clic extérieur + touche Échap.
   useEffect(() => {
@@ -100,37 +101,50 @@ export default function NotificationBell() {
     };
   }, [open]);
 
+  /**
+   * Ouvrir la cloche vaut lecture : le badge retombe a zero aussitot.
+   *
+   * Les notifications affichees gardent volontairement leur pastille doree tant
+   * que le panneau reste ouvert. Les effacer a l'instant meme ou l'utilisateur
+   * les decouvre lui volerait l'information : elles apparaitront lues a la
+   * prochaine ouverture.
+   */
+  const ouvrirEtMarquerLu = async () => {
+    setLoading(true);
+    try {
+      const data = await api.getNotifications();
+      setNotifications(data.notifications);
+      setUnreadCount(data.unread_count);
+
+      if (data.unread_count > 0) {
+        await api.markAllNotificationsRead();
+        setUnreadCount(0);
+      }
+    } catch {
+      // Mieux vaut un badge en retard qu'un badge qui affiche zero alors que
+      // rien n'a ete marque lu cote serveur.
+      load();
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const toggleOpen = () => {
     setOpen((current) => {
       const next = !current;
-      if (next) load();
+      if (next) ouvrirEtMarquerLu();
       return next;
     });
   };
 
-  const handleMarkRead = async (notification: Notification) => {
-    try {
-      if (isUnread(notification)) {
-        await api.markNotificationRead(notification.id);
-        await load();
-      }
+  // L'ouverture du panneau a deja tout marque lu : ce clic n'a plus qu'a
+  // emmener l'utilisateur la ou la notification le renvoie.
+  const handleOpenNotification = (notification: Notification) => {
+    const actionUrl = notification.metadata?.action_url;
 
-      const actionUrl = notification.metadata?.action_url;
-      if (typeof actionUrl === "string" && actionUrl.startsWith("/")) {
-        setOpen(false);
-        router.push(actionUrl);
-      }
-    } catch {
-      /* ignore : l'état sera resynchronisé au prochain chargement */
-    }
-  };
-
-  const handleMarkAll = async () => {
-    try {
-      await api.markAllNotificationsRead();
-      await load();
-    } catch {
-      /* ignore */
+    if (typeof actionUrl === "string" && actionUrl.startsWith("/")) {
+      setOpen(false);
+      router.push(actionUrl);
     }
   };
 
@@ -164,15 +178,11 @@ export default function NotificationBell() {
             <span className="font-display text-sm uppercase tracking-[0.16em] text-cream">
               Notifications
             </span>
-            {unreadCount > 0 && (
-              <button
-                type="button"
-                onClick={handleMarkAll}
-                className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-gold-light transition hover:text-gold"
-              >
+            {notifications.some(isUnread) && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-gold-light">
                 <Check size={12} />
-                Tout marquer lu
-              </button>
+                Marquees lues
+              </span>
             )}
           </div>
 
@@ -189,7 +199,7 @@ export default function NotificationBell() {
                     <li key={notification.id}>
                       <button
                         type="button"
-                        onClick={() => handleMarkRead(notification)}
+                        onClick={() => handleOpenNotification(notification)}
                         className={cn(
                           "flex w-full gap-3 border-b border-gold/10 px-4 py-3 text-left transition last:border-b-0 hover:bg-white/5",
                           "cursor-pointer"

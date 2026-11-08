@@ -26,7 +26,7 @@ class CheckPaymentExpirations extends Command
         $expiredReservations = Reservation::where('status', 'VALIDEE_PAIEMENT_REQUIS')
             ->where(function ($query) use ($now) {
                 $query->where('payment_deadline', '<=', $now)
-                    ->orWhereDate('check_in', '<=', $now->toDateString());
+                    ->orWhereDate('check_in', '<', $now->toDateString());
             })
             ->with(['user', 'room'])
             ->get();
@@ -41,7 +41,7 @@ class CheckPaymentExpirations extends Command
                 'type' => 'reservation_expired',
                 'channel' => 'system',
                 'status' => 'sent',
-                'content' => "La réservation #{$reservation->id} a expiré car la caution n’a pas été payée dans le délai prévu. L’appartement a été remis à disposition.",
+                'content' => "La réservation #{$reservation->id} a expiré car l’acompte n’a pas été payé dans le délai prévu. L’appartement a été remis à disposition.",
                 'metadata' => ['action_url' => '/reservations'],
                 'sent_at' => now(),
             ]);
@@ -54,7 +54,7 @@ class CheckPaymentExpirations extends Command
         $reminderReservations = Reservation::where('status', 'VALIDEE_PAIEMENT_REQUIS')
             ->where('payment_deadline', '>', $now)
             ->where('payment_deadline', '<=', $twoHoursFromNow)
-            ->whereDate('check_in', '>', $now->toDateString())
+            ->whereDate('check_in', '>=', $now->toDateString())
             ->with(['user', 'room'])
             ->get();
 
@@ -74,7 +74,7 @@ class CheckPaymentExpirations extends Command
                         'type' => 'payment_reminder',
                         'channel' => 'email',
                         'status' => 'sent',
-                        'content' => "Attention : il reste moins de 2 heures pour payer la caution de ".number_format((int) ($reservation->deposit_amount ?? $reservation->total_price), 0, ',', ' ')." FCFA de votre réservation #{$reservation->id}. Payez-la depuis votre espace client pour éviter l’expiration.",
+                        'content' => "Attention : il reste moins de 2 heures pour payer l'acompte de ".number_format((int) ($reservation->deposit_amount ?? $reservation->total_price), 0, ',', ' ')." FCFA de votre réservation #{$reservation->id}. Payez-la depuis votre espace client pour éviter l’expiration.",
                         'metadata' => ['action_url' => '/reservations'],
                         'sent_at' => now(),
                     ]);

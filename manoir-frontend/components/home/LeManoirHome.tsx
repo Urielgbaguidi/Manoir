@@ -26,14 +26,28 @@ import KineticText from "./KineticText";
 import SuiteRevealCard, { type Suite } from "./SuiteRevealCard";
 import Testimonials from "./Testimonials";
 
+// Les adresses correspondent aux `slug` des categories en base : une carte qui
+// renvoie au catalogue general oblige le visiteur a refaire le choix qu'il vient
+// de faire.
 const suites: Suite[] = [
   {
     image: "/assets/rooms/room1.jpg",
     alt: "Suite de prestige au salon minimaliste",
-    label: "Appartement VIP"
+    label: "Appartement VIP",
+    href: "/rooms/appartement-vip"
   },
-  { image: "/assets/rooms/room2.jpg", alt: "Chambre lumineuse haut de gamme", label: "2 Chambres" },
-  { image: "/assets/rooms/room4.jpg", alt: "Suite élégante avec lit king size", label: "1 Chambre" }
+  {
+    image: "/assets/rooms/room2.jpg",
+    alt: "Chambre lumineuse haut de gamme",
+    label: "2 Chambres",
+    href: "/rooms/appartement-2-chambres"
+  },
+  {
+    image: "/assets/rooms/room4.jpg",
+    alt: "Suite élégante avec lit king size",
+    label: "1 Chambre",
+    href: "/rooms/appartement-1-chambre"
+  }
 ];
 
 const stats = [

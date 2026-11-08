@@ -59,7 +59,7 @@ Passage d'un thème clair crème/serif « plat » à une **expérience sombre ch
 ## 3. Fonctionnel & UX (Vague 1 + fonctionnalités)
 
 - **Fuseau horaire** : `config/app.php` → `Africa/Porto-Novo` + dates calculées en **local** côté front (écart de caution près de minuit corrigé).
-- **Règle de caution** : basée sur les **nuits × tarif** (au lieu du délai avant arrivée qui gonflait la caution).
+- ~~**Règle de caution** : basée sur les **nuits × tarif**~~ — ⚠️ **AFFIRMATION FAUSSE**, corrigée le 2026-08-18 après vérification du code. La caution est **toujours** calculée sur le délai avant l'arrivée (`daysUntilCheckIn × deposit_per_day`), en back (`ReservationController::store`) comme en front (`RoomClient.tsx`). Une réservation test de 2 nuits à 170 000 F a produit une caution de **4 600 000 F**. Chantier à traiter.
 - **Garde-fous** : durée ≤ 90 nuits + **nombre de voyageurs** réellement contrôlé (≤ capacité) avec sélecteur dans le formulaire.
 - **Plus de déconnexion forcée** après une demande → on reste connecté, redirection espace client.
 - **Accessibilité** : toasts `aria-live` / `role` (`ToastContext`).
@@ -86,3 +86,40 @@ Passage d'un thème clair crème/serif « plat » à une **expérience sombre ch
 4. Le front tape sur `NEXT_PUBLIC_API_URL` (prod `https://api.lemanoir.bj/api`).
 
 _Détails techniques/gotchas : voir aussi la mémoire projet et [PISTES-AMELIORATION.md](PISTES-AMELIORATION.md)._
+
+---
+
+## 6. Securite & architecture (2026-08-18 / 19)
+
+### Authentification — migration vers Sanctum
+- Token maison mono-session remplace par **Laravel Sanctum 4.3** : `HasApiTokens`, `createToken()` avec expiration 30 j, `auth:sanctum` sur les routes.
+- `ApiTokenMiddleware` supprime, colonnes `api_token` / `api_token_expires_at` droppees (migration `2026_08_18_110000`).
+- **Multi-appareils** : se connecter sur un second appareil ne deconnecte plus le premier. Les tokens sont nommes d'apres l'appareil (Windows / Android / iOS...).
+- `logout` ne revoque que le token courant.
+- **Le frontend n'a necessite aucune modification** (token opaque en `Bearer`, interceptor 401 deja en place).
+
+### Mot de passe oublie
+- `POST /api/forgot-password` + `POST /api/reset-password`, pages `/auth/mot-de-passe-oublie` et `/auth/nouveau-mot-de-passe`.
+- Reponse **identique** que l'adresse existe ou non (pas d'enumeration de comptes).
+- Reinitialiser son mot de passe **revoque tous les tokens** de l'utilisateur.
+
+### Verification d'adresse email
+- Lien signe `GET /api/email/verify/{id}/{hash}` (60 min), `POST /api/email/resend`, `GET /api/email/status`.
+- Page `/auth/email-confirme` + banniere de renvoi dans l'espace client (`EmailVerificationBanner`).
+- **Rien n'est bloque** tant que l'email n'est pas confirme : c'est un rappel, pas un verrou. Le gating des actions sensibles reste une decision produit.
+
+### Rate-limiting — bug corrige
+Un `throttle:6,1` anonyme est keye sur **(domaine, IP) et ignore l'URL** : toutes les routes limitees partageaient donc **un seul compteur** de 6 requetes/minute. Se connecter epuisait le quota du mot de passe oublie.
+→ Limiteurs nommes dans `AppServiceProvider::configureRateLimiting` (`login`, `register`, `password-reset`, `email-verify`, `email-resend`). Le limiteur de connexion est keye sur IP **et** email : une attaque sur un compte ne bloque plus les autres clients derriere la meme IP.
+
+### Emails — Brevo
+SMTP Brevo configure et **teste avec de vrais envois**. Deux pieges documentes dans DEPLOIEMENT.md : le blocage d'IP (actif par defaut, `525 Unauthorized IP address`) et l'expediteur non valide.
+⚠️ L'expediteur actuel est une adresse Gmail : sans DKIM ni DMARC possibles, les mails finiront de plus en plus en spam. A remplacer par une adresse sur le domaine du site avant l'ouverture au public.
+
+### Tests
+De **7 a 21 tests** (57 assertions) : `PasswordResetTest` (7) et `EmailVerificationTest` (7) ajoutes.
+
+### Correctifs annexes
+- `.env.example` **cree** — il n'existait pas, la commande `copy .env.example .env` d'INSTALL.md echouait.
+- INSTALL.md : retrait de `db:seed --class=RoomSeeder`, qui plante (`UNIQUE constraint failed: rooms.slug`) car les migrations creent deja les 8 appartements.
+- `suppressHydrationWarning` sur `<body>` (`app/layout.tsx`) : les extensions de navigateur injectent leurs attributs avant l'hydratation React et declenchaient une erreur console a tort.

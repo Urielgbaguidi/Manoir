@@ -37,7 +37,7 @@ class PaymentReminder extends Mailable
                 <h2>Il vous reste 2h pour effectuer votre paiement de reservation</h2>
                 <p>Bonjour {$this->reservation->user->name},</p>
                 <p>Votre autorisation de paiement expire le <strong>{$this->reservation->payment_deadline}</strong>.</p>
-                <p><strong>Montant de la caution :</strong> {$deposit} FCFA</p>
+                <p><strong>Montant de l'acompte :</strong> {$deposit} FCFA</p>
                 <p>Connectez-vous a votre espace client pour finaliser la reservation.</p>
                 <p>L'equipe du Manoir</p>
             ",

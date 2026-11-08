@@ -37,7 +37,7 @@ class InvoiceController extends Controller
             'invoice' => [
                 'invoice_number' => $payment->invoice_number,
                 'invoice_date' => $payment->paid_at ? $payment->paid_at->format('d/m/Y H:i') : now()->format('d/m/Y H:i'),
-                'payment_type' => $isDeposit ? 'Caution de réservation' : 'Séjour',
+                'payment_type' => $isDeposit ? 'Acompte de réservation' : 'Séjour',
                 'payment_method' => $this->formatPaymentMethod($payment->payment_method, $payment->provider),
                 'transaction_id' => $payment->transaction_id,
                 'hotel' => [
@@ -61,7 +61,7 @@ class InvoiceController extends Controller
                     'guests' => $reservation->guests,
                 ],
                 'pricing' => [
-                    'description' => $isDeposit ? 'Caution de réservation' : 'Frais de séjour',
+                    'description' => $isDeposit ? 'Acompte de réservation' : 'Frais de séjour',
                     'unit_price' => $unitPrice,
                     'quantity' => $quantity,
                     'quantity_label' => $isDeposit ? 'Nombre de jours' : 'Nombre de nuits',

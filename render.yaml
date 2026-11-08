@@ -61,6 +61,47 @@ services:
       - key: FRONTEND_URL
         sync: false
 
-      # --- Mail : par défaut vers les logs (pas de crash si non configuré) ---
+      # --- Agendas Google : un par appartement (adresses iCal secretes) ---
+      # A renseigner dans le dashboard Render, jamais dans le depot.
+      - key: GOOGLE_CALENDAR_ICAL_1
+        sync: false
+      - key: GOOGLE_CALENDAR_ICAL_2
+        sync: false
+      - key: GOOGLE_CALENDAR_ICAL_3
+        sync: false
+      - key: GOOGLE_CALENDAR_ICAL_4
+        sync: false
+      - key: GOOGLE_CALENDAR_ICAL_5
+        sync: false
+      - key: GOOGLE_CALENDAR_ICAL_6
+        sync: false
+      - key: GOOGLE_CALENDAR_ICAL_7
+        sync: false
+      - key: GOOGLE_CALENDAR_ICAL_8
+        sync: false
+      - key: GOOGLE_CALENDAR_ICAL_GENERAL
+        sync: false
+      # Jeton attendu par POST /api/calendar/sync, appele par un cron externe.
+      # Le plan gratuit Render ne fournit pas de taches planifiees.
+      - key: CALENDAR_SYNC_TOKEN
+        sync: false
+
+      # --- Mail : Brevo (SMTP relay), 300 envois/jour sur le palier gratuit ---
+      # Repasser MAIL_MAILER a "log" pour desactiver tout envoi reel.
       - key: MAIL_MAILER
-        value: log
+        value: smtp
+      - key: MAIL_HOST
+        value: smtp-relay.brevo.com
+      - key: MAIL_PORT
+        value: "587"
+      # Login SMTP Brevo (SMTP & API > onglet SMTP), ex: 9a1b2c001@smtp-brevo.com
+      - key: MAIL_USERNAME
+        sync: false
+      # Cle SMTP Brevo (xsmtpsib-...) : secret, a saisir dans le dashboard Render
+      - key: MAIL_PASSWORD
+        sync: false
+      # Doit etre un expediteur valide dans Brevo (Senders & IP > Senders)
+      - key: MAIL_FROM_ADDRESS
+        sync: false
+      - key: MAIL_FROM_NAME
+        value: Le Manoir

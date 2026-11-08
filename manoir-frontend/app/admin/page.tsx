@@ -28,7 +28,7 @@ type AdminStats = AdminStatsResponse["stats"] & { revenue_this_month?: number };
 
 const statusLabels: Record<string, string> = {
   EN_ATTENTE: "En attente",
-  VALIDEE_PAIEMENT_REQUIS: "Caution requise",
+  VALIDEE_PAIEMENT_REQUIS: "Acompte requis",
   CONFIRMEE: "Confirmee",
   REFUSEE: "Refusee",
   EXPIREE: "Expiree",
@@ -126,7 +126,9 @@ export default function AdminDashboard() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [occupiedRooms, setOccupiedRooms] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState("EN_ATTENTE");
+  // Plus d'onglet « En attente » : le filtre par defaut doit exister, sinon
+  // l'administrateur arrive sur une liste vide sans onglet actif.
+  const [statusFilter, setStatusFilter] = useState("all");
   const [selectedRes, setSelectedRes] = useState<Reservation | null>(null);
   const [actionType, setActionType] = useState<
     "approve" | "reject" | "extension-approve" | "extension-reject" | null
@@ -201,7 +203,7 @@ export default function AdminDashboard() {
     try {
       if (actionType === "approve") {
         await api.approveReservation(selectedRes.id, { admin_notes: adminNotes });
-        showToast("Demande confirmee. Le client peut payer la caution de réservation.", "success");
+        showToast("Demande confirmee. Le client peut payer la acompte de réservation.", "success");
       } else if (actionType === "reject") {
         await api.rejectReservation(selectedRes.id, { admin_notes: adminNotes });
         showToast("Demande refusee. Le client sera notifie.", "success");
@@ -276,21 +278,15 @@ export default function AdminDashboard() {
       description: "Voir toutes les demandes, tous statuts confondus."
     },
     {
-      key: "EN_ATTENTE",
-      label: "En attente",
-      description:
-        "Voir les demandes envoyees par les clients qui attendent encore la decision de l'administration."
-    },
-    {
       key: "VALIDEE_PAIEMENT_REQUIS",
-      label: "Caution requise",
+      label: "Acompte requis",
       description:
-        "Voir les demandes acceptees par l'administration, en attente du paiement de la caution de reservation."
+        "Voir les demandes acceptees par l'administration, en attente du paiement de l'acompte de reservation."
     },
     {
       key: "CONFIRMEE",
       label: "Confirmees",
-      description: "Voir les reservations dont la caution de reservation a ete payee avec succes."
+      description: "Voir les reservations dont l'acompte de reservation a ete paye avec succes."
     },
     {
       key: "EXTENSION_EN_ATTENTE",
@@ -306,7 +302,7 @@ export default function AdminDashboard() {
     {
       key: "EXPIREE",
       label: "Expirees",
-      description: "Voir les demandes dont le delai de paiement de caution a depasse 24h."
+      description: "Voir les demandes dont le delai de paiement de l'acompte a depasse 24h."
     },
     {
       key: "SEJOUR_PAYE",
@@ -795,7 +791,7 @@ export default function AdminDashboard() {
                       </div>
                       <div>
                         <span className="mb-1 block text-[9px] uppercase tracking-widest text-cream/40">
-                          Caution / sejour
+                          Acompte / sejour
                         </span>
                         <p className="text-sm font-bold text-cream">
                           {(reservation.deposit_amount ?? reservation.total_price).toLocaleString(
@@ -865,26 +861,9 @@ export default function AdminDashboard() {
                   </div>
 
                   <div className="flex min-w-[180px] flex-row items-center justify-end gap-3 border-gold/10 lg:flex-col lg:border-l lg:pl-6">
-                    {reservation.status === "EN_ATTENTE" ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenAction(reservation, "approve")}
-                          className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-gold-light to-gold py-3 text-[10px] font-black uppercase tracking-widest text-night transition hover:brightness-105"
-                        >
-                          <Check size={14} />
-                          Confirmer
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenAction(reservation, "reject")}
-                          className="flex w-full items-center justify-center gap-2 rounded-xl border border-terracotta/40 py-3 text-[10px] font-black uppercase tracking-widest text-terracotta-light transition hover:bg-terracotta/15"
-                        >
-                          <X size={14} />
-                          Rejeter
-                        </button>
-                      </>
-                    ) : reservation.extension_status === "EN_ATTENTE" ? (
+                    {/* Plus de Confirmer / Rejeter : reserver ouvre directement
+                        le paiement, plus aucune demande n'attend une decision. */}
+                    {reservation.extension_status === "EN_ATTENTE" ? (
                       <>
                         <button
                           type="button"
@@ -962,17 +941,18 @@ export default function AdminDashboard() {
                     <strong>Appartement :</strong> {reservationApartmentLabel(selectedRes)}
                   </p>
                   <p>
-                    <strong>Dates :</strong> du {selectedRes.check_in} au {selectedRes.check_out}
+                    <strong>Dates :</strong> du {formatAdminDate(selectedRes.check_in)} au{" "}
+                    {formatAdminDate(selectedRes.check_out)}
                   </p>
                   {(actionType === "extension-approve" || actionType === "extension-reject") &&
                     selectedRes.extension_requested_check_out && (
                       <p>
                         <strong>Nouveau départ demandé :</strong>{" "}
-                        {selectedRes.extension_requested_check_out}
+                        {formatAdminDate(selectedRes.extension_requested_check_out)}
                       </p>
                     )}
                   <p>
-                    <strong>Caution :</strong>{" "}
+                    <strong>Acompte :</strong>{" "}
                     {(selectedRes.deposit_amount ?? selectedRes.total_price).toLocaleString(
                       "fr-FR"
                     )}{" "}

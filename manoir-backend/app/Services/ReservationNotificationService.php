@@ -68,12 +68,12 @@ class ReservationNotificationService
                     'VALIDEE_PAIEMENT_REQUIS' => self::sendOnce(
                         $reservation,
                         'reservation_approved',
-                        "Votre demande #{$reservation->id} a été acceptée. Payez la caution de {$amount} FCFA dans votre espace client avant l’expiration du délai pour confirmer la réservation."
+                        "Votre demande #{$reservation->id} a été acceptée. Payez l'acompte de {$amount} FCFA dans votre espace client avant l’expiration du délai pour confirmer la réservation."
                     ),
                     'CONFIRMEE' => self::sendOnce(
                         $reservation,
                         'deposit_paid',
-                        "Votre caution de {$amount} FCFA pour la réservation #{$reservation->id} est payée. Votre réservation est maintenant confirmée."
+                        "Votre acompte de {$amount} FCFA pour la réservation #{$reservation->id} est payé. Votre réservation est maintenant confirmée."
                     ),
                     'SEJOUR_PAYE' => self::sendOnce(
                         $reservation,
@@ -88,7 +88,7 @@ class ReservationNotificationService
                     'EXPIREE' => self::sendOnce(
                         $reservation,
                         'reservation_expired',
-                        "La réservation #{$reservation->id} a expiré : la caution n’a pas été payée dans le délai prévu. L’appartement a été remis à disposition."
+                        "La réservation #{$reservation->id} a expiré : l’acompte n’a pas été payé dans le délai prévu. L’appartement a été remis à disposition."
                     ),
                     'ANNULEE' => self::sendOnce(
                         $reservation,

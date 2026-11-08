@@ -8,7 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 
 class AuthController extends Controller
 {
@@ -29,11 +29,19 @@ class AuthController extends Controller
             'is_admin' => false,
         ]);
 
-        $token = Str::random(64);
-        $user->forceFill([
-            'api_token' => hash('sha256', $token),
-            'api_token_expires_at' => now()->addDays(30),
-        ])->save();
+        $token = $user->createToken(
+            $this->deviceName($request),
+            ['*'],
+            now()->addDays(30)
+        )->plainTextToken;
+
+        // Un mail qui ne part pas ne doit jamais faire echouer l'inscription :
+        // le compte est cree, l'utilisateur pourra redemander le lien.
+        try {
+            $user->sendEmailVerificationNotification();
+        } catch (\Throwable $exception) {
+            Log::warning('Envoi du mail de verification impossible : '.$exception->getMessage());
+        }
 
         return response()->json([
             'message' => 'Inscription réussie.',
@@ -56,11 +64,13 @@ class AuthController extends Controller
         }
 
         $user = User::where('email', $request->email)->firstOrFail();
-        $token = Str::random(64);
-        $user->forceFill([
-            'api_token' => hash('sha256', $token),
-            'api_token_expires_at' => now()->addDays(30),
-        ])->save();
+
+        // Un token par appareil : se connecter ailleurs ne déconnecte plus les autres sessions.
+        $token = $user->createToken(
+            $this->deviceName($request),
+            ['*'],
+            now()->addDays(30)
+        )->plainTextToken;
 
         return response()->json([
             'message' => 'Connexion réussie.',
@@ -71,9 +81,8 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->forceFill([
-            'api_token' => null,
-        ])->save();
+        // Ne révoque que le token de l'appareil courant, pas les autres sessions.
+        $request->user()->currentAccessToken()->delete();
 
         return response()->json([
             'message' => 'Déconnexion réussie.',
@@ -130,5 +139,23 @@ class AuthController extends Controller
         return response()->json([
             'message' => 'Mot de passe modifie avec succes.',
         ]);
+    }
+
+    /**
+     * Nomme le token d'après l'appareil, pour que l'utilisateur puisse
+     * identifier puis révoquer une session précise depuis son profil.
+     */
+    private function deviceName(Request $request): string
+    {
+        $agent = (string) $request->userAgent();
+
+        return match (true) {
+            str_contains($agent, 'Android') => 'Android',
+            (bool) preg_match('/iPhone|iPad|iPod/', $agent) => 'iOS',
+            str_contains($agent, 'Windows') => 'Windows',
+            str_contains($agent, 'Macintosh') => 'macOS',
+            str_contains($agent, 'Linux') => 'Linux',
+            default => 'Appareil inconnu',
+        };
     }
 }

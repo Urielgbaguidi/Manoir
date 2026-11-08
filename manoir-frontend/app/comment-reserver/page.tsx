@@ -14,7 +14,7 @@ import {
 const reservationSteps = [
   {
     title: "Choisir un appartement",
-    text: "Le client consulte les categories, les photos, les videos, la description, le prix par nuit et la caution par jour. Pour les VIP, il choisit directement entre VIP 3 et VIP 7.",
+    text: "Le client consulte les categories, les photos, les videos, la description et le prix par nuit. Il choisit ensuite l'appartement precis qui l'interesse, avec son etat de disponibilite.",
     icon: CalendarCheck
   },
   {
@@ -23,18 +23,13 @@ const reservationSteps = [
     icon: UserPlus
   },
   {
-    title: "Envoyer la demande",
-    text: "Le client choisit la date d'arrivee, la date de depart et ajoute ses demandes speciales. La caution de reservation est calculee entre la date de demande et la date d'arrivee.",
+    title: "Reserver",
+    text: "Le client choisit la date d'arrivee, la date de depart et ajoute ses demandes speciales. La reservation est enregistree aussitot : il n'y a aucune validation a attendre.",
     icon: FileText
   },
   {
-    title: "Validation admin",
-    text: "L'administration examine la demande. Elle peut confirmer ou refuser avec un motif. Si elle confirme, le client recoit une autorisation de paiement de caution.",
-    icon: ShieldCheck
-  },
-  {
-    title: "Payer la caution",
-    text: "Le client dispose de 24h maximum pour payer la caution de reservation. Si le delai expire, ou si la date d'arrivee est atteinte sans paiement, la demande passe en expiree.",
+    title: "Payer l'acompte sous 12h",
+    text: "L'appartement est retenu 12 heures, le temps de regler l'acompte de 30 % du sejour. Passe ce delai sans paiement, la reservation expire et le logement repart a la location : un autre client peut alors le prendre.",
     icon: CreditCard
   },
   {
@@ -44,25 +39,25 @@ const reservationSteps = [
   },
   {
     title: "Payer le sejour",
-    text: "Le client peut payer ses frais de sejour depuis son espace client. Apres paiement, l'etape Sejour est cochee et la reservation passe directement dans l'historique.",
+    text: "Le client regle le solde du sejour depuis son espace client. L'acompte deja verse en est deduit : acompte + solde = prix du sejour. Apres paiement, la reservation passe dans l'historique.",
     icon: CreditCard
   }
 ];
 
 const keyRules = [
   {
-    title: "Reservation et occupation",
-    text: "La reservation correspond a la periode entre la date de demande et la date d'arrivee. L'occupation correspond a la periode entre la date d'arrivee et la date de depart.",
+    title: "Premier paye, premier servi",
+    text: "Reserver met l'appartement de cote, sans le garantir. Tant que l'acompte n'est pas regle, la reservation reste fragile : c'est le paiement qui la rend ferme.",
     icon: CalendarCheck
   },
   {
     title: "Expiration automatique",
-    text: "Une demande acceptee expire si la caution n'est pas payee dans les 24h, ou si la date d'arrivee est atteinte avant paiement. L'appartement est alors libere.",
+    text: "Une reservation expire si l'acompte n'est pas paye dans les 12h, ou si la date d'arrivee est passee. L'appartement est alors libere sans intervention.",
     icon: Clock3
   },
   {
-    title: "Annulation avant arrivee",
-    text: "Le client peut annuler uniquement avant la date d'arrivee. Quand l'occupation commence, le bouton d'annulation disparait.",
+    title: "Annulation",
+    text: "Le client peut annuler jusqu'au jour de l'arrivee inclus. L'appartement se relibere aussitot. Une fois la date d'arrivee passee, le bouton d'annulation disparait.",
     icon: XCircle
   },
   {
@@ -73,17 +68,16 @@ const keyRules = [
 ];
 
 const statusRows = [
-  ["EN_ATTENTE", "La demande a ete envoyee et attend la validation de l'administration."],
   [
     "VALIDEE_PAIEMENT_REQUIS",
-    "La demande est acceptee. La caution de reservation doit etre payee dans le delai affiche, avec une limite maximum de 24h."
+    "La reservation est enregistree et l'appartement retenu. L'acompte doit etre paye avant l'heure limite affichee, au plus tard 12h apres la reservation."
   ],
-  ["CONFIRMEE", "La caution est payee. La reservation est definitivement confirmee."],
+  ["CONFIRMEE", "L'acompte est paye. La reservation est definitivement confirmee."],
   ["SEJOUR_PAYE", "Les frais de sejour ont ete regles. La reservation passe dans l'historique."],
   ["REFUSEE", "La demande a ete refusee par l'administration."],
   [
     "EXPIREE",
-    "Le delai de paiement est depasse, ou la date d'arrivee est atteinte sans paiement. Le paiement est bloque et l'appartement est libere."
+    "Le delai de paiement est depasse, ou la date d'arrivee est passee sans paiement. Le paiement est bloque et l'appartement est libere."
   ],
   ["ANNULEE", "Le client a annule sa reservation avant le debut de l'occupation."],
   ["REMBOURSEE", "L'administration a confirme le remboursement."],
@@ -94,14 +88,11 @@ const statusRows = [
 ];
 
 const documentRows = [
-  [
-    "Bon de Reservation",
-    "Visible apres validation par l'administration, avant le paiement de la caution."
-  ],
-  ["Facture Caution", "Visible apres paiement de la caution de reservation."],
+  ["Bon de Reservation", "Visible des la reservation enregistree, avant le paiement de l'acompte."],
+  ["Facture Acompte", "Visible apres paiement de l'acompte de reservation."],
   ["Bon du Sejour", "Visible quand la reservation est confirmee et que le sejour reste a regler."],
   ["Facture Sejour", "Visible apres paiement des frais de sejour."],
-  ["Bon d'Annulation", "Visible si le client annule avant le debut de l'occupation."]
+  ["Bon d'Annulation", "Visible si le client annule sa reservation."]
 ];
 
 export default function HowToReservePage() {
@@ -121,7 +112,7 @@ export default function HowToReservePage() {
             </h1>
             <p className="mt-6 max-w-3xl text-lg leading-8 text-cream/70">
               Cette page explique tout le parcours : choix de l'appartement, creation du compte,
-              validation par l'administration, caution de reservation, occupation reelle, documents,
+              validation par l'administration, acompte de reservation, occupation reelle, documents,
               paiement du sejour, historique, annulation et prolongation.
             </p>
           </div>
@@ -131,13 +122,13 @@ export default function HowToReservePage() {
               <Clock3 className="mt-1 h-6 w-6 flex-shrink-0 text-gold-light" />
               <div>
                 <h2 className="font-display text-3xl font-semibold uppercase leading-none">
-                  Delai de <span className="text-gradient-gold">caution</span>
+                  Delai de <span className="text-gradient-gold">paiement</span>
                 </h2>
                 <p className="mt-4 text-sm leading-7 text-cream/70">
-                  Apres acceptation par l'administration, le client dispose de 24h maximum pour
-                  payer la caution de reservation. Si le delai expire, ou si la date d'arrivee est
-                  atteinte sans paiement, le bouton de paiement est bloque et l'appartement est
-                  remis a disposition.
+                  Reserver retient l'appartement pendant 12 heures, le temps de regler l'acompte de
+                  30 % du sejour. Passe ce delai sans paiement, ou si la date d'arrivee est
+                  depassee, la reservation expire : le paiement est bloque et l'appartement repart
+                  a la location, ou un autre client peut le prendre.
                 </p>
               </div>
             </div>
@@ -215,7 +206,7 @@ export default function HowToReservePage() {
             </h2>
             <div className="mt-7 space-y-5 text-sm leading-7 text-cream/70">
               <p>
-                La caution confirme la reservation. Elle est calculee selon le nombre de jours entre
+                L'acompte confirme la reservation. Elle est calculee selon le nombre de jours entre
                 la date de demande et la date d'arrivee.
               </p>
               <p>
@@ -262,9 +253,10 @@ export default function HowToReservePage() {
                   Annulation
                 </h2>
                 <p className="mt-3 text-sm leading-7 text-cream/70">
-                  Le client peut annuler si la demande est en attente, validee avant paiement ou
-                  deja confirmee, mais seulement avant la date d'arrivee. Si la caution est deja
-                  payee, le remboursement est calcule automatiquement selon les jours consommes.
+                  Le client peut annuler tant que la date d'arrivee n'est pas passee, que
+                  l'acompte soit deja regle ou non. L'appartement se relibere aussitot. Si un
+                  acompte a ete verse, le montant rembourse lui est indique avant qu'il ne
+                  confirme.
                 </p>
               </div>
             </div>

@@ -11,7 +11,7 @@ type DocumentType = "booking" | "deposit" | "stay-voucher" | "stay" | "cancellat
 
 const documentLabels: Record<DocumentType, string> = {
   booking: "Bon de Réservation",
-  deposit: "Facture Caution",
+  deposit: "Facture Acompte",
   "stay-voucher": "Bon du Séjour",
   stay: "Facture Séjour",
   cancellation: "Bon d'Annulation"
@@ -222,7 +222,7 @@ export default function ReservationInvoicePage() {
   const lineDescription = isCancellationDocument
     ? "Remboursement après annulation"
     : isDepositDocument
-      ? "Caution de réservation"
+      ? "Acompte de réservation"
       : "Frais de séjour";
   const calculation = isCancellationDocument
     ? `${cancellationDays} jour${cancellationDays > 1 ? "s" : ""} consommé${cancellationDays > 1 ? "s" : ""} - retenue ${formatCurrency(cancellationRetained)}`
@@ -400,7 +400,7 @@ export default function ReservationInvoicePage() {
                     Date d'annulation :{" "}
                     {formatReservationDate(reservation.cancelled_at || new Date().toISOString())}
                   </p>
-                  <p>Caution initiale : {formatCurrency(depositAmount)}</p>
+                  <p>Acompte initial : {formatCurrency(depositAmount)}</p>
                   <p>Délai de remboursement : 48h à 72h</p>
                 </>
               )}
@@ -476,7 +476,7 @@ export default function ReservationInvoicePage() {
               <div>
                 <p className="text-gray-600">Type de paiement</p>
                 <p className="font-semibold text-gray-900">
-                  {documentType === "deposit" ? "Caution" : "Séjour"}
+                  {documentType === "deposit" ? "Acompte" : "Séjour"}
                 </p>
               </div>
               <div>
@@ -495,7 +495,7 @@ export default function ReservationInvoicePage() {
               className={`rounded-xl border-2 p-6 text-sm leading-relaxed text-gray-700 ${theme.notice}`}
             >
               {documentType === "booking"
-                ? "Ce bon confirme que votre demande a été acceptée. Le paiement de la caution reste nécessaire pour confirmer définitivement la réservation."
+                ? "Ce bon confirme que votre demande a été acceptée. Le paiement de l'acompte reste nécessaire pour confirmer définitivement la réservation."
                 : documentType === "cancellation"
                   ? "Ce bon confirme l'annulation de votre réservation et le montant à rembourser dans un délai de 48h à 72h."
                   : "Ce bon présente le montant du séjour à régler depuis votre espace client."}

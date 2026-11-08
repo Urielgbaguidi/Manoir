@@ -9,6 +9,7 @@ use App\Mail\ReservationRejected;
 use App\Models\Reservation;
 use App\Models\Room;
 use App\Models\RoomCategory;
+use App\Services\GoogleCalendarWriter;
 use App\Services\ReservationNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -121,11 +122,14 @@ class AdminReservationController extends Controller
             ], 422);
         }
 
-        if (now()->startOfDay()->greaterThanOrEqualTo($reservation->check_in->copy()->startOfDay())) {
+        // L'arrivee du jour meme est acceptee : c'est le cas courant d'un
+        // appartement qui se libere le matin et se reloue le soir. Seule une
+        // date deja passee condamne la demande.
+        if ($reservation->check_in->copy()->startOfDay()->lessThan(now()->startOfDay())) {
             $reservation->update(['status' => 'EXPIREE']);
 
             return response()->json([
-                'message' => 'La date d\'arrivee est deja atteinte. Cette demande a expire et ne peut plus etre confirmee.',
+                'message' => 'La date d\'arrivee est deja passee. Cette demande a expire et ne peut plus etre confirmee.',
             ], 422);
         }
 
@@ -172,7 +176,13 @@ class AdminReservationController extends Controller
                     'status' => 'VALIDEE_PAIEMENT_REQUIS',
                     'admin_notes' => $request->admin_notes,
                     'approved_at' => now(),
-                    'payment_deadline' => now()->addHours(24),
+                    // Meme delai que celui accorde a la reservation directe,
+                    // sans jamais deborder du jour d'arrivee : au-dela la
+                    // demande expirerait avant l'echeance et le client paierait
+                    // dans le vide.
+                    'payment_deadline' => now()
+                        ->addHours(max(1, (int) config('booking.hold_hours', 12)))
+                        ->min($reservation->check_in->copy()->endOfDay()),
                 ]);
             });
         } catch (\RuntimeException $exception) {
@@ -190,11 +200,11 @@ class AdminReservationController extends Controller
         ReservationNotificationService::sendOnce(
             $approvedReservation,
             'reservation_approved',
-            "Votre demande #{$approvedReservation->id} a été acceptée. Payez la caution de {$depositAmount} FCFA dans votre espace client avant le {$approvedReservation->payment_deadline->format('d/m/Y à H:i')} pour confirmer la réservation."
+            "Votre demande #{$approvedReservation->id} a été acceptée. Payez l'acompte de {$depositAmount} FCFA dans votre espace client avant le {$approvedReservation->payment_deadline->format('d/m/Y à H:i')} pour confirmer la réservation."
         );
 
         return response()->json([
-            'message' => 'Demande confirmee. Le client a 24h pour payer la caution de réservation.',
+            'message' => 'Demande confirmee. Le client a 24h pour payer la acompte de réservation.',
             'reservation' => $reservation->fresh(['room', 'user', 'payments']),
         ]);
     }
@@ -322,6 +332,10 @@ class AdminReservationController extends Controller
             'extension_admin_notes' => $request->admin_notes,
         ]);
 
+        // La date de depart a bouge : l'evenement de l'agenda doit suivre, sans
+        // quoi les nuits gagnees paraitraient libres a l'equipe.
+        app(GoogleCalendarWriter::class)->publier($reservation->loadMissing(['room', 'user']));
+
         ReservationNotificationService::sendOnce(
             $reservation,
             'extension_approved',
@@ -377,11 +391,12 @@ class AdminReservationController extends Controller
 
         $query = Reservation::with(['user', 'room'])
             ->where('category_type', $request->category_type)
+            // Meme regle que la disponibilite publique : le blocage d'attente
+            // compte tant que l'echeance de paiement n'est pas passee.
             ->where(function ($query) {
                 $query->whereIn('status', ['CONFIRMEE', 'SEJOUR_PAYE'])
                     ->orWhere(function ($query) {
                         $query->where('status', 'VALIDEE_PAIEMENT_REQUIS')
-                            ->whereDate('check_in', '>', now()->toDateString())
                             ->where(function ($query) {
                                 $query->whereNull('payment_deadline')
                                     ->orWhere('payment_deadline', '>', now());

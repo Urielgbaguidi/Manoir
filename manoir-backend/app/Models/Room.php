@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -42,18 +44,33 @@ class Room extends Model
         return $this->hasMany(Reservation::class);
     }
 
+    public function blocks(): HasMany
+    {
+        return $this->hasMany(RoomBlock::class);
+    }
+
     public function isAvailableForDates(string $checkIn, string $checkOut, ?int $excludeReservationId = null): bool
     {
         if ($this->status !== 'available') {
             return false;
         }
 
+        // Occupations venues d'ailleurs que du site (agenda Google, travaux,
+        // blocage manuel). Sans ce controle, une reservation prise au telephone
+        // n'empeche pas un client de louer le meme appartement en ligne.
+        if ($this->blocks()->overlapping($checkIn, $checkOut)->exists()) {
+            return false;
+        }
+
         $query = $this->reservations()
+            // Reserver retient l'appartement le temps du paiement, puis
+            // l'acompte encaisse le retient definitivement. Le blocage
+            // d'attente est borne par l'echeance : une reservation abandonnee
+            // libere le logement d'elle-meme.
             ->where(function ($query) {
                 $query->whereIn('status', ['CONFIRMEE', 'SEJOUR_PAYE'])
                     ->orWhere(function ($query) {
                         $query->where('status', 'VALIDEE_PAIEMENT_REQUIS')
-                            ->whereDate('check_in', '>', now()->toDateString())
                             ->where(function ($query) {
                                 $query->whereNull('payment_deadline')
                                     ->orWhere('payment_deadline', '>', now());
@@ -61,8 +78,11 @@ class Room extends Model
                     });
             })
             ->where(function ($query) use ($checkIn, $checkOut) {
-                $query->where('check_in', '<', $checkOut)
-                    ->where('check_out', '>', $checkIn);
+                // whereDate est indispensable ici : avec un stockage qui ajoute
+                // une heure, `check_out > $checkIn` etait vrai le jour du depart
+                // et interdisait a un nouveau client d'arriver ce jour-la.
+                $query->whereDate('check_in', '<', $checkOut)
+                    ->whereDate('check_out', '>', $checkIn);
             });
 
         if ($excludeReservationId) {
@@ -70,6 +90,150 @@ class Room extends Model
         }
 
         return ! $query->exists();
+    }
+
+    /**
+     * Etat d'occupation a venir, pour afficher un voyant vert ou rouge au client.
+     *
+     * Tient compte des deux sources : l'agenda Google (`room_blocks`) et les
+     * reservations du site. Les periodes qui se touchent sont fusionnees, sinon
+     * on annoncerait « libre le 28 » alors qu'un autre sejour commence ce jour-la.
+     *
+     * @return array{status: string, occupied_until: string|null, free_until: string|null}
+     */
+    public function availabilitySummary(): array
+    {
+        if ($this->status !== 'available') {
+            return ['status' => 'unavailable', 'occupied_until' => null, 'free_until' => null];
+        }
+
+        $aujourdhui = now()->startOfDay();
+
+        $periodes = $this->periodesOccupees($aujourdhui);
+
+        // On avance tant que les periodes se suivent sans interruption.
+        $curseur = $aujourdhui->copy();
+        foreach ($periodes as [$debut, $fin]) {
+            if ($debut->greaterThan($curseur)) {
+                break;
+            }
+
+            if ($fin->greaterThan($curseur)) {
+                $curseur = $fin->copy();
+            }
+        }
+
+        if ($curseur->greaterThan($aujourdhui)) {
+            return [
+                'status' => 'occupied',
+                'occupied_until' => $curseur->toDateString(),
+                'free_until' => null,
+            ];
+        }
+
+        // Libre aujourd'hui : jusqu'a quand ?
+        $prochaine = collect($periodes)->first(fn ($p) => $p[0]->greaterThan($aujourdhui));
+
+        return [
+            'status' => 'free',
+            'occupied_until' => null,
+            'free_until' => $prochaine ? $prochaine[0]->toDateString() : null,
+        ];
+    }
+
+    /**
+     * Plus long creneau libre a l'interieur de la periode demandee.
+     *
+     * Quand aucun appartement n'est libre sur toute la duree voulue, renvoyer
+     * simplement « indisponible » laisse le client sans issue : il ne sait pas
+     * combien de nuits retirer. On lui propose donc ce qui est reellement
+     * possible, appartement par appartement.
+     *
+     * @return array{starts_on: string, ends_on: string, nights: int}|null
+     */
+    public function longestFreeWindow(string $checkIn, string $checkOut): ?array
+    {
+        if ($this->status !== 'available') {
+            return null;
+        }
+
+        $debut = CarbonImmutable::parse($checkIn)->startOfDay();
+        $fin = CarbonImmutable::parse($checkOut)->startOfDay();
+
+        if ($fin->lessThanOrEqualTo($debut)) {
+            return null;
+        }
+
+        $occupations = collect($this->periodesOccupees(Carbon::parse($checkIn)->startOfDay()))
+            ->map(fn ($p) => [CarbonImmutable::parse($p[0]), CarbonImmutable::parse($p[1])])
+            ->filter(fn ($p) => $p[0]->lessThan($fin) && $p[1]->greaterThan($debut))
+            ->sortBy(fn ($p) => $p[0]->getTimestamp())
+            ->values();
+
+        $meilleur = null;
+        $curseur = $debut;
+
+        // On parcourt les trous entre les occupations, puis la fin de periode.
+        foreach ($occupations->push([$fin, $fin]) as [$occDebut, $occFin]) {
+            $borne = $occDebut->greaterThan($fin) ? $fin : $occDebut;
+
+            if ($borne->greaterThan($curseur)) {
+                $nuits = (int) $curseur->diffInDays($borne);
+
+                if ($nuits > 0 && ($meilleur === null || $nuits > $meilleur['nights'])) {
+                    $meilleur = [
+                        'starts_on' => $curseur->toDateString(),
+                        'ends_on' => $borne->toDateString(),
+                        'nights' => $nuits,
+                    ];
+                }
+            }
+
+            if ($occFin->greaterThan($curseur)) {
+                $curseur = $occFin->greaterThan($fin) ? $fin : $occFin;
+            }
+        }
+
+        return $meilleur;
+    }
+
+    /**
+     * Periodes d'occupation a venir, triees, toutes sources confondues.
+     *
+     * @return array<int, array{0: Carbon, 1: Carbon}>
+     */
+    private function periodesOccupees(Carbon $depuis): array
+    {
+        $periodes = $this->blocks()
+            ->whereDate('ends_on', '>', $depuis->toDateString())
+            ->get()
+            ->map(fn (RoomBlock $bloc) => [$bloc->starts_on->copy()->startOfDay(), $bloc->ends_on->copy()->startOfDay()])
+            ->all();
+
+        $reservations = $this->reservations()
+            // Reserver retient l'appartement le temps du paiement, puis
+            // l'acompte encaisse le retient definitivement. Le blocage
+            // d'attente est borne par l'echeance : une reservation abandonnee
+            // libere le logement d'elle-meme.
+            ->where(function ($query) {
+                $query->whereIn('status', ['CONFIRMEE', 'SEJOUR_PAYE'])
+                    ->orWhere(function ($query) {
+                        $query->where('status', 'VALIDEE_PAIEMENT_REQUIS')
+                            ->where(function ($query) {
+                                $query->whereNull('payment_deadline')
+                                    ->orWhere('payment_deadline', '>', now());
+                            });
+                    });
+            })
+            ->whereDate('check_out', '>', $depuis->toDateString())
+            ->get()
+            ->map(fn (Reservation $r) => [$r->check_in->copy()->startOfDay(), $r->check_out->copy()->startOfDay()])
+            ->all();
+
+        $toutes = array_merge($periodes, $reservations);
+        usort($toutes, fn ($a, $b) => $a[0] <=> $b[0]);
+
+        return $toutes;
     }
 
     public function getPriceForDates(string $checkIn, string $checkOut): int

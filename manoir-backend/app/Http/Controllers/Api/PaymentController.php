@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
 use App\Models\Reservation;
+use App\Services\GoogleCalendarWriter;
 use App\Services\ReservationNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -32,7 +33,7 @@ class PaymentController extends Controller
         if ($paymentType === 'deposit') {
             if ($reservation->status !== 'VALIDEE_PAIEMENT_REQUIS') {
                 return response()->json([
-                    'message' => 'Cette reservation n\'est pas en attente de paiement de caution.',
+                    'message' => "Cette reservation n'est pas en attente de paiement de l'acompte.",
                 ], 422);
             }
 
@@ -40,7 +41,22 @@ class PaymentController extends Controller
                 $reservation->update(['status' => 'EXPIREE']);
 
                 return response()->json([
-                    'message' => 'Le delai de paiement de la caution a expire.',
+                    'message' => "Le delai de paiement de l'acompte a expire.",
+                ], 422);
+            }
+
+            // L'appartement n'est plus retenu avant paiement : quelqu'un a pu
+            // le prendre entre-temps. Mieux vaut le dire ici que d'encaisser
+            // l'acompte d'un logement qui n'est plus libre.
+            $reservation->loadMissing('room');
+
+            if ($reservation->room && ! $reservation->room->isAvailableForDates(
+                $reservation->check_in->toDateString(),
+                $reservation->check_out->toDateString(),
+                $reservation->id
+            )) {
+                return response()->json([
+                    'message' => "Cet appartement vient d'etre reserve par un autre client sur ces dates. Aucun paiement n'a ete engage.",
                 ], 422);
             }
 
@@ -48,11 +64,19 @@ class PaymentController extends Controller
         } else {
             if ($reservation->status !== 'CONFIRMEE') {
                 return response()->json([
-                    'message' => 'Le sejour ne peut etre paye qu\'apres confirmation de la caution.',
+                    'message' => "Le sejour ne peut etre paye qu'apres confirmation de l'acompte.",
                 ], 422);
             }
 
-            $amount = (int) $reservation->stay_amount;
+            // L'acompte est deduit : le client ne regle ici que le solde.
+            // Lui refacturer le sejour entier reviendrait a encaisser 130 %.
+            $amount = $reservation->balanceAmount();
+
+            if ($amount <= 0) {
+                return response()->json([
+                    'message' => 'Votre sejour est deja integralement regle.',
+                ], 422);
+            }
         }
 
         $payment = Payment::create([
@@ -111,13 +135,24 @@ class PaymentController extends Controller
 
             $confirmedPayment = $payment->fresh(['reservation']);
             $confirmedReservation = $confirmedPayment->reservation;
+
+            // L'acompte paye rend le sejour ferme : il doit apparaitre dans
+            // l'agenda de l'appartement, sinon l'equipe pourrait relouer la
+            // meme periode au telephone. Une panne de Google n'annule pas le
+            // paiement pour autant : le service journalise et rend la main.
+            if ($confirmedPayment->payment_type !== 'stay') {
+                app(GoogleCalendarWriter::class)->publier(
+                    $confirmedReservation->loadMissing(['room', 'user'])
+                );
+            }
+
             $amount = number_format((int) $confirmedPayment->amount, 0, ',', ' ');
             ReservationNotificationService::sendOnce(
                 $confirmedReservation,
                 $confirmedPayment->payment_type === 'stay' ? 'stay_paid' : 'deposit_paid',
                 $confirmedPayment->payment_type === 'stay'
                     ? "Le paiement de {$amount} FCFA pour votre séjour #{$confirmedReservation->id} est confirmé. Votre facture de séjour est disponible."
-                    : "Votre caution de {$amount} FCFA pour la réservation #{$confirmedReservation->id} est payée. Votre réservation est maintenant confirmée et la facture est disponible."
+                    : "Votre acompte de {$amount} FCFA pour la réservation #{$confirmedReservation->id} est payé. Votre réservation est maintenant confirmée et la facture est disponible."
             );
 
             return response()->json(['status' => 'success']);

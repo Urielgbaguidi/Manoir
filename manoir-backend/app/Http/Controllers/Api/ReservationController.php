@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Mail\ReservationCancelled;
 use App\Models\Payment;
 use App\Models\Reservation;
+use App\Models\Room;
 use App\Models\RoomCategory;
+use App\Services\GoogleCalendarWriter;
 use App\Services\ReservationNotificationService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -42,6 +44,27 @@ class ReservationController extends Controller
         $room = $category->availableRoomForDates($request->check_in, $request->check_out, $preferredRoomId);
 
         if (! $room) {
+            // Le client choisit desormais un appartement precis : lui repondre
+            // « aucun appartement disponible » serait faux si un autre de la
+            // meme categorie est libre.
+            if ($preferredRoomId) {
+                $libres = $category->rooms()
+                    ->where('status', 'available')
+                    ->whereNotNull('apartment_number')
+                    ->orderBy('apartment_number')
+                    ->get()
+                    ->filter(fn (Room $autre) => $autre->isAvailableForDates($request->check_in, $request->check_out))
+                    ->pluck('apartment_number')
+                    ->values();
+
+                return response()->json([
+                    'message' => $libres->isEmpty()
+                        ? 'Cet appartement n\'est pas disponible sur ces dates, et aucun autre de cette categorie ne l\'est non plus.'
+                        : 'Cet appartement n\'est pas disponible sur ces dates. Appartement(s) libre(s) : N°'.$libres->join(', N°'),
+                    'alternatives' => $libres->all(),
+                ], 422);
+            }
+
             return response()->json([
                 'message' => 'Aucun appartement disponible pour ces dates. Veuillez choisir d\'autres dates.',
             ], 422);
@@ -52,9 +75,9 @@ class ReservationController extends Controller
         $nights = max(1, $checkIn->diffInDays($checkOut));
 
         // Garde-fou: duree de sejour raisonnable.
-        if ($nights > 90) {
+        if ($nights > (int) config('booking.max_nights', 90)) {
             return response()->json([
-                'message' => 'La duree du sejour ne peut exceder 90 nuits.',
+                'message' => 'La duree du sejour ne peut exceder '.config('booking.max_nights', 90).' nuits.',
             ], 422);
         }
 
@@ -67,12 +90,22 @@ class ReservationController extends Controller
             ], 422);
         }
 
-        $depositPerDay = $category->type === 'vip' ? (int) ($room->deposit ?: $category->deposit_per_day) : (int) $category->deposit_per_day;
-        $pricePerNight = $category->type === 'vip' ? (int) ($room->base_price ?: $category->price_per_night) : (int) $category->price_per_night;
-        // Calcul de la caution: caution par jour x nombre de jours entre la demande et l'arrivee
-        $daysUntilCheckIn = max(1, now()->startOfDay()->diffInDays($checkIn));
-        $depositAmount = $daysUntilCheckIn * $depositPerDay;
+        // Les tarifs de l'appartement priment sur ceux de la categorie : chaque
+        // appartement est choisi individuellement et affiche son propre prix.
+        $pricePerNight = (int) ($room->base_price ?: $category->price_per_night);
         $stayAmount = $nights * $pricePerNight;
+
+        // Acompte : une part du sejour, versee a l'avance et DEDUITE du total.
+        // L'ancienne formule multipliait une caution journaliere par le delai
+        // avant l'arrivee, sans aucun rapport avec le prix du sejour.
+        $rate = (float) config('booking.deposit_rate', 0.30);
+        $depositAmount = (int) round($stayAmount * $rate);
+
+        // Reserver retient l'appartement et ouvre le paiement dans la foulee.
+        // L'attente d'une validation par l'administration a ete supprimee :
+        // elle immobilisait le logement sans qu'aucune somme ne soit engagee,
+        // et laissait le client sans reponse.
+        $echeance = $this->echeanceDePaiement($checkIn);
 
         $reservation = Reservation::create([
             'user_id' => Auth::id(),
@@ -81,26 +114,46 @@ class ReservationController extends Controller
             'check_in' => $request->check_in,
             'check_out' => $request->check_out,
             'guests' => $guests,
-            'total_price' => $depositAmount,
-            'deposit_daily_rate' => $depositPerDay,
+            'total_price' => $stayAmount,
+            'deposit_daily_rate' => 0,
             'deposit_amount' => $depositAmount,
             'stay_amount' => $stayAmount,
-            'status' => 'EN_ATTENTE',
+            'status' => 'VALIDEE_PAIEMENT_REQUIS',
+            'approved_at' => now(),
+            'payment_deadline' => $echeance,
             'special_requests' => $request->special_requests,
         ]);
+
+        $montant = number_format($depositAmount, 0, ',', ' ');
+        $limite = $echeance->format('d/m/Y a H:i');
 
         ReservationNotificationService::sendOnce(
             $reservation,
             'reservation_submitted',
-            "Votre demande de réservation #{$reservation->id} a bien été envoyée. L’administration va l’examiner."
+            "Votre réservation #{$reservation->id} est enregistrée. L’appartement vous est réservé jusqu’au {$limite} : réglez l’acompte de {$montant} FCFA avant cette heure, sans quoi il sera remis à la location."
         );
 
         return response()->json([
             'message' => $room->apartment_number
-                ? "Appartement N°{$room->apartment_number} vous sera attribué pour votre séjour. Votre demande est en cours d'examen."
-                : 'Votre demande est en cours d\'examen.',
+                ? "Appartement N°{$room->apartment_number} retenu jusqu'au {$limite}. Réglez l'acompte de {$montant} FCFA avant cette heure pour confirmer votre séjour."
+                : "Appartement retenu jusqu'au {$limite}. Réglez l'acompte de {$montant} FCFA avant cette heure pour confirmer votre séjour.",
+            'payment_deadline' => $echeance->toIso8601String(),
+            'deposit_amount' => $depositAmount,
             'reservation' => $reservation->load('room'),
         ], 201);
+    }
+
+    /**
+     * Fin du blocage : le client a ce delai pour regler son acompte.
+     *
+     * L'echeance ne depasse jamais le jour d'arrivee, sinon la reservation
+     * expirerait avant l'heure limite et le client paierait dans le vide.
+     */
+    private function echeanceDePaiement(Carbon $arrivee): Carbon
+    {
+        $heures = max(1, (int) config('booking.hold_hours', 12));
+
+        return now()->addHours($heures)->min($arrivee->copy()->endOfDay());
     }
 
     public function myReservations(): JsonResponse
@@ -108,11 +161,67 @@ class ReservationController extends Controller
         Reservation::expireOverduePaymentRequests(Auth::id());
 
         $reservations = Reservation::where('user_id', Auth::id())
+            // Masquees par le client : elles restent en base et visibles cote
+            // administration, mais n'encombrent plus sa liste.
+            ->whereNull('client_hidden_at')
             ->with(['room', 'payments', 'user'])
             ->orderByDesc('created_at')
             ->get();
 
         return response()->json($reservations);
+    }
+
+    /**
+     * Retire une reservation terminee de l'historique du client.
+     *
+     * Rien n'est supprime : factures, bons et montants encaisses doivent rester
+     * consultables par l'administration et opposables en cas de litige.
+     */
+    public function masquer(string $id): JsonResponse
+    {
+        $reservation = Reservation::where('user_id', Auth::id())->findOrFail($id);
+
+        $reservation->expireIfPaymentDeadlinePassed();
+        $reservation->refresh();
+
+        if (! $reservation->peutEtreMasquee()) {
+            return response()->json([
+                'message' => 'Cette reservation est encore en cours : elle ne peut pas etre retiree de votre historique.',
+            ], 422);
+        }
+
+        $reservation->forceFill(['client_hidden_at' => now()])->save();
+
+        return response()->json(['message' => 'Reservation retiree de votre historique.']);
+    }
+
+    /**
+     * Vide l'historique : masque d'un coup tout ce qui est termine.
+     */
+    public function viderHistorique(): JsonResponse
+    {
+        Reservation::expireOverduePaymentRequests(Auth::id());
+
+        $terminees = Reservation::where('user_id', Auth::id())
+            ->whereNull('client_hidden_at')
+            ->whereIn('status', Reservation::STATUTS_TERMINES)
+            ->get()
+            ->filter(fn (Reservation $reservation) => $reservation->peutEtreMasquee());
+
+        foreach ($terminees as $reservation) {
+            $reservation->forceFill(['client_hidden_at' => now()])->save();
+        }
+
+        $nombre = $terminees->count();
+
+        return response()->json([
+            'message' => $nombre === 0
+                ? 'Votre historique est deja vide.'
+                : ($nombre === 1
+                    ? 'Une reservation a ete retiree de votre historique.'
+                    : "{$nombre} reservations ont ete retirees de votre historique."),
+            'hidden' => $nombre,
+        ]);
     }
 
     public function show(string $id): JsonResponse
@@ -152,9 +261,12 @@ class ReservationController extends Controller
             ], 422);
         }
 
-        if (now()->startOfDay()->greaterThanOrEqualTo($reservation->check_in->copy()->startOfDay())) {
+        // Une arrivee prevue aujourd'hui reste annulable : le client doit
+        // pouvoir se retracter dans la journee, et l'appartement se relouer le
+        // soir meme. Seule une date d'arrivee DEPASSEE ferme l'annulation.
+        if ($reservation->check_in->copy()->startOfDay()->lessThan(now()->startOfDay())) {
             return response()->json([
-                'message' => 'Le sejour a deja commence. La periode de reservation est terminee et cette reservation ne peut plus etre annulee.',
+                'message' => 'La date d\'arrivee est passee. Cette reservation ne peut plus etre annulee.',
             ], 422);
         }
 
@@ -172,10 +284,14 @@ class ReservationController extends Controller
 
         $reservation = $reservation->fresh(['room', 'payments', 'user']);
 
+        // L'appartement redevient libre sur le site : il doit l'etre aussi dans
+        // l'agenda, sinon la periode resterait barree sans raison.
+        app(GoogleCalendarWriter::class)->retirer($reservation);
+
         ReservationNotificationService::sendOnce(
             $reservation,
             'reservation_cancelled',
-            "Votre réservation #{$reservation->id} est annulée. Le remboursement prévu est de ".number_format((int) $calculation['refund_amount'], 0, ',', ' ')." FCFA sous 48h à 72h."
+            "Votre réservation #{$reservation->id} est annulée. Le remboursement prévu est de ".number_format((int) $calculation['refund_amount'], 0, ',', ' ').' FCFA sous 48h à 72h.'
         );
 
         try {

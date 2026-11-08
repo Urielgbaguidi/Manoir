@@ -12,6 +12,8 @@ export type Suite = {
   image: string;
   alt: string;
   label?: string;
+  /** Categorie visee. Sans elle, les trois cartes menaient au meme catalogue. */
+  href: string;
 };
 
 type SuiteRevealCardProps = {
@@ -63,7 +65,7 @@ export default function SuiteRevealCard({ suite, index }: SuiteRevealCardProps) 
       transition={{ delay: index * 0.08, duration: 0.85, ease: [0.22, 1, 0.36, 1] }}
       className="on-dark group relative"
     >
-      <Link href="/rooms" className="block">
+      <Link href={suite.href} className="block">
         <div className="glass-warm glass-edge relative overflow-hidden rounded-[1.6rem] p-2 shadow-glass transition-transform duration-500 group-hover:-translate-y-2">
           <div className="relative aspect-[4/5] overflow-hidden rounded-[1.2rem] bg-night">
             <div ref={imageRef} className="absolute inset-0 will-change-transform">

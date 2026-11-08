@@ -123,4 +123,17 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | URL du frontend Next.js
+    |--------------------------------------------------------------------------
+    |
+    | Utilisee pour construire les liens envoyes par mail (reinitialisation de
+    | mot de passe, confirmation d'adresse) : ces liens doivent ouvrir le site
+    | client, pas l'API.
+    |
+    */
+
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:3000'),
+
 ];

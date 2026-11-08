@@ -122,6 +122,14 @@ function LoginContent() {
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
+              <div className="text-right">
+                <Link
+                  href="/auth/mot-de-passe-oublie"
+                  className="text-[11px] font-semibold tracking-wide text-cream/50 transition duration-300 hover:text-gold-light"
+                >
+                  Mot de passe oublié ?
+                </Link>
+              </div>
             </div>
 
             <button

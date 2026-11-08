@@ -1,5 +1,32 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
+/**
+ * Nombre d'appels au serveur en cours, observable par l'interface.
+ *
+ * C'est ce compteur qui permet a la barre de progression de savoir quand une
+ * action est reellement terminee. Sans lui, elle devrait deviner une duree :
+ * elle s'arreterait trop tot sur les appels lents et trop tard sur les rapides.
+ */
+type EcouteurActivite = (appelsEnCours: number) => void;
+
+const ecouteursActivite = new Set<EcouteurActivite>();
+let appelsEnCours = 0;
+
+function signalerActivite(delta: number): void {
+  appelsEnCours = Math.max(0, appelsEnCours + delta);
+  ecouteursActivite.forEach((ecouteur) => ecouteur(appelsEnCours));
+}
+
+/** S'abonne a l'activite reseau. Renvoie la fonction de desabonnement. */
+export function surActiviteReseau(ecouteur: EcouteurActivite): () => void {
+  ecouteursActivite.add(ecouteur);
+  ecouteur(appelsEnCours);
+
+  return () => {
+    ecouteursActivite.delete(ecouteur);
+  };
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -37,6 +64,8 @@ export interface Room {
   videos?: string[];
   equipments: string[];
   status: string;
+  /** Present sur les appartements renvoyes dans une categorie. */
+  availability?: RoomAvailability;
   created_at: string;
   updated_at: string;
 }
@@ -143,6 +172,7 @@ export interface User {
   phone?: string;
   is_admin: boolean;
   is_super_admin: boolean;
+  email_verified_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -153,6 +183,48 @@ export interface CancellationDetails {
   retained_amount: number;
   refund_amount: number;
   cancelled_at?: string;
+}
+
+/** Etat d'occupation d'un appartement, calcule depuis l'agenda et les reservations. */
+export interface RoomAvailability {
+  status: "free" | "occupied" | "unavailable";
+  /** Date a partir de laquelle il redevient libre (si occupe). */
+  occupied_until: string | null;
+  /** Date a laquelle la prochaine occupation commence (si libre). */
+  free_until: string | null;
+}
+
+/** Creneau libre propose quand rien n'est disponible sur toute la duree voulue. */
+export interface AvailabilitySuggestion {
+  id: number;
+  slug: string;
+  apartment_number: number | null;
+  category_label: string | null;
+  category_slug: string | null;
+  price_per_night: number;
+  starts_on: string;
+  ends_on: string;
+  nights: number;
+}
+
+/** Creneau libre de l'appartement consulte, quand les dates voulues sont prises. */
+export interface OwnFreeWindow {
+  starts_on: string;
+  ends_on: string;
+  nights: number;
+}
+
+/** Appartement libre propose quand la demande initiale echoue. */
+export interface AvailableAlternative {
+  id: number;
+  slug: string;
+  apartment_number: number | null;
+  type: string;
+  category_label: string | null;
+  category_slug: string | null;
+  price_per_night: number;
+  price: number;
+  image: string | null;
 }
 
 export interface AdminStatsResponse {
@@ -193,8 +265,22 @@ class ApiClient {
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    signalerActivite(1);
+
+    try {
+      return await this.executer<T>(endpoint, options);
+    } finally {
+      signalerActivite(-1);
+    }
+  }
+
+  private async executer<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
     const headers: HeadersInit = {
+      // Sans cet en-tete, Laravel traite la requete comme une navigation web :
+      // une session expiree provoquait un 500 au lieu d'un 401, et
+      // l'interception plus bas ne pouvait pas deconnecter proprement.
+      Accept: "application/json",
       ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...options.headers
     };
@@ -279,12 +365,18 @@ class ApiClient {
     price: number;
     deposit_per_day: number;
     available_room?: Room | null;
+    own_window?: OwnFreeWindow | null;
+    alternatives?: AvailableAlternative[];
+    suggestions?: AvailabilitySuggestion[];
   }> {
     return this.request<{
       available: boolean;
       price: number;
       deposit_per_day: number;
       available_room?: Room | null;
+      own_window?: OwnFreeWindow | null;
+      alternatives?: AvailableAlternative[];
+      suggestions?: AvailabilitySuggestion[];
     }>(`/room-categories/${slugOrType}/check-availability`, {
       method: "POST",
       body: JSON.stringify({ check_in: checkIn, check_out: checkOut, room_id: roomId })
@@ -349,6 +441,24 @@ class ApiClient {
 
   async getReservationPayments(reservationId: string): Promise<Payment[]> {
     return this.request<Payment[]>(`/reservations/${reservationId}/payments`);
+  }
+
+  /**
+   * Retire une reservation terminee de l'historique du client.
+   * Rien n'est supprime : elle reste en base et visible cote administration.
+   */
+  async hideReservation(reservationId: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/reservations/${reservationId}/masquer`, {
+      method: "POST"
+    });
+  }
+
+  /** Masque d'un coup toutes les reservations terminees. */
+  async clearReservationHistory(): Promise<{ message: string; hidden: number }> {
+    return this.request<{ message: string; hidden: number }>(
+      "/reservations/vider-historique",
+      { method: "POST" }
+    );
   }
 
   async cancelReservation(
@@ -487,6 +597,44 @@ class ApiClient {
       method: "PUT",
       body: JSON.stringify(data)
     });
+  }
+
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>("/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email })
+    });
+  }
+
+  async resetPassword(data: {
+    token: string;
+    email: string;
+    password: string;
+    password_confirmation: string;
+  }): Promise<{ message: string }> {
+    return this.request<{ message: string }>("/reset-password", {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getEmailVerificationStatus(): Promise<{
+    verified: boolean;
+    email: string;
+    code_pending: boolean;
+  }> {
+    return this.request("/email/status");
+  }
+
+  async verifyEmailCode(code: string): Promise<{ message: string; verified: boolean }> {
+    return this.request<{ message: string; verified: boolean }>("/email/verify-code", {
+      method: "POST",
+      body: JSON.stringify({ code })
+    });
+  }
+
+  async resendEmailVerification(): Promise<{ message: string }> {
+    return this.request<{ message: string }>("/email/resend", { method: "POST" });
   }
 
   async logout(): Promise<{ message: string }> {

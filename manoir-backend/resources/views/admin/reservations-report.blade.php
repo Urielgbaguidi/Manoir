@@ -101,7 +101,7 @@
 @php
     $statusLabels = [
         'EN_ATTENTE' => 'En attente',
-        'VALIDEE_PAIEMENT_REQUIS' => 'Caution requise',
+        'VALIDEE_PAIEMENT_REQUIS' => 'Acompte requis',
         'CONFIRMEE' => 'Confirmée',
         'REFUSEE' => 'Refusée',
         'EXPIREE' => 'Expirée',
@@ -168,7 +168,7 @@
 <table class="summary">
     <tr>
         <td><div class="summary-value">{{ $reservations->count() }}</div><div class="summary-label">Réservations exportées</div></td>
-        <td><div class="summary-value">{{ $money($depositTotal) }}</div><div class="summary-label">Cautions</div></td>
+        <td><div class="summary-value">{{ $money($depositTotal) }}</div><div class="summary-label">Acomptes</div></td>
         <td><div class="summary-value">{{ $money($stayTotal) }}</div><div class="summary-label">Séjours</div></td>
         <td><div class="summary-value">{{ $money($depositTotal + $stayTotal) }}</div><div class="summary-label">Montant cumulé</div></td>
     </tr>
@@ -182,7 +182,7 @@
             <th style="width: 18%;">Appartement</th>
             <th style="width: 12%;">Arrivée / départ</th>
             <th style="width: 9%;">Statut</th>
-            <th style="width: 8%; text-align:right;">Caution</th>
+            <th style="width: 8%; text-align:right;">Acompte</th>
             <th style="width: 8%; text-align:right;">Séjour</th>
             <th style="width: 8%; text-align:right;">Total</th>
             <th style="width: 15%;">Demande</th>

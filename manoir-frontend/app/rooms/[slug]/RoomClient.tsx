@@ -19,7 +19,15 @@ import {
   VolumeX,
   X
 } from "lucide-react";
-import { api, Room, RoomCategory } from "@/lib/api";
+import {
+  api,
+  AvailabilitySuggestion,
+  AvailableAlternative,
+  OwnFreeWindow,
+  Room,
+  RoomAvailability,
+  RoomCategory
+} from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import ImageLightbox from "@/components/ui/ImageLightbox";
@@ -142,10 +150,89 @@ const roomDisplayName = (room: Room) => {
     return `Appartement VIP ${room.apartment_number}`;
   }
 
-  return room.name.toLowerCase().startsWith("appartement") ? room.name : `Appartement ${room.name}`;
+  const base = room.name.toLowerCase().startsWith("appartement")
+    ? room.name
+    : `Appartement ${room.name}`;
+
+  // Les appartements d'une meme categorie portent le meme nom en base
+  // (« Appartement 2 Chambres » x4) : sans le numero, le client ne peut pas
+  // les distinguer les uns des autres.
+  return room.apartment_number ? `${base} — N°${room.apartment_number}` : base;
 };
 
 const videoPreviewSrc = (video: string) => (video.includes("#") ? video : `${video}#t=0.1`);
+
+/** Part du sejour demandee a l'avance. Doit rester alignee sur config/booking.php. */
+const DEPOSIT_RATE = 0.3;
+
+// Duree pendant laquelle reserver retient l'appartement, le temps du paiement.
+// Doit rester en accord avec booking.hold_hours cote serveur.
+const HOLD_HOURS = 12;
+
+/** "2026-08-21" -> "21 août" */
+const formatJour = (iso: string) =>
+  new Date(`${iso}T00:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
+
+/** Libellé court, pour la pastille posée sur la photo. */
+const libelleCourt = (a: RoomAvailability) =>
+  a.status === "occupied" ? "Occupé" : "Disponible";
+
+/**
+ * Phrase complète : ce qui intéresse vraiment le client, c'est la date à
+ * laquelle il peut venir, pas celle où le logement se libère « techniquement ».
+ */
+const libelleDetaille = (a: RoomAvailability) => {
+  if (a.status === "occupied") {
+    return a.occupied_until
+      ? `Occupé jusqu'au ${formatJour(a.occupied_until)}`
+      : "Occupé actuellement";
+  }
+
+  return a.free_until
+    ? `Disponible jusqu'au ${formatJour(a.free_until)}`
+    : "Aucune réservation à venir";
+};
+
+/** Pastille posée sur la photo : opaque, pour rester lisible sur toute image. */
+function AvailabilityBadge({ availability }: { availability?: RoomAvailability }) {
+  if (!availability) return null;
+
+  const occupe = availability.status === "occupied";
+
+  return (
+    <span
+      className={`absolute left-4 top-4 inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] font-black uppercase tracking-widest text-white shadow-lg shadow-night/40 ${
+        occupe ? "bg-terracotta" : "bg-olive"
+      }`}
+    >
+      <span className="h-2 w-2 rounded-full bg-white/90" aria-hidden />
+      {libelleCourt(availability)}
+    </span>
+  );
+}
+
+/** Bandeau dans le corps de la carte, ou l'information est vraiment lue. */
+function AvailabilityStrip({ availability }: { availability?: RoomAvailability }) {
+  if (!availability) return null;
+
+  const occupe = availability.status === "occupied";
+
+  return (
+    <div
+      className={`mt-5 flex items-center gap-3 rounded-xl border-l-4 px-4 py-3 ${
+        occupe
+          ? "border-l-terracotta bg-terracotta/10"
+          : "border-l-olive bg-olive/10"
+      }`}
+    >
+      <span
+        className={`h-3 w-3 shrink-0 rounded-full ${occupe ? "bg-terracotta" : "bg-olive"}`}
+        aria-hidden
+      />
+      <p className="text-[13px] font-bold text-cream">{libelleDetaille(availability)}</p>
+    </div>
+  );
+}
 
 export default function RoomCategoryDetailPage() {
   const params = useParams();
@@ -160,9 +247,19 @@ export default function RoomCategoryDetailPage() {
   const [category, setCategory] = useState<RoomCategory | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [checkIn, setCheckIn] = useState("");
-  const [checkOut, setCheckOut] = useState("");
+  // Les dates peuvent arriver par l'URL : un creneau propose sur un autre
+  // appartement renvoie ici avec les dates deja choisies, sinon le client
+  // devrait les ressaisir apres avoir change de page.
+  const [checkIn, setCheckIn] = useState(() => searchParams.get("check_in") ?? "");
+  const [checkOut, setCheckOut] = useState(() => searchParams.get("check_out") ?? "");
   const [available, setAvailable] = useState<boolean | null>(null);
+  // Appartements libres sur les memes dates, proposes quand la demande echoue.
+  const [alternatives, setAlternatives] = useState<AvailableAlternative[]>([]);
+  // Creneaux les plus proches, quand rien n'est libre sur toute la duree.
+  const [suggestions, setSuggestions] = useState<AvailabilitySuggestion[]>([]);
+  // Creneau libre de l'appartement consulte : il doit s'afficher meme quand
+  // d'autres appartements sont libres sur les dates voulues.
+  const [ownWindow, setOwnWindow] = useState<OwnFreeWindow | null>(null);
   const [checking, setChecking] = useState(false);
   const [reserving, setReserving] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -176,24 +273,28 @@ export default function RoomCategoryDetailPage() {
   const [videoCurrentTime, setVideoCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
 
+  // Chaque appartement est choisi individuellement, quelle que soit sa
+  // categorie : il a ses propres photos, videos, description et prix, tous
+  // modifiables par l'administration.
   const units = useMemo(() => {
     const rawUnits = category?.units ?? [];
+    const fallbackUnits = category ? (fallbackCategories[category.slug]?.units ?? []) : [];
 
-    if (category?.type !== "vip") {
-      return rawUnits;
+    // Sans reponse de l'API, on affiche au moins le contenu de secours.
+    if (rawUnits.length === 0) {
+      return fallbackUnits;
     }
 
-    const fallbackVipUnits = fallbackCategories["appartement-vip"].units ?? [];
-
-    return fallbackVipUnits.map((fallbackUnit) => {
-      const apiUnit = rawUnits.find(
+    // L'API fait foi : elle donne la liste et l'ordre des appartements. Le
+    // contenu local ne sert qu'a combler un champ laisse vide en base.
+    return rawUnits.map((apiUnit) => {
+      const fallbackUnit = fallbackUnits.find(
         (unit) =>
-          unit.slug === fallbackUnit.slug ||
-          unit.name.toLowerCase() === fallbackUnit.name.toLowerCase()
+          unit.slug === apiUnit.slug || unit.name.toLowerCase() === apiUnit.name.toLowerCase()
       );
 
-      if (!apiUnit) {
-        return fallbackUnit;
+      if (!fallbackUnit) {
+        return apiUnit;
       }
 
       return {
@@ -217,15 +318,12 @@ export default function RoomCategoryDetailPage() {
       ) ?? null,
     [units, selectedUnitSlug]
   );
-  const activeRoom = category?.type === "vip" ? selectedUnit : null;
+  const activeRoom = selectedUnit;
   const detailTitle = activeRoom ? roomDisplayName(activeRoom) : (category?.label ?? "Appartement");
   const detailDescription = activeRoom?.description || category?.full_description || "";
   const pricePerNight = activeRoom?.base_price ?? category?.price_per_night ?? 0;
-  const depositPerDay = activeRoom?.deposit ?? category?.deposit_per_day ?? 0;
   const maxGuests = activeRoom?.max_occupants ?? (category?.type === "deux_chambres" ? 4 : 2);
-  const activeRoomBlocked = Boolean(
-    category?.type === "vip" && activeRoom && activeRoom.status !== "available"
-  );
+  const activeRoomBlocked = Boolean(activeRoom && activeRoom.status !== "available");
   const reservationBlocked = Boolean(category?.is_blocked || activeRoomBlocked);
 
   useEffect(() => {
@@ -327,12 +425,18 @@ export default function RoomCategoryDetailPage() {
       if (!category || !checkIn || !checkOut) {
         setAvailable(null);
         setAssignedRoom(null);
+        setAlternatives([]);
+        setSuggestions([]);
+        setOwnWindow(null);
         return;
       }
 
       if (new Date(checkOut) <= new Date(checkIn)) {
         setAvailable(false);
         setAssignedRoom(null);
+        setAlternatives([]);
+        setSuggestions([]);
+        setOwnWindow(null);
         return;
       }
 
@@ -346,10 +450,16 @@ export default function RoomCategoryDetailPage() {
         );
         setAvailable(result.available);
         setAssignedRoom(result.available_room ?? activeRoom ?? null);
+        setAlternatives(result.alternatives ?? []);
+        setSuggestions(result.suggestions ?? []);
+        setOwnWindow(result.own_window ?? null);
       } catch (error) {
         console.error("Erreur lors de la verification:", error);
         setAvailable(null);
         setAssignedRoom(null);
+        setAlternatives([]);
+        setSuggestions([]);
+        setOwnWindow(null);
         showToast("Impossible de verifier la disponibilite pour le moment.", "error");
       } finally {
         setChecking(false);
@@ -363,10 +473,11 @@ export default function RoomCategoryDetailPage() {
     if (
       searchParams.get("reserve") === "1" &&
       user &&
+      user.email_verified_at !== null &&
       category &&
       !category.is_blocked &&
       !activeRoomBlocked &&
-      (category.type !== "vip" || activeRoom)
+      activeRoom
     ) {
       setShowForm(true);
       setTimeout(
@@ -387,19 +498,13 @@ export default function RoomCategoryDetailPage() {
   const videos = activeRoom?.videos?.length ? activeRoom.videos : (category?.videos ?? []);
   const activeImage = images[activeImageIndex] ?? images[0];
 
-  const daysUntilCheckIn = useMemo(() => {
-    if (!checkIn) return 1;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const checkInDate = new Date(`${checkIn}T00:00:00`);
-    const diff = Math.ceil((checkInDate.getTime() - today.getTime()) / 86400000);
-    return Math.max(1, diff);
-  }, [checkIn]);
-
   const nights = useMemo(() => dayDiff(checkIn, checkOut), [checkIn, checkOut]);
-  // Calcul de la caution: caution par jour x nombre de jours entre la demande et l'arrivee
-  const depositAmount = daysUntilCheckIn * depositPerDay;
   const stayAmount = nights * pricePerNight;
+
+  // Acompte : une part du sejour, versee a l'avance et DEDUITE du total.
+  // Le meme taux est applique cote serveur, qui reste seul juge du montant.
+  const depositAmount = Math.round(stayAmount * DEPOSIT_RATE);
+  const balanceAmount = Math.max(0, stayAmount - depositAmount);
 
   const beginReservation = () => {
     if (!category) return;
@@ -410,16 +515,25 @@ export default function RoomCategoryDetailPage() {
     }
 
     if (activeRoomBlocked) {
-      showToast("Cet appartement VIP est indisponible pour le moment.", "info");
+      showToast("Cet appartement est indisponible pour le moment.", "info");
       return;
     }
 
+    const unitQuery = activeRoom ? `unit=${activeRoom.slug}&` : "";
+    const retour = `/rooms/${category.slug}?${unitQuery}reserve=1`;
+
     if (!user) {
       showToast("Creez votre compte pour continuer la demande de reservation.", "info");
-      const unitQuery = activeRoom ? `unit=${activeRoom.slug}&` : "";
-      router.push(
-        `/auth/register?redirect=${encodeURIComponent(`/rooms/${category.slug}?${unitQuery}reserve=1`)}`
-      );
+      router.push(`/auth/register?redirect=${encodeURIComponent(retour)}`);
+      return;
+    }
+
+    // Le serveur refuse de toute facon une demande venant d'une adresse non
+    // confirmee : autant amener le client au bon endroit plutot que de le
+    // laisser remplir un formulaire qui sera rejete.
+    if (user.email_verified_at === null) {
+      showToast("Confirmez votre adresse email pour reserver.", "info");
+      router.push(`/auth/confirmer-email?redirect=${encodeURIComponent(retour)}`);
       return;
     }
 
@@ -467,9 +581,11 @@ export default function RoomCategoryDetailPage() {
         guests,
         special_requests: specialRequests
       });
-      showToast(response.message || "Votre demande est en cours d'examen.", "success");
-      // On reste connecté : redirection vers l'espace client (plus de déconnexion forcée).
-      router.push("/espace-client?message=reservation-sent");
+      showToast(response.message || "Appartement retenu. Reglez l'acompte pour confirmer.", "success");
+      // Le paiement s'ouvre tout seul a l'arrivee : l'appartement n'est retenu
+      // que quelques heures, faire chercher le bouton au client lui ferait
+      // perdre une partie de ce delai.
+      router.push(`/espace-client?payer=${response.reservation.id}`);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Une erreur est survenue.", "error");
     } finally {
@@ -508,7 +624,7 @@ export default function RoomCategoryDetailPage() {
     );
   }
 
-  if (category.type === "vip" && !selectedUnit) {
+  if (!selectedUnit) {
     const vipUnits = units;
 
     return (
@@ -523,7 +639,7 @@ export default function RoomCategoryDetailPage() {
               Appartements
             </Link>
             <span>/</span>
-            <span className="text-cream/70">Appartement VIP</span>
+            <span className="text-cream/70">{category.label}</span>
           </nav>
 
           <motion.div
@@ -535,19 +651,20 @@ export default function RoomCategoryDetailPage() {
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-gold/15 bg-white/5 px-4 py-2 backdrop-blur-md">
               <Sparkles className="h-4 w-4 text-cream" />
               <span className="text-[10px] font-semibold uppercase tracking-widest text-cream">
-                Selection VIP
+                {category.rank_label || "Selection"}
               </span>
             </div>
             <h1 className="mb-5 font-display text-4xl font-bold uppercase tracking-tight text-cream md:text-6xl">
-              Choisir un Appartement VIP
+              Choisir un {category.label}
             </h1>
             <p className="text-lg leading-8 text-cream/70">
-              Les deux appartements VIP ont chacun leurs photos, leurs videos, leur description et
-              leur prix par nuit.
+              {vipUnits.length > 1
+                ? `Les ${vipUnits.length} appartements de cette categorie ont chacun leurs photos, leurs videos, leur description et leur prix par nuit.`
+                : "Cet appartement dispose de ses propres photos, videos, description et prix par nuit."}
             </p>
           </motion.div>
 
-          <div className="grid gap-7 lg:grid-cols-2">
+          <div className="grid gap-7 md:grid-cols-2">
             {vipUnits.map((unit, index) => {
               const isUnitBlocked = category.is_blocked || unit.status !== "available";
               const card = (
@@ -566,10 +683,12 @@ export default function RoomCategoryDetailPage() {
                       priority={index === 0}
                     />
                     <div className="absolute inset-0 bg-night/30 transition group-hover:bg-night/10" />
-                    {isUnitBlocked && (
+                    {isUnitBlocked ? (
                       <span className="absolute left-5 top-5 rounded-full border border-terracotta/25 bg-terracotta px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-cream">
                         Indisponible pour le moment
                       </span>
+                    ) : (
+                      <AvailabilityBadge availability={unit.availability} />
                     )}
                   </div>
 
@@ -580,6 +699,8 @@ export default function RoomCategoryDetailPage() {
                     <p className="min-h-[4rem] text-[15px] leading-6 text-cream/70">
                       {unit.description}
                     </p>
+
+                    <AvailabilityStrip availability={unit.availability} />
 
                     <div className="mt-6 flex items-end justify-between gap-4 border-t border-gold/15 pt-5">
                       <div>
@@ -679,12 +800,23 @@ export default function RoomCategoryDetailPage() {
                 </div>
                 <div>
                   <span className="block text-[10px] font-bold uppercase tracking-widest text-gold/80">
-                    Caution par jour
+                    Acompte
                   </span>
                   <span className="mt-1 block font-display text-2xl font-bold text-cream">
-                    {formatCurrency(depositPerDay)}
+                    {Math.round(DEPOSIT_RATE * 100)} %
+                  </span>
+                  <span className="mt-0.5 block text-[11px] text-cream/50">
+                    déduit du séjour
                   </span>
                 </div>
+                {/* L'etat d'occupation est la premiere chose que cherche un
+                    client sur une fiche : il precede donc l'appel a reserver. */}
+                {!reservationBlocked && (
+                  <div className="col-span-2">
+                    <AvailabilityStrip availability={activeRoom?.availability} />
+                  </div>
+                )}
+
                 <div className="col-span-2 flex items-center justify-between border-t border-gold/15 pt-4 text-sm text-cream/70">
                   {reservationBlocked ? (
                     <span className="rounded-full border border-terracotta/20 bg-terracotta/10 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-terracotta">
@@ -924,41 +1056,185 @@ export default function RoomCategoryDetailPage() {
                             <p className="font-bold">
                               Disponible pour {nights} nuit{nights > 1 ? "s" : ""}
                             </p>
-                            {assignedRoom?.apartment_number && category.type !== "vip" && (
+                            {assignedRoom?.apartment_number && (
                               <p className="rounded-xl border border-olive/25 bg-white/10 p-3 text-cream">
-                                Appartement N°{assignedRoom.apartment_number} vous sera attribué
-                                pour votre séjour.
+                                Appartement N°{assignedRoom.apartment_number} réservé pour votre
+                                séjour.
                               </p>
                             )}
                             <div className="space-y-2 border-t border-olive/10 pt-3 text-cream">
                               <div className="flex items-center justify-between gap-4">
                                 <span className="text-[10px] uppercase tracking-wider text-cream/45">
-                                  Caution ({daysUntilCheckIn} jour
-                                  {daysUntilCheckIn > 1 ? "s" : ""} x {formatCurrency(depositPerDay)})
-                                </span>
-                                <span className="font-display text-lg font-bold">
-                                  {formatCurrency(depositAmount)}
-                                </span>
-                              </div>
-                              <div className="flex items-center justify-between gap-4">
-                                <span className="text-[10px] uppercase tracking-wider text-cream/45">
-                                  Sejour
+                                  Sejour ({nights} nuit{nights > 1 ? "s" : ""})
                                 </span>
                                 <span className="font-display text-lg font-bold">
                                   {formatCurrency(stayAmount)}
                                 </span>
                               </div>
+                              <div className="flex items-center justify-between gap-4 rounded-lg bg-white/10 px-3 py-2">
+                                <span className="text-[10px] uppercase tracking-wider text-gold-light">
+                                  Acompte a verser ({Math.round(DEPOSIT_RATE * 100)} %)
+                                </span>
+                                <span className="font-display text-lg font-bold text-gold-light">
+                                  {formatCurrency(depositAmount)}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-4">
+                                <span className="text-[10px] uppercase tracking-wider text-cream/45">
+                                  Solde a l'arrivee
+                                </span>
+                                <span className="font-display text-lg font-bold">
+                                  {formatCurrency(balanceAmount)}
+                                </span>
+                              </div>
+                              <p className="pt-1 text-[11px] leading-4 text-cream/50">
+                                L&apos;acompte est deduit du sejour : acompte + solde ={" "}
+                                {formatCurrency(stayAmount)}.
+                              </p>
                             </div>
                           </div>
                         ) : available === false ? (
-                          <p className="font-semibold">
-                            Aucun appartement disponible pour ces dates. Veuillez choisir d'autres
-                            dates.
-                          </p>
+                          <div className="space-y-3">
+                            <p className="font-semibold">
+                              {alternatives.length > 0
+                                ? "Cet appartement n'est pas libre sur ces dates."
+                                : suggestions.length > 0
+                                  ? `Aucun appartement n'est libre sur ces ${nights} nuit${nights > 1 ? "s" : ""} d'affilee. Voici ce qui est possible :`
+                                  : "Aucun appartement disponible pour ces dates. Veuillez choisir d'autres dates."}
+                            </p>
+
+                            {/* Le creneau de l'appartement que le client
+                                consulte. Affiche meme quand d'autres
+                                appartements sont libres sur ces dates : sans
+                                cela, il n'aurait d'autre choix que d'en
+                                changer, alors qu'il tient peut-etre a
+                                celui-ci. */}
+                            {ownWindow && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCheckIn(ownWindow.starts_on);
+                                  setCheckOut(ownWindow.ends_on);
+                                }}
+                                className="flex w-full items-center justify-between gap-3 rounded-xl border border-olive/40 bg-olive/15 px-4 py-3 text-left transition hover:bg-olive/25"
+                              >
+                                <span className="text-cream">
+                                  <span className="font-semibold">
+                                    Cet appartement est libre du {formatJour(ownWindow.starts_on)}{" "}
+                                    au {formatJour(ownWindow.ends_on)}
+                                  </span>
+                                  <span className="mt-0.5 block text-xs text-cream/60">
+                                    Cliquez pour appliquer ces dates
+                                  </span>
+                                </span>
+                                <span className="shrink-0 text-xs font-semibold text-olive-light">
+                                  {ownWindow.nights} nuit{ownWindow.nights > 1 ? "s" : ""}
+                                </span>
+                              </button>
+                            )}
+
+                            {alternatives.length === 0 &&
+                              suggestions.filter((creneau) => creneau.id !== activeRoom?.id).length >
+                                0 && (
+                                <div className="space-y-2">
+                                  <p className="text-[11px] uppercase tracking-wider text-cream/60">
+                                    Autres appartements sur cette periode
+                                  </p>
+                                  <ul className="space-y-2">
+                                    {suggestions
+                                      .filter((creneau) => creneau.id !== activeRoom?.id)
+                                      .map((creneau) => (
+                                        <li key={creneau.id}>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              // Les dates partent dans l'URL : sans
+                                              // elles, le changement de page les
+                                              // effacerait et le client devrait
+                                              // tout ressaisir.
+                                              router.push(
+                                                `/rooms/${creneau.category_slug}?unit=${creneau.slug}` +
+                                                  `&check_in=${creneau.starts_on}&check_out=${creneau.ends_on}&reserve=1`
+                                              );
+                                            }}
+                                            className="flex w-full items-center justify-between gap-3 rounded-xl border border-gold/25 bg-white/10 px-4 py-3 text-left transition hover:border-gold/50 hover:bg-white/15"
+                                          >
+                                            <span className="text-cream">
+                                              <span className="font-semibold">
+                                                Appartement N°{creneau.apartment_number}
+                                              </span>
+                                              <span className="ml-2 text-xs text-cream/60">
+                                                {creneau.category_label}
+                                              </span>
+                                              <span className="mt-0.5 block text-xs text-cream/70">
+                                                Libre du {formatJour(creneau.starts_on)} au{" "}
+                                                {formatJour(creneau.ends_on)}
+                                              </span>
+                                              <span className="mt-0.5 block text-[11px] text-cream/45">
+                                                Cliquez pour appliquer ces dates
+                                              </span>
+                                            </span>
+                                            <span className="shrink-0 text-right">
+                                              <span className="block text-xs font-semibold text-gold-light">
+                                                {creneau.nights} nuit{creneau.nights > 1 ? "s" : ""}
+                                              </span>
+                                              <span className="block text-[11px] text-cream/50">
+                                                {formatCurrency(creneau.price_per_night)} / nuit
+                                              </span>
+                                            </span>
+                                          </button>
+                                        </li>
+                                      ))}
+                                  </ul>
+                                </div>
+                              )}
+
+                            {alternatives.length > 0 && (
+                              <div className="space-y-2">
+                                <p className="text-[11px] uppercase tracking-wider text-cream/60">
+                                  Disponible{alternatives.length > 1 ? "s" : ""} sur ces mêmes dates
+                                </p>
+                                <ul className="space-y-2">
+                                  {alternatives.map((autre) => (
+                                    <li key={autre.id}>
+                                      <Link
+                                        href={`/rooms/${autre.category_slug}?unit=${autre.slug}`}
+                                        className="flex items-center justify-between gap-3 rounded-xl border border-gold/25 bg-white/10 px-4 py-3 transition hover:border-gold/50 hover:bg-white/15"
+                                      >
+                                        <span className="text-cream">
+                                          <span className="font-semibold">
+                                            Appartement N°{autre.apartment_number}
+                                          </span>
+                                          <span className="ml-2 text-xs text-cream/60">
+                                            {autre.category_label}
+                                          </span>
+                                        </span>
+                                        <span className="shrink-0 text-xs font-semibold text-gold-light">
+                                          {formatCurrency(autre.price_per_night)} / nuit
+                                        </span>
+                                      </Link>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
                         ) : (
                           <p>Calcul des disponibilites...</p>
                         )}
                       </motion.div>
+                    )}
+
+                    {/* Le client doit connaitre la regle AVANT de reserver :
+                        l'appartement est mis de cote, pas garanti. */}
+                    {available === true && (
+                      <p className="rounded-2xl border border-gold/20 bg-white/5 p-4 text-[11px] leading-4 text-cream/75">
+                        En réservant, l&apos;appartement vous est retenu pendant{" "}
+                        <strong className="text-cream">{HOLD_HOURS} heures</strong>. Réglez
+                        l&apos;acompte avant la fin de ce délai : passé cette heure, le logement
+                        repart à la location et un autre client peut le prendre. Vous serez conduit
+                        au paiement dès la réservation enregistrée.
+                      </p>
                     )}
 
                     <button
@@ -970,7 +1246,7 @@ export default function RoomCategoryDetailPage() {
                       {reserving ? (
                         <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-night border-t-transparent" />
                       ) : (
-                        "Envoyer la demande"
+                        "Reserver et payer"
                       )}
                     </button>
                   </>
@@ -978,7 +1254,7 @@ export default function RoomCategoryDetailPage() {
 
                 <div className="flex items-center justify-center gap-2 border-t border-gold/15 pt-2 text-[10px] uppercase tracking-wider text-cream/40">
                   <ShieldCheck size={14} />
-                  Validation admin sous 24h
+                  Appartement retenu {HOLD_HOURS} h le temps du paiement
                 </div>
               </div>
             </aside>
