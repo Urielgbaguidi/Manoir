@@ -1,3 +1,6 @@
+```
+```
+
 # Le Manoir - Plateforme de reservation d'appartements
 
 Le Manoir est une plateforme web complete pour presenter des appartements, recevoir des demandes de reservation, gerer les validations administrateur, suivre les paiements et fournir les documents client.
@@ -46,12 +49,12 @@ Manoir/
 
 ### Structure des appartements
 
-| Categorie | Appartements | Prix par nuit | Caution par jour |
-| --- | --- | ---: | ---: |
-| VIP 3 | Numero 3 | 40 000 FCFA | 4 000 FCFA |
-| VIP 7 | Numero 7 | 50 000 FCFA | 5 000 FCFA |
-| 2 Chambres | Numeros 2, 4, 6, 8 |35 000 FCFA | 3 500 FCFA |
-| 1 Chambre | Numeros 1, 5 | 30 000 FCFA | 3 000 FCFA |
+| Categorie  | Appartements       | Prix par nuit | Caution par jour |
+| ---------- | ------------------ | ------------: | ---------------: |
+| VIP 3      | Numero 3           |   40 000 FCFA |       4 000 FCFA |
+| VIP 7      | Numero 7           |   50 000 FCFA |       5 000 FCFA |
+| 2 Chambres | Numeros 2, 4, 6, 8 |   35 000 FCFA |       3 500 FCFA |
+| 1 Chambre  | Numeros 1, 5       |   30 000 FCFA |       3 000 FCFA |
 
 Pour les categories 1 Chambre et 2 Chambres, le client voit la categorie et le systeme attribue automatiquement un appartement disponible selon les dates.
 
@@ -171,17 +174,17 @@ L'administration permet de :
 
 ## Statuts de reservation
 
-| Statut | Signification |
-| --- | --- |
-| `EN_ATTENTE` | Demande envoyee, en attente de validation admin |
-| `VALIDEE_PAIEMENT_REQUIS` | Demande acceptee, caution de réservation a payer sous 24h |
-| `CONFIRMEE` | Caution payee, reservation confirmee |
-| `REFUSEE` | Demande refusee par l'administrateur |
-| `EXPIREE` | Delai de paiement de caution depasse, appartement libere |
-| `SEJOUR_PAYE` | Frais de sejour payes |
-| `ANNULEE` | Reservation annulee par le client |
-| `REMBOURSEE` | Remboursement confirme par l'administrateur |
-| `LIBEREE` | Occupation terminee par l'administrateur, appartement de nouveau disponible |
+| Statut                      | Signification                                                               |
+| --------------------------- | --------------------------------------------------------------------------- |
+| `EN_ATTENTE`              | Demande envoyee, en attente de validation admin                             |
+| `VALIDEE_PAIEMENT_REQUIS` | Demande acceptee, caution de réservation a payer sous 24h                  |
+| `CONFIRMEE`               | Caution payee, reservation confirmee                                        |
+| `REFUSEE`                 | Demande refusee par l'administrateur                                        |
+| `EXPIREE`                 | Delai de paiement de caution depasse, appartement libere                    |
+| `SEJOUR_PAYE`             | Frais de sejour payes                                                       |
+| `ANNULEE`                 | Reservation annulee par le client                                           |
+| `REMBOURSEE`              | Remboursement confirme par l'administrateur                                 |
+| `LIBEREE`                 | Occupation terminee par l'administrateur, appartement de nouveau disponible |
 
 ## Reservation et occupation
 
