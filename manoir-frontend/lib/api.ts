@@ -300,10 +300,18 @@ class ApiClient {
       if (response.status === 401) {
         const hadToken = Boolean(token);
         this.clearToken();
-        // Session expirée sur un appel authentifié → déconnexion + redirection globale.
-        const isAuthEndpoint = endpoint.startsWith("/login") || endpoint.startsWith("/register");
+        // Session expirée sur un appel authentifié : on renvoie discrètement
+        // vers la connexion (sans message alarmant) uniquement depuis un
+        // espace privé, en gardant la page pour y revenir ensuite.
+        const isAuthEndpoint =
+          endpoint.startsWith("/login") ||
+          endpoint.startsWith("/register") ||
+          endpoint.startsWith("/auth/");
         if (hadToken && !isAuthEndpoint && typeof window !== "undefined") {
-          window.location.href = "/auth/login?message=session-expired";
+          const here = window.location.pathname;
+          if (here.startsWith("/espace-client") || here.startsWith("/admin")) {
+            window.location.href = `/auth/login?redirect=${encodeURIComponent(here + window.location.search)}`;
+          }
         }
       }
       throw new ApiError(error.message || `Erreur ${response.status}`, response.status);
@@ -563,6 +571,21 @@ class ApiClient {
     return response;
   }
 
+  /**
+   * Connexion / inscription avec Google : envoie le jeton d'identite obtenu
+   * via Google Identity Services. Le serveur le verifie aupres de Google,
+   * cree le compte au besoin et renvoie un jeton Sanctum.
+   * Endpoint attendu cote API : POST /auth/google { credential }.
+   */
+  async loginWithGoogle(credential: string): Promise<{ token: string; user: User }> {
+    const response = await this.request<{ token: string; user: User }>("/auth/google", {
+      method: "POST",
+      body: JSON.stringify({ credential })
+    });
+    this.setToken(response.token);
+    return response;
+  }
+
   async register(data: {
     name: string;
     email: string;
@@ -581,7 +604,7 @@ class ApiClient {
     return this.request<User>("/user");
   }
 
-  async updateProfile(data: { name: string }): Promise<{ message: string; user: User }> {
+  async updateProfile(data: { name: string; phone?: string }): Promise<{ message: string; user: User }> {
     return this.request<{ message: string; user: User }>("/user/profile", {
       method: "PUT",
       body: JSON.stringify(data)
@@ -637,18 +660,31 @@ class ApiClient {
     return this.request<{ message: string }>("/email/resend", { method: "POST" });
   }
 
-  async logout(): Promise<{ message: string }> {
-    try {
-      return await this.request<{ message: string }>("/logout", { method: "POST" });
-    } finally {
-      this.clearToken();
-    }
+  /**
+   * Déconnexion « sans attente » : la session locale est vidée tout de suite
+   * et la révocation du jeton part en arrière-plan (keepalive : elle survit au
+   * changement de page). Un échec côté serveur est sans conséquence pour
+   * l'utilisateur, le jeton n'étant plus stocké.
+   */
+  logout(): void {
+    const token = this.getToken();
+    this.clearToken();
+    if (!token || typeof fetch === "undefined") return;
+
+    fetch(`${API_BASE_URL}/logout`, {
+      method: "POST",
+      keepalive: true,
+      headers: { Accept: "application/json", Authorization: `Bearer ${token}` }
+    }).catch(() => {
+      /* hors ligne ou jeton déjà expiré : rien à faire */
+    });
   }
 
   async getAdminReservations(params?: {
     status?: string;
     room_id?: number;
     category_type?: string;
+    per_page?: number;
   }): Promise<{ data: Reservation[] }> {
     const queryParams = new URLSearchParams();
     if (params) {

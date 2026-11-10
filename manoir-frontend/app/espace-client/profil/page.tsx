@@ -1,16 +1,33 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, Lock, Save, Sparkles, User, XCircle } from "lucide-react";
+import { Check, Lock, Save, User, XCircle } from "lucide-react";
+import { ClientPageHeader } from "@/components/dashboard/client/ClientShell";
+import CountryCodeSelect, { COUNTRY_CODES } from "@/components/ui/CountryCodeSelect";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
+
+/** "+229 01 97 00 00 00" -> { code: "+229", local: "01 97 00 00 00" } */
+function splitPhone(phone?: string | null) {
+  const value = (phone || "").trim();
+  const match = [...COUNTRY_CODES]
+    .sort((a, b) => b.code.length - a.code.length)
+    .find((country) => value.startsWith(country.code));
+  if (!match) return { code: "+229", local: value };
+  return { code: match.code, local: value.slice(match.code.length).trim() };
+}
+
+const normalizePhone = (value?: string | null) => (value || "").replace(/\s+/g, "");
 
 export default function ProfilePage() {
   const router = useRouter();
   const { user, loading: authLoading, refreshUser } = useAuth();
+  const { showToast } = useToast();
   const [name, setName] = useState("");
+  const [countryCode, setCountryCode] = useState("+229");
+  const [phone, setPhone] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
@@ -30,6 +47,9 @@ export default function ProfilePage() {
   useEffect(() => {
     if (user) {
       setName(user.name || "");
+      const parts = splitPhone(user.phone);
+      setCountryCode(parts.code);
+      setPhone(parts.local);
     }
   }, [user]);
 
@@ -39,20 +59,39 @@ export default function ProfilePage() {
     setProfileMessage("");
 
     if (name.trim().length < 2) {
-      setProfileError("Veuillez saisir un nom complet valide.");
+      setProfileError("Saisissez votre nom complet.");
       return;
     }
 
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 8 || digits.length > 15) {
+      setProfileError("Saisissez un numéro de téléphone valide (8 chiffres minimum).");
+      return;
+    }
+
+    const fullPhone = phone.trim().startsWith("+") ? phone.trim() : `${countryCode} ${phone.trim()}`;
+
     setSavingProfile(true);
     try {
-      const response = await api.updateProfile({ name: name.trim() });
+      const response = await api.updateProfile({ name: name.trim(), phone: fullPhone });
       await refreshUser();
       setName(response.user.name);
-      setProfileMessage("Votre profil a ete mis a jour avec succes.");
+
+      // Si le serveur n'enregistre pas encore le téléphone, on le dit
+      // clairement au lieu d'afficher un faux succès.
+      if (normalizePhone(response.user.phone) !== normalizePhone(fullPhone)) {
+        const message = "Votre nom est enregistré, mais le numéro n'a pas pu être modifié. Réessayez plus tard.";
+        setProfileError(message);
+        showToast(message, "error");
+        return;
+      }
+
+      setProfileMessage("Vos informations sont bien enregistrées.");
+      showToast("Profil mis à jour.", "success");
     } catch (error) {
-      setProfileError(
-        error instanceof Error ? error.message : "Impossible de modifier votre profil."
-      );
+      const message = error instanceof Error ? error.message : "Impossible de modifier votre profil.";
+      setProfileError(message);
+      showToast(message, "error");
     } finally {
       setSavingProfile(false);
     }
@@ -105,41 +144,39 @@ export default function ProfilePage() {
 
   if (authLoading || !user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-night">
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-gold border-t-transparent" />
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="h-10 w-10 animate-spin rounded-full border-[3px] border-gold border-t-transparent" />
       </div>
     );
   }
 
   return (
-    <main className="relative min-h-screen px-6 py-32 text-cream md:px-10">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-10 flex flex-col justify-between gap-6 border-b border-gold/15 pb-8 md:flex-row md:items-end">
+    <div className="relative text-cream">
+      <div>
+        <ClientPageHeader
+          title="Données personnelles"
+          description="Modifiez vos informations et sécurisez votre compte avec un nouveau mot de passe."
+        />
+
+        <div className="mb-8 grid gap-3 rounded-2xl border border-gold/15 bg-white/5 p-5 text-sm sm:grid-cols-3">
           <div>
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-gold/25 bg-white/5 px-4 py-2 backdrop-blur-md">
-              <Sparkles className="h-4 w-4 text-gold-light" />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cream/85">
-                Mon Espace
-              </span>
-            </div>
-            <h1 className="font-display text-4xl font-semibold uppercase tracking-tight text-cream md:text-6xl">
-              Gerer Mon <span className="text-gradient-gold">Profil</span>
-            </h1>
-            <p className="mt-4 max-w-2xl text-sm leading-relaxed text-cream/55">
-              Modifiez vos informations personnelles et securisez votre compte avec un nouveau mot
-              de passe.
+            <p className="text-xs uppercase tracking-wider text-cream/45">E-mail</p>
+            <p className="mt-1 truncate font-medium text-cream">{user.email}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wider text-cream/45">Téléphone</p>
+            <p className="mt-1 font-medium text-cream">{user.phone || "Non renseigné"}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wider text-cream/45">Vérification</p>
+            <p className={`mt-1 font-medium ${user.email_verified_at ? "text-olive-light" : "text-terracotta-light"}`}>
+              {user.email_verified_at ? "Confirmée" : "À confirmer"}
             </p>
           </div>
-          <Link
-            href="/espace-client"
-            className="inline-flex items-center justify-center rounded-xl border border-gold/25 px-5 py-3 text-xs font-black uppercase tracking-wider text-cream transition hover:border-gold/50 hover:bg-white/5 hover:text-gold-light"
-          >
-            Mes reservations
-          </Link>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-2">
-          <form onSubmit={handleProfileSubmit} className="glass-dark glass-edge rounded-3xl p-8">
+        <div className="grid gap-6 lg:grid-cols-2 lg:gap-8">
+          <form onSubmit={handleProfileSubmit} className="glass-warm glass-edge rounded-3xl p-5 sm:p-8">
             <div className="mb-8 flex items-start gap-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-gold/20 bg-white/5 text-gold-light">
                 <User size={22} />
@@ -149,23 +186,44 @@ export default function ProfilePage() {
                   Informations personnelles
                 </h2>
                 <p className="mt-1 text-xs leading-relaxed text-cream/50">
-                  Le nom affiche dans votre espace client et sur vos documents.
+                  Ces informations figurent sur vos bons de séjour et nous permettent de vous joindre.
                 </p>
               </div>
             </div>
 
-            <label className="block">
-              <span className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-gold/80">
-                Nom et prenom
-              </span>
-              <input
-                type="text"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                className="glass-input w-full rounded-xl px-4 py-3 text-sm outline-none"
-                placeholder="Votre nom complet"
-              />
-            </label>
+            <div className="space-y-5">
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-cream/85">Nom et prénom</span>
+                <input
+                  type="text"
+                  autoComplete="name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  className="glass-input h-12 w-full rounded-xl px-4 text-[15px] outline-none"
+                  placeholder="Votre nom complet"
+                />
+              </label>
+
+              <div>
+                <label htmlFor="profile-phone" className="mb-2 block text-sm font-medium text-cream/85">
+                  Téléphone
+                </label>
+                <div className="flex gap-2">
+                  <CountryCodeSelect value={countryCode} onChange={setCountryCode} />
+                  <input
+                    id="profile-phone"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel-national"
+                    value={phone}
+                    onChange={(event) => setPhone(event.target.value)}
+                    className="glass-input h-12 w-full min-w-0 flex-1 rounded-xl px-4 text-[15px] outline-none"
+                    placeholder="01 00 00 00 00"
+                  />
+                </div>
+                <p className="mt-1.5 text-xs text-cream/50">Utilisé pour vous contacter au sujet de votre séjour.</p>
+              </div>
+            </div>
 
             {profileError && (
               <p className="mt-4 flex items-center gap-2 rounded-2xl border border-terracotta/40 bg-terracotta/15 p-4 text-xs font-semibold text-terracotta-light">
@@ -189,7 +247,7 @@ export default function ProfilePage() {
             </button>
           </form>
 
-          <form onSubmit={handlePasswordSubmit} className="glass-dark glass-edge rounded-3xl p-8">
+          <form onSubmit={handlePasswordSubmit} className="glass-warm glass-edge rounded-3xl p-5 sm:p-8">
             <div className="mb-8 flex items-start gap-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-gold/20 bg-white/5 text-gold-light">
                 <Lock size={22} />
@@ -263,6 +321,6 @@ export default function ProfilePage() {
           </form>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

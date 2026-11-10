@@ -118,7 +118,7 @@ export default function Navbar() {
                 onClick={() => logout()}
                 aria-label="Déconnexion"
                 title="Déconnexion"
-                className="hidden size-10 place-items-center rounded-full border border-gold/25 bg-white/5 text-cream backdrop-blur-md transition hover:border-terracotta/50 hover:bg-terracotta/15 lg:grid"
+                className="hidden size-10 place-items-center rounded-full bg-red-600 text-white shadow-[0_8px_20px_-8px_rgba(220,38,38,0.7)] transition hover:bg-red-700 lg:grid"
               >
                 <LogOut size={17} />
               </button>
@@ -228,7 +228,7 @@ export default function Navbar() {
                         setOpen(false);
                         logout();
                       }}
-                      className="group flex w-full items-center gap-5 border-b border-cream/10 py-3 text-left font-display text-[clamp(2rem,6vw,4.6rem)] uppercase leading-[0.95] tracking-[-0.02em] text-terracotta-light hover:text-terracotta"
+                      className="group flex w-full items-center gap-5 border-b border-cream/10 py-3 text-left font-display text-[clamp(2rem,6vw,4.6rem)] uppercase leading-[0.95] tracking-[-0.02em] text-red-500 hover:text-red-400"
                     >
                       <span className="w-10 pb-2 text-xs font-semibold tracking-[0.3em] text-gold/50">
                         0{navLinks.length + 1}

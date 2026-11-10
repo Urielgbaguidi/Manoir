@@ -1,207 +1,210 @@
 "use client";
 
-import { Suspense, useState } from "react";
-import { motion } from "framer-motion";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Eye, EyeOff, Lock, Mail, Phone, Sparkles, User as UserIcon } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
+import AuthShell, { AuthDivider, AuthField, AuthSubmit } from "@/components/auth/AuthShell";
+import GoogleSignInButton from "@/components/auth/GoogleSignInButton";
 import CountryCodeSelect from "@/components/ui/CountryCodeSelect";
+
+/** Force indicative du mot de passe : 0 à 4. */
+function passwordScore(value: string) {
+  let score = 0;
+  if (value.length >= 8) score += 1;
+  if (value.length >= 12) score += 1;
+  if (/[A-Z]/.test(value) && /[a-z]/.test(value)) score += 1;
+  if (/\d/.test(value) && /[^A-Za-z0-9]/.test(value)) score += 1;
+  return score;
+}
+
+const strengthLabels = ["Trop court", "Faible", "Correct", "Bon", "Excellent"];
+const strengthColors = ["bg-terracotta", "bg-terracotta", "bg-gold", "bg-olive-light", "bg-olive"];
 
 function RegisterContent() {
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirect") || "/";
-  const [lastName, setLastName] = useState("");
+  const redirectTo = searchParams.get("redirect") || undefined;
   const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [countryCode, setCountryCode] = useState("+229");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
   const { showToast } = useToast();
 
-  const loginHref = `/auth/login?redirect=${encodeURIComponent(redirectTo)}`;
+  const loginHref = redirectTo
+    ? `/auth/login?redirect=${encodeURIComponent(redirectTo)}`
+    : "/auth/login";
+
+  const score = useMemo(() => passwordScore(password), [password]);
+  const mismatch = confirmation.length > 0 && confirmation !== password;
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setLoading(true);
 
-    const fullName = `${firstName.trim()} ${lastName.trim()}`;
-    const fullPhone = phone.trim().startsWith("+")
-      ? phone.trim()
-      : `${countryCode} ${phone.trim()}`;
+    if (password.length < 8) {
+      showToast("Le mot de passe doit contenir au moins 8 caractères.", "error");
+      return;
+    }
+    if (password !== confirmation) {
+      showToast("Les deux mots de passe ne correspondent pas.", "error");
+      return;
+    }
+
+    setLoading(true);
+    const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+    const fullPhone = phone.trim().startsWith("+") ? phone.trim() : `${countryCode} ${phone.trim()}`;
 
     try {
-      await register(fullName, email, fullPhone, password, redirectTo);
-      showToast("Inscription réussie ! Bienvenue au Manoir.", "success");
+      await register(fullName, email.trim(), fullPhone, password, redirectTo);
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Une erreur est survenue", "error");
-    } finally {
       setLoading(false);
     }
   };
 
+  const toggleVisibility = (
+    <button
+      type="button"
+      onClick={() => setShowPassword((value) => !value)}
+      aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+      className="grid size-9 place-items-center rounded-full text-cream/45 transition hover:text-gold-light"
+    >
+      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+    </button>
+  );
+
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden px-6 py-24 text-cream">
-      <div className="pointer-events-none absolute left-1/4 top-1/4 h-96 w-96 rounded-full bg-gold/[0.06] blur-3xl" />
-      <div className="pointer-events-none absolute bottom-1/4 right-1/4 h-[400px] w-[400px] rounded-full bg-gold/[0.06] blur-3xl" />
+    <AuthShell
+      title="Créez votre compte"
+      subtitle="C'est gratuit et rapide. Réservez, payez et suivez vos séjours au même endroit."
+      image="/assets/rooms/room2.jpg"
+      headline="Un sanctuaire de calme, rien que pour vous."
+      footer={
+        <>
+          Vous avez déjà un compte ?{" "}
+          <Link href={loginHref} className="font-semibold text-gold-light underline-offset-4 hover:underline">
+            Se connecter
+          </Link>
+        </>
+      }
+    >
+      <GoogleSignInButton mode="signup" redirectTo={redirectTo} />
+      <AuthDivider label="ou remplissez le formulaire" />
 
-      <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-        className="relative z-10 w-full max-w-md"
-      >
-        <div className="mb-8 text-center">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-gold/25 bg-white/5 px-4 py-2 backdrop-blur-md">
-            <Sparkles className="h-4 w-4 text-gold-light" />
-            <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cream/85">
-              Le Manoir
-            </span>
-          </div>
-          <h1 className="mb-2 font-display text-4xl font-semibold uppercase tracking-tight">
-            <span className="text-gradient-gold">Inscription</span>
-          </h1>
-          <p className="text-[15px] text-cream/70">
-            Créez votre profil pour envoyer votre demande de réservation.
-          </p>
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="grid gap-5 sm:grid-cols-2">
+          <AuthField
+            label="Prénom"
+            name="firstName"
+            autoComplete="given-name"
+            value={firstName}
+            onChange={(event) => setFirstName(event.target.value)}
+            required
+            placeholder="Votre prénom"
+          />
+          <AuthField
+            label="Nom"
+            name="lastName"
+            autoComplete="family-name"
+            value={lastName}
+            onChange={(event) => setLastName(event.target.value)}
+            required
+            placeholder="Votre nom"
+          />
         </div>
 
-        <div className="glass-dark glass-edge space-y-6 rounded-3xl p-8">
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="space-y-2">
-              <label className="block text-[10px] font-semibold uppercase tracking-widest text-gold/80">
-                Nom
-              </label>
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-cream/40">
-                  <UserIcon size={16} />
-                </div>
-                <input
-                  type="text"
-                  value={lastName}
-                  onChange={(event) => setLastName(event.target.value)}
-                  required
-                  className="glass-input w-full rounded-xl py-3.5 pl-11 pr-4 text-sm outline-none"
-                  placeholder="Votre Nom"
-                />
-              </div>
-            </div>
+        <AuthField
+          label="Adresse e-mail"
+          name="email"
+          type="email"
+          autoComplete="email"
+          inputMode="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          required
+          placeholder="vous@exemple.com"
+          hint="Un code de confirmation vous sera envoyé à cette adresse."
+        />
 
-            <div className="space-y-2">
-              <label className="block text-[10px] font-semibold uppercase tracking-widest text-gold/80">
-                Prénom
-              </label>
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-cream/40">
-                  <UserIcon size={16} />
-                </div>
-                <input
-                  type="text"
-                  value={firstName}
-                  onChange={(event) => setFirstName(event.target.value)}
-                  required
-                  className="glass-input w-full rounded-xl py-3.5 pl-11 pr-4 text-sm outline-none"
-                  placeholder="Votre Prénom"
-                />
-              </div>
-            </div>
+        <div className="space-y-1.5">
+          <label htmlFor="phone" className="text-sm font-medium text-cream/85">
+            Téléphone<span className="ml-0.5 text-gold">*</span>
+          </label>
+          <div className="flex gap-2">
+            <CountryCodeSelect value={countryCode} onChange={setCountryCode} />
+            <input
+              id="phone"
+              type="tel"
+              autoComplete="tel-national"
+              inputMode="tel"
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              required
+              className="glass-input h-12 w-full min-w-0 flex-1 rounded-xl px-4 text-[15px] outline-none"
+              placeholder="01 00 00 00 00"
+            />
+          </div>
+        </div>
 
-            <div className="space-y-2">
-              <label className="block text-[10px] font-semibold uppercase tracking-widest text-gold/80">
-                Email
-              </label>
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-cream/40">
-                  <Mail size={16} />
-                </div>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  required
-                  className="glass-input w-full rounded-xl py-3.5 pl-11 pr-4 text-sm outline-none"
-                  placeholder="votre@email.com"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-[10px] font-semibold uppercase tracking-widest text-gold/80">
-                Telephone
-              </label>
-              <div className="flex gap-2">
-                <CountryCodeSelect value={countryCode} onChange={setCountryCode} />
-                <div className="relative flex-1">
-                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-cream/40">
-                    <Phone size={16} />
-                  </div>
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(event) => setPhone(event.target.value)}
-                    required
-                    className="glass-input w-full rounded-xl py-3.5 pl-11 pr-4 text-sm outline-none"
-                    placeholder="Votre numéro de téléphone"
+        <div className="space-y-2">
+          <AuthField
+            label="Mot de passe"
+            name="password"
+            type={showPassword ? "text" : "password"}
+            autoComplete="new-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            required
+            minLength={8}
+            placeholder="8 caractères minimum"
+            trailing={toggleVisibility}
+          />
+          {password && (
+            <div className="flex items-center gap-3" aria-live="polite">
+              <div className="flex flex-1 gap-1">
+                {[0, 1, 2, 3].map((index) => (
+                  <span
+                    key={index}
+                    className={`h-1 flex-1 rounded-full transition-colors ${
+                      index < Math.max(score, 1) ? strengthColors[score] : "bg-gold/15"
+                    }`}
                   />
-                </div>
+                ))}
               </div>
+              <span className="w-20 text-right text-xs text-cream/55">{strengthLabels[score]}</span>
             </div>
-
-            <div className="space-y-2">
-              <label className="block text-[10px] font-semibold uppercase tracking-widest text-gold/80">
-                Mot de passe
-              </label>
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-cream/40">
-                  <Lock size={16} />
-                </div>
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
-                  minLength={8}
-                  className="glass-input w-full rounded-xl py-3.5 pl-11 pr-12 text-sm outline-none"
-                  placeholder="Minimum 8 caracteres"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 flex items-center pr-4 text-cream/40 transition-colors hover:text-gold-light"
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-br from-gold-light to-gold py-4 text-xs font-bold uppercase tracking-[0.25em] text-night transition duration-300 hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading ? (
-                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-night border-t-transparent" />
-              ) : (
-                "Creer mon compte"
-              )}
-            </button>
-          </form>
-
-          <div className="border-t border-gold/15 pt-2 text-center">
-            <Link
-              href={loginHref}
-              className="text-xs font-semibold tracking-wide text-cream/60 transition duration-300 hover:text-gold-light"
-            >
-              Déjà un compte ? Se connecter
-            </Link>
-          </div>
+          )}
         </div>
-      </motion.div>
-    </main>
+
+        <AuthField
+          label="Confirmer le mot de passe"
+          name="password_confirmation"
+          type={showPassword ? "text" : "password"}
+          autoComplete="new-password"
+          value={confirmation}
+          onChange={(event) => setConfirmation(event.target.value)}
+          required
+          placeholder="Retapez votre mot de passe"
+          aria-invalid={mismatch}
+          className={mismatch ? "!border-terracotta/70" : ""}
+          hint={mismatch ? <span className="text-terracotta-light">Les mots de passe ne correspondent pas.</span> : undefined}
+        />
+
+        <p className="text-xs leading-5 text-cream/50">
+          En créant un compte, vous acceptez que Le Manoir utilise vos coordonnées pour gérer vos
+          réservations et vous contacter au sujet de votre séjour.
+        </p>
+
+        <AuthSubmit loading={loading}>Créer mon compte</AuthSubmit>
+      </form>
+    </AuthShell>
   );
 }
 

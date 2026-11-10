@@ -4,7 +4,8 @@ import { Suspense, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Eye, EyeOff, Lock, Sparkles, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Lock, TriangleAlert } from "lucide-react";
+import Eyebrow from "@/components/ui/Eyebrow";
 import { api } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 
@@ -61,12 +62,9 @@ function NouveauMotDePasseContent() {
         className="relative z-10 w-full max-w-md"
       >
         <div className="mb-8 text-center">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-gold/25 bg-white/5 px-4 py-2 backdrop-blur-md">
-            <Sparkles className="h-4 w-4 text-gold-light" />
-            <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cream/85">
-              Le Manoir
-            </span>
-          </div>
+          <Eyebrow centered className="mb-6">
+            Le Manoir
+          </Eyebrow>
           <h1 className="mb-2 font-display text-4xl font-semibold uppercase tracking-tight">
             <span className="text-gradient-gold">Nouveau mot de passe</span>
           </h1>

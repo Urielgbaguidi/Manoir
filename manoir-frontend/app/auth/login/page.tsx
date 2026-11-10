@@ -1,12 +1,13 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { motion } from "framer-motion";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Sparkles, Eye, EyeOff, Lock, Mail } from "lucide-react";
+import { CheckCircle2, Eye, EyeOff, Info } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
+import AuthShell, { AuthDivider, AuthField, AuthSubmit } from "@/components/auth/AuthShell";
+import GoogleSignInButton from "@/components/auth/GoogleSignInButton";
 
 function LoginContent() {
   const searchParams = useSearchParams();
@@ -20,23 +21,24 @@ function LoginContent() {
   const { login } = useAuth();
   const { showToast } = useToast();
 
-  const successMessage =
+  const notice =
     message === "reservation-sent"
-      ? "Votre demande a été envoyée avec succès. Connectez-vous à votre espace client pour suivre l'état de votre demande."
-      : message === "session-expired"
-        ? "Votre session a expire. Connectez-vous a nouveau pour acceder a votre espace client."
-        : null;
+      ? {
+          tone: "success" as const,
+          text: "Votre demande est bien envoyée. Connectez-vous pour la suivre depuis votre espace."
+        }
+      : null;
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setLoading(true);
 
     try {
-      await login(email, password, redirectTo);
-      showToast("Connexion réussie ! Bienvenue au Manoir.", "success");
+      // Le message de bienvenue et la redirection sont gérés ensemble par
+      // le contexte d'authentification, au même instant.
+      await login(email.trim(), password, redirectTo);
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Une erreur est survenue", "error");
-    } finally {
       setLoading(false);
     }
   };
@@ -46,116 +48,84 @@ function LoginContent() {
     : "/auth/register";
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden px-6 py-24 text-cream">
-      <div className="pointer-events-none absolute left-1/4 top-1/4 h-96 w-96 rounded-full bg-gold/[0.06] blur-3xl" />
-      <div className="pointer-events-none absolute bottom-1/4 right-1/4 h-[400px] w-[400px] rounded-full bg-gold/[0.06] blur-3xl" />
-
-      <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-        className="relative z-10 w-full max-w-md"
-      >
-        <div className="mb-8 text-center">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-gold/25 bg-white/5 px-4 py-2 backdrop-blur-md">
-            <Sparkles className="h-4 w-4 text-gold-light" />
-            <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cream/85">
-              Le Manoir
-            </span>
-          </div>
-          <h1 className="mb-2 font-display text-4xl font-semibold uppercase tracking-tight">
-            <span className="text-gradient-gold">Connexion</span>
-          </h1>
-          <p className="text-sm text-cream/55">
-            Accédez à votre espace client pour suivre vos séjours.
-          </p>
-        </div>
-
-        <div className="glass-dark glass-edge space-y-6 rounded-3xl p-8">
-          {successMessage && (
-            <div className="rounded-2xl border border-olive/40 bg-olive/15 p-4 text-sm leading-6 text-olive-light">
-              {successMessage}
-            </div>
+    <AuthShell
+      title="Bon retour parmi nous"
+      subtitle="Connectez-vous pour retrouver vos réservations, vos paiements et vos factures."
+      footer={
+        <>
+          Pas encore de compte ?{" "}
+          <Link href={registerHref} className="font-semibold text-gold-light underline-offset-4 hover:underline">
+            Créer un compte gratuitement
+          </Link>
+        </>
+      }
+    >
+      {notice && (
+        <div
+          role="status"
+          className={`mb-6 flex gap-3 rounded-2xl border p-4 text-sm leading-6 ${
+            notice.tone === "success"
+              ? "border-olive/40 bg-olive/10 text-olive-light"
+              : "border-gold/25 bg-gold/10 text-cream/80"
+          }`}
+        >
+          {notice.tone === "success" ? (
+            <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
+          ) : (
+            <Info size={18} className="mt-0.5 shrink-0" />
           )}
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="space-y-2">
-              <label className="block text-[10px] font-semibold uppercase tracking-widest text-gold/80">
-                Email
-              </label>
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-cream/40">
-                  <Mail size={16} />
-                </div>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  required
-                  className="glass-input w-full rounded-xl py-3.5 pl-11 pr-4 text-sm outline-none"
-                  placeholder="votre@email.com"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-[10px] font-semibold uppercase tracking-widest text-gold/80">
-                Mot de passe
-              </label>
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-cream/40">
-                  <Lock size={16} />
-                </div>
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
-                  className="glass-input w-full rounded-xl py-3.5 pl-11 pr-12 text-sm outline-none"
-                  placeholder="Mot de passe"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 flex items-center pr-4 text-cream/40 transition-colors hover:text-gold-light"
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-              <div className="text-right">
-                <Link
-                  href="/auth/mot-de-passe-oublie"
-                  className="text-[11px] font-semibold tracking-wide text-cream/50 transition duration-300 hover:text-gold-light"
-                >
-                  Mot de passe oublié ?
-                </Link>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-br from-gold-light to-gold py-4 text-xs font-bold uppercase tracking-[0.25em] text-night transition duration-300 hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading ? (
-                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-night border-t-transparent" />
-              ) : (
-                "Se connecter"
-              )}
-            </button>
-          </form>
-
-          <div className="border-t border-gold/15 pt-2 text-center">
-            <Link
-              href={registerHref}
-              className="text-xs font-semibold tracking-wide text-cream/60 transition duration-300 hover:text-gold-light"
-            >
-              Pas encore de compte ? Créer un profil
-            </Link>
-          </div>
+          {notice.text}
         </div>
-      </motion.div>
-    </main>
+      )}
+
+      <GoogleSignInButton mode="signin" redirectTo={redirectTo} />
+      <AuthDivider />
+
+      <form onSubmit={handleSubmit} className="space-y-5" noValidate={false}>
+        <AuthField
+          label="Adresse e-mail"
+          name="email"
+          type="email"
+          autoComplete="email"
+          inputMode="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          required
+          placeholder="vous@exemple.com"
+        />
+
+        <AuthField
+          label="Mot de passe"
+          name="password"
+          type={showPassword ? "text" : "password"}
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          required
+          placeholder="Votre mot de passe"
+          labelAside={
+            <Link
+              href="/auth/mot-de-passe-oublie"
+              className="text-xs font-semibold text-cream/55 transition hover:text-gold-light"
+            >
+              Mot de passe oublié ?
+            </Link>
+          }
+          trailing={
+            <button
+              type="button"
+              onClick={() => setShowPassword((value) => !value)}
+              aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+              className="grid size-9 place-items-center rounded-full text-cream/45 transition hover:text-gold-light"
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          }
+        />
+
+        <AuthSubmit loading={loading}>Se connecter</AuthSubmit>
+      </form>
+    </AuthShell>
   );
 }
 

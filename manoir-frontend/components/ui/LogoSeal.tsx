@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { X, ZoomIn } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 type LogoSealProps = {
@@ -14,20 +15,27 @@ type LogoSealProps = {
 
 /**
  * Sceau circulaire "liquid glass" du Manoir. Au clic, ouvre le logo en grand
- * dans une lightbox — en conservant les bords glassmorphisme circulaires.
+ * dans une lightbox, en conservant les bords glassmorphisme circulaires.
+ * Fermeture : bouton X, clic à côté du logo ou touche Échap.
  */
 export default function LogoSeal({
   sizeClassName = "size-20 md:size-28",
   className
 }: LogoSealProps) {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
     document.body.classList.toggle("overlay-open", open);
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    if (open) document.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = "";
       document.body.classList.remove("overlay-open");
+      document.removeEventListener("keydown", onKey);
     };
   }, [open]);
 
@@ -63,16 +71,23 @@ export default function LogoSeal({
         </span>
       </motion.button>
 
+      {/* Rendu dans <body> : sinon la lightbox hérite de la transformation et
+          du z-index du hero, passe sous la navbar fixe, et le X ne répond plus. */}
+      {mounted &&
+        createPortal(
       <AnimatePresence>
         {open && (
           <motion.div
             key="logo-lightbox"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Logo Le Manoir"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
             onClick={() => setOpen(false)}
-            className="on-dark fixed inset-0 z-[130] grid cursor-zoom-out place-items-center bg-night/95 p-6 backdrop-blur-2xl"
+            className="on-dark fixed inset-0 z-[200] grid cursor-zoom-out place-items-center bg-night/95 p-6 backdrop-blur-2xl"
           >
             <motion.div
               initial={{ scale: 0.6, opacity: 0, y: 20 }}
@@ -97,15 +112,21 @@ export default function LogoSeal({
 
             <button
               type="button"
-              onClick={() => setOpen(false)}
+              onClick={(event) => {
+                event.stopPropagation();
+                setOpen(false);
+              }}
               aria-label="Fermer"
-              className="absolute right-4 top-4 z-50 grid size-11 place-items-center rounded-full border border-gold/40 text-cream transition hover:border-gold hover:bg-gold/10 md:right-6 md:top-6"
+              autoFocus
+              className="absolute right-4 top-4 z-10 grid size-12 place-items-center rounded-full border border-gold/40 bg-night/60 text-cream transition hover:border-gold hover:bg-gold/15 md:right-6 md:top-6"
             >
-              <X size={20} />
+              <X size={22} />
             </button>
           </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>,
+          document.body
+        )}
     </>
   );
 }

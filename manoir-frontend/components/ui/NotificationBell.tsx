@@ -172,7 +172,7 @@ export default function NotificationBell() {
       {open && (
         <div
           role="menu"
-          className="!absolute right-0 top-12 z-[100] w-80 overflow-hidden rounded-2xl border border-gold/15 glass-dark glass-edge shadow-glass"
+          className="admin-panel absolute right-0 top-[calc(100%+18px)] z-[100] w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-gold/20 shadow-glass-lg"
         >
           <div className="flex items-center justify-between border-b border-gold/15 px-4 py-3">
             <span className="font-display text-sm uppercase tracking-[0.16em] text-cream">

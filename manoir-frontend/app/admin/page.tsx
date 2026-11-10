@@ -1,1105 +1,458 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useAuth } from "@/context/AuthContext";
-import { useToast } from "@/context/ToastContext";
-import { useRouter } from "next/navigation";
-import { api, Reservation, type AdminStatsResponse } from "@/lib/api";
-import { motion, AnimatePresence } from "framer-motion";
 import {
-  BedDouble,
-  Calendar,
-  Check,
-  DollarSign,
-  DoorOpen,
-  Download,
-  Mail,
-  Phone,
-  RefreshCcw,
-  Search,
-  Sparkles,
-  TrendingUp,
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  CalendarRange,
+  CircleAlert,
   Users,
-  X
+  Wallet,
+  WalletCards
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { AdminCard, AdminPageHeader } from "@/components/dashboard/admin/AdminShell";
+import {
+  ActivityChart,
+  CategoryDonut,
+  MonthlyRevenueChart,
+  OccupancyGauge
+} from "@/components/dashboard/admin/charts";
+import { useToast } from "@/context/ToastContext";
+import { api, type AdminStatsResponse, type Reservation } from "@/lib/api";
+import {
+  categoryLabels,
+  formatCurrency,
+  formatDay,
+  parseDay,
+  reservationTitle,
+  statusLabels,
+  statusTone
+} from "@/lib/reservationDisplay";
+import { cn } from "@/lib/utils";
 
-type AdminStats = AdminStatsResponse["stats"] & { revenue_this_month?: number };
+type Stats = AdminStatsResponse["stats"] & { revenue_this_month?: number };
 
-const statusLabels: Record<string, string> = {
-  EN_ATTENTE: "En attente",
-  VALIDEE_PAIEMENT_REQUIS: "Acompte requis",
-  CONFIRMEE: "Confirmee",
-  REFUSEE: "Refusee",
-  EXPIREE: "Expiree",
-  SEJOUR_PAYE: "Sejour paye",
-  ANNULEE: "Annulee",
-  REMBOURSEE: "Remboursee",
-  LIBEREE: "Appartement libere"
-};
+const sameDay = (a: Date | null, b: Date) =>
+  Boolean(a) &&
+  a!.getFullYear() === b.getFullYear() &&
+  a!.getMonth() === b.getMonth() &&
+  a!.getDate() === b.getDate();
 
-const categoryLabels: Record<string, string> = {
-  vip: "Appartement VIP",
-  deux_chambres: "Appartement 2 Chambres",
-  une_chambre: "Appartement 1 Chambre"
-};
-
-const statusClasses = (status: string) => {
-  if (status === "EN_ATTENTE") return "bg-gold/10 text-gold-light border-gold/25";
-  if (status === "VALIDEE_PAIEMENT_REQUIS") return "bg-sky-500/10 text-sky-300 border-sky-500/30";
-  if (status === "CONFIRMEE" || status === "SEJOUR_PAYE")
-    return "bg-olive/15 text-olive-light border-olive/40";
-  if (status === "REFUSEE") return "bg-terracotta/15 text-terracotta-light border-terracotta/40";
-  if (status === "ANNULEE") return "bg-orange-500/10 text-orange-300 border-orange-500/30";
-  if (status === "REMBOURSEE") return "bg-purple-500/10 text-purple-300 border-purple-500/30";
-  if (status === "LIBEREE") return "bg-sky-500/10 text-sky-300 border-sky-500/30";
-  return "bg-white/10 text-cream/60 border-white/15";
-};
-
-const reservationApartmentLabel = (reservation: Reservation) => {
-  const room = reservation.room;
-
-  if (room?.apartment_number) {
-    const label =
-      reservation.category_type === "vip"
-        ? room.name
-        : reservation.category_type === "deux_chambres"
-          ? "2 Chambres"
-          : reservation.category_type === "une_chambre"
-            ? "1 Chambre"
-            : room.name;
-
-    return `Appartement N°${room.apartment_number} — ${label}`;
-  }
-
-  return categoryLabels[reservation.category_type || ""] || room?.name || "Appartement";
-};
-
-const parseAdminDate = (value?: string) => {
-  if (!value) return null;
-
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-};
-
-const formatAdminDate = (value?: string) =>
-  parseAdminDate(value)?.toLocaleDateString("fr-FR") || "Non renseigne";
-
-const formatAdminDateTime = (value?: string) =>
-  parseAdminDate(value)?.toLocaleString("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  }) || "Non renseigne";
-
-// Partie "YYYY-MM-DD" d'une date ISO, pour comparer aux valeurs des champs <input type="date">.
-const isoDatePart = (value?: string) => (value ? value.slice(0, 10) : "");
-
-const countStayDays = (reservation: Reservation) => {
-  const start = parseAdminDate(reservation.check_in);
-  const end = parseAdminDate(reservation.check_out);
-
-  if (!start || !end) return 0;
-
-  return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
-};
-
-const occupiedSinceDays = (reservation: Reservation) => {
-  const start = parseAdminDate(reservation.check_in);
-  if (!start) return 0;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  start.setHours(0, 0, 0, 0);
-
-  return Math.max(1, Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-};
-
-export default function AdminDashboard() {
-  const { user, loading: authLoading } = useAuth();
+export default function AdminDashboardPage() {
   const { showToast } = useToast();
-  const router = useRouter();
-
-  const [stats, setStats] = useState<AdminStats | null>(null);
+  const [stats, setStats] = useState<Stats | null>(null);
   const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [occupiedRooms, setOccupiedRooms] = useState<Reservation[]>([]);
+  const [occupied, setOccupied] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
-  // Plus d'onglet « En attente » : le filtre par defaut doit exister, sinon
-  // l'administrateur arrive sur une liste vide sans onglet actif.
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [selectedRes, setSelectedRes] = useState<Reservation | null>(null);
-  const [actionType, setActionType] = useState<
-    "approve" | "reject" | "extension-approve" | "extension-reject" | null
-  >(null);
-  const [releaseTarget, setReleaseTarget] = useState<Reservation | null>(null);
-  const [releaseNotes, setReleaseNotes] = useState("");
-  const [adminNotes, setAdminNotes] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [exportingReport, setExportingReport] = useState(false);
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState(currentYear);
 
   useEffect(() => {
-    if (!authLoading) {
-      if (!user) {
-        router.push("/auth/login");
-      } else if (!user.is_admin) {
-        router.push("/");
-      }
-    }
-  }, [user, authLoading, router]);
-
-  const loadDashboardData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [statsData, resData, occupiedData] = await Promise.all([
-        api.getAdminStats(),
-        api.getAdminReservations(),
-        api.getOccupiedRooms()
-      ]);
-      setStats(statsData.stats);
-      setReservations(resData.data);
-      setOccupiedRooms(occupiedData.data);
-    } catch (error) {
-      console.error("Erreur lors du chargement du back-office:", error);
-      showToast("Impossible de charger les donnees administrateur.", "error");
-    } finally {
-      setLoading(false);
-    }
+    Promise.all([api.getAdminStats(), api.getAdminReservations({ per_page: 500 }), api.getOccupiedRooms()])
+      .then(([statsData, reservationData, occupiedData]) => {
+        setStats(statsData.stats);
+        setReservations(reservationData.data);
+        setOccupied(occupiedData.data);
+      })
+      .catch(() => showToast("Impossible de charger le tableau de bord.", "error"))
+      .finally(() => setLoading(false));
   }, [showToast]);
 
-  useEffect(() => {
-    if (user && user.is_admin) {
-      loadDashboardData();
-    }
-  }, [user, loadDashboardData]);
+  const years = useMemo(() => {
+    const set = new Set<number>([currentYear]);
+    reservations.forEach((reservation) => {
+      const date = parseDay(reservation.created_at);
+      if (date) set.add(date.getFullYear());
+    });
+    return [...set].sort((a, b) => b - a);
+  }, [reservations, currentYear]);
 
-  const handleOpenAction = (
-    reservation: Reservation,
-    type: "approve" | "reject" | "extension-approve" | "extension-reject"
-  ) => {
-    setSelectedRes(reservation);
-    setActionType(type);
-    setAdminNotes("");
-    setError("");
-  };
+  const series = useMemo(() => {
+    const revenue = Array(12).fill(0) as number[];
+    const requests = Array(12).fill(0) as number[];
+    const confirmed = Array(12).fill(0) as number[];
 
-  const handleSubmitAction = async () => {
-    if (!selectedRes || !actionType) return;
-    const isRejectAction = actionType === "reject" || actionType === "extension-reject";
+    reservations.forEach((reservation) => {
+      const created = new Date(reservation.created_at);
+      if (created.getFullYear() === year) requests[created.getMonth()] += 1;
 
-    if (isRejectAction && !adminNotes.trim()) {
-      setError("Un motif est obligatoire pour refuser une demande.");
-      return;
-    }
+      (reservation.payments || [])
+        .filter((payment) => payment.status === "success")
+        .forEach((payment) => {
+          const paid = new Date(payment.paid_at || payment.created_at);
+          if (paid.getFullYear() !== year) return;
+          revenue[paid.getMonth()] += Number(payment.amount || 0);
+          if (payment.payment_type !== "stay") confirmed[paid.getMonth()] += 1;
+        });
+    });
 
-    setSubmitting(true);
-    setError("");
+    return { revenue, requests, confirmed };
+  }, [reservations, year]);
 
-    try {
-      if (actionType === "approve") {
-        await api.approveReservation(selectedRes.id, { admin_notes: adminNotes });
-        showToast("Demande confirmee. Le client peut payer la acompte de réservation.", "success");
-      } else if (actionType === "reject") {
-        await api.rejectReservation(selectedRes.id, { admin_notes: adminNotes });
-        showToast("Demande refusee. Le client sera notifie.", "success");
-      } else if (actionType === "extension-approve") {
-        await api.approveReservationExtension(selectedRes.id, { admin_notes: adminNotes });
-        showToast("Prolongation acceptee. Le bon du sejour est mis a jour.", "success");
-      } else {
-        await api.rejectReservationExtension(selectedRes.id, { admin_notes: adminNotes });
-        showToast("Prolongation refusee avec motif.", "success");
-      }
-      setSelectedRes(null);
-      setActionType(null);
-      loadDashboardData();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "L'action a echoue.";
-      setError(message);
-      showToast(message, "error");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleMarkRefunded = async (reservation: Reservation) => {
-    setSubmitting(true);
-    setError("");
-
-    try {
-      await api.markReservationRefunded(reservation.id);
-      showToast("Remboursement marque comme effectue. Le client sera notifie.", "success");
-      loadDashboardData();
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Le remboursement n'a pas pu etre confirme.";
-      setError(message);
-      showToast(message, "error");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleOpenRelease = (reservation: Reservation) => {
-    setReleaseTarget(reservation);
-    setReleaseNotes("");
-    setError("");
-  };
-
-  const handleReleaseRoom = async () => {
-    if (!releaseTarget) return;
-
-    setSubmitting(true);
-    setError("");
-
-    try {
-      await api.releaseOccupiedRoom(releaseTarget.id, { release_notes: releaseNotes });
-      showToast("Appartement libere. Il est de nouveau disponible.", "success");
-      setReleaseTarget(null);
-      setReleaseNotes("");
-      loadDashboardData();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "L'appartement n'a pas pu etre libere.";
-      setError(message);
-      showToast(message, "error");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const filtersList = [
-    {
-      key: "all",
-      label: "Toutes",
-      description: "Voir toutes les demandes, tous statuts confondus."
-    },
-    {
-      key: "VALIDEE_PAIEMENT_REQUIS",
-      label: "Acompte requis",
-      description:
-        "Voir les demandes acceptees par l'administration, en attente du paiement de l'acompte de reservation."
-    },
-    {
-      key: "CONFIRMEE",
-      label: "Confirmees",
-      description: "Voir les reservations dont l'acompte de reservation a ete paye avec succes."
-    },
-    {
-      key: "EXTENSION_EN_ATTENTE",
-      label: "Prolongations",
-      description:
-        "Voir les demandes de prolongation de sejour qui attendent une reponse administrateur."
-    },
-    {
-      key: "REFUSEE",
-      label: "Refusees",
-      description: "Voir les demandes rejetees avec le motif indique au client."
-    },
-    {
-      key: "EXPIREE",
-      label: "Expirees",
-      description: "Voir les demandes dont le delai de paiement de l'acompte a depasse 24h."
-    },
-    {
-      key: "SEJOUR_PAYE",
-      label: "Sejours payes",
-      description: "Voir les reservations dont les frais de sejour ont ete regles."
-    },
-    {
-      key: "ANNULEE",
-      label: "Annulees",
-      description: "Voir les reservations annulees par les clients avant le debut de leur sejour."
-    },
-    {
-      key: "REMBOURSEE",
-      label: "Remboursees",
-      description:
-        "Voir les annulations pour lesquelles l'administration a confirme le remboursement."
-    },
-    {
-      key: "LIBEREE",
-      label: "Liberees",
-      description: "Voir les occupations terminees manuellement par l'administration."
-    }
-  ];
-
-  const normalizedSearch = searchQuery.trim().toLowerCase();
-
-  const filteredReservations = reservations.filter((reservation) => {
-    // Filtre par statut (onglets existants)
-    if (statusFilter === "EXTENSION_EN_ATTENTE") {
-      if (reservation.extension_status !== "EN_ATTENTE") return false;
-    } else if (statusFilter !== "all" && reservation.status !== statusFilter) {
-      return false;
-    }
-
-    // Recherche texte : nom, email, telephone ou n de reservation
-    if (normalizedSearch) {
-      const haystack = [
-        reservation.user?.name,
-        reservation.user?.email,
-        reservation.user?.phone,
-        String(reservation.id),
-        `#${reservation.id}`,
-        reservation.deposit_invoice_number,
-        reservation.stay_invoice_number
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      if (!haystack.includes(normalizedSearch)) return false;
-    }
-
-    // Filtre plage de dates sur check_in
-    const checkInDay = isoDatePart(reservation.check_in);
-    if (dateFrom && checkInDay < dateFrom) return false;
-    if (dateTo && checkInDay > dateTo) return false;
-
-    return true;
-  });
-
-  const handleExportPdf = async () => {
-    if (filteredReservations.length === 0 || exportingReport) return;
-
-    setExportingReport(true);
-    try {
-      const activeFilter = filtersList.find((filter) => filter.key === statusFilter);
-      const { blob, filename } = await api.downloadAdminReservationsReport({
-        reservation_ids: filteredReservations.map((reservation) => reservation.id),
-        filter_label: activeFilter?.label || "Toutes",
-        search: searchQuery.trim() || undefined,
-        date_from: dateFrom || undefined,
-        date_to: dateTo || undefined
-      });
-
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      showToast("Le rapport PDF a été généré avec succès.", "success");
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "Impossible de générer le rapport PDF.", "error");
-    } finally {
-      setExportingReport(false);
-    }
-  };
-
-  if (authLoading || loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-night">
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-gold border-t-transparent" />
-      </div>
+  const insights = useMemo(() => {
+    const today = new Date();
+    const thisMonth = today.getMonth();
+    const revenueAll = Array(24).fill(0) as number[];
+    reservations.forEach((reservation) =>
+      (reservation.payments || [])
+        .filter((payment) => payment.status === "success")
+        .forEach((payment) => {
+          const paid = new Date(payment.paid_at || payment.created_at);
+          const offset = (today.getFullYear() - paid.getFullYear()) * 12 + (thisMonth - paid.getMonth());
+          if (offset >= 0 && offset < 24) revenueAll[offset] += Number(payment.amount || 0);
+        })
     );
-  }
+    const current = revenueAll[0];
+    const previous = revenueAll[1];
+    const revenueChange = previous > 0 ? ((current - previous) / previous) * 100 : null;
+
+    const stayed = ["CONFIRMEE", "SEJOUR_PAYE"];
+    const arrivals = reservations.filter(
+      (reservation) => stayed.includes(reservation.status) && sameDay(parseDay(reservation.check_in), today)
+    ).length;
+    const departures = reservations.filter(
+      (reservation) => stayed.includes(reservation.status) && sameDay(parseDay(reservation.check_out), today)
+    ).length;
+
+    const extensions = reservations.filter((reservation) => reservation.extension_status === "EN_ATTENTE").length;
+    const refunds = reservations.filter((reservation) => reservation.status === "ANNULEE").length;
+    const awaitingDeposit = reservations.filter((reservation) => reservation.status === "VALIDEE_PAIEMENT_REQUIS").length;
+
+    const byCategory = (["vip", "deux_chambres", "une_chambre"] as const).map(
+      (type) => reservations.filter((reservation) => reservation.category_type === type).length
+    );
+
+    const recent = [...reservations]
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 6);
+
+    return { current, revenueChange, arrivals, departures, extensions, refunds, awaitingDeposit, byCategory, recent };
+  }, [reservations]);
+
+  const todo = [
+    { count: insights.extensions, label: "prolongation(s) à valider", href: "/admin/reservations" },
+    { count: insights.refunds, label: "remboursement(s) à confirmer", href: "/admin/reservations" },
+    { count: insights.awaitingDeposit, label: "acompte(s) en attente de paiement", href: "/admin/reservations" }
+  ].filter((item) => item.count > 0);
 
   return (
-    <main className="relative min-h-screen px-6 py-32 text-cream md:px-10">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-12 flex flex-col items-start justify-between gap-6 border-b border-gold/15 pb-8 md:flex-row md:items-center">
-          <div>
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-gold/25 bg-white/5 px-4 py-2 backdrop-blur-md">
-              <Sparkles className="h-4 w-4 text-gold-light" />
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-cream/85">
-                Portail Administrateur
-              </span>
-            </div>
-            <h1 className="font-display text-4xl font-semibold uppercase tracking-tight text-cream md:text-5xl">
-              Tableau de <span className="text-gradient-gold">Bord</span>
-            </h1>
-          </div>
+    <div>
+      <AdminPageHeader title="Tableau de bord" />
 
-          <div className="flex flex-wrap gap-4 text-xs font-black uppercase tracking-wider">
-            <Link
-              href="/admin"
-              className="border border-gold bg-gradient-to-br from-gold-light to-gold px-5 py-3 text-night transition"
-            >
-              Reservations
-            </Link>
-            <Link
-              href="/admin/rooms"
-              className="border border-gold/20 px-5 py-3 text-gold/80 transition hover:border-gold hover:text-gold-light"
-            >
-              Appartements
-            </Link>
-            <Link
-              href="/admin/users"
-              className="border border-gold/20 px-5 py-3 text-gold/80 transition hover:border-gold hover:text-gold-light"
-            >
-              Utilisateurs
-            </Link>
-          </div>
-        </div>
-
-        {stats && (
-          <div className="mb-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              {
-                label: "Taux d'occupation",
-                value: `${stats.occupancy_rate}%`,
-                icon: TrendingUp,
-                note: `${stats.occupied_rooms_count} appartements occupes`
-              },
-              {
-                label: "Chiffre d'affaires",
-                value: `${Number(stats.total_revenue || 0).toLocaleString("fr-FR")} F`,
-                icon: DollarSign,
-                note: "Paiements valides"
-              },
-              {
-                label: "CA du mois",
-                value: `${Number(stats.revenue_this_month || 0).toLocaleString("fr-FR")} F`,
-                icon: Calendar,
-                note: "Paiements valides ce mois"
-              },
-              {
-                label: "Reservations",
-                value: stats.total_reservations,
-                icon: Calendar,
-                note: "Demandes recues"
-              },
-              {
-                label: "Utilisateurs",
-                value: stats.total_users,
-                icon: Users,
-                note: "Profils clients"
-              }
-            ].map((item) => (
-              <div key={item.label} className="glass-warm glass-edge space-y-4 rounded-3xl p-6">
-                <div className="flex items-center justify-between text-gold/70">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest">
-                    {item.label}
-                  </span>
-                  <item.icon size={16} />
-                </div>
-                <p className="font-display text-4xl font-bold text-cream">{item.value}</p>
-                <p className="text-[10px] text-cream/45">{item.note}</p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <section className="glass-dark glass-edge mb-12 rounded-3xl p-6 md:p-8">
-          <div className="mb-6 flex flex-col justify-between gap-4 border-b border-gold/15 pb-6 md:flex-row md:items-end">
-            <div>
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-gold/20 bg-white/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-gold-light">
-                <BedDouble size={14} />
-                Occupation actuelle
-              </div>
-              <h2 className="font-display text-2xl font-bold uppercase tracking-wider text-cream">
-                Appartements occupes
-              </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-cream/60">
-                Cette liste concerne uniquement les sejours en cours : de la date d'arrivee jusqu'a
-                la date de depart. La periode entre la demande et l'arrivee reste une reservation,
-                pas une occupation.
-              </p>
-            </div>
-            <div className="glass-warm glass-edge rounded-2xl px-5 py-4 text-center">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gold/70">
-                Occupes
-              </p>
-              <p className="font-display text-4xl font-bold text-cream">{occupiedRooms.length}</p>
-            </div>
-          </div>
-
-          {occupiedRooms.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-gold/20 bg-white/5 py-12 text-center">
-              <DoorOpen className="mx-auto mb-4 h-10 w-10 text-gold/40" />
-              <p className="font-semibold text-cream">
-                Aucun appartement n'est occupe actuellement.
-              </p>
-              <p className="mt-1 text-sm text-cream/50">
-                Les sejours actifs apparaitront ici automatiquement.
-              </p>
-            </div>
-          ) : (
-            <div className="grid gap-5 lg:grid-cols-2">
-              {occupiedRooms.map((reservation) => (
-                <article key={reservation.id} className="glass-warm glass-edge rounded-2xl p-5">
-                  <div className="mb-4 flex flex-col justify-between gap-3 border-b border-gold/15 pb-4 sm:flex-row sm:items-start">
-                    <div>
-                      <p className="font-display text-xl font-bold uppercase text-cream">
-                        {reservationApartmentLabel(reservation)}
-                      </p>
-                      <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-cream/45">
-                        Reservation #{reservation.id}
-                      </p>
-                    </div>
-                    <span className="w-fit rounded-full border border-olive/40 bg-olive/15 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-olive-light">
-                      Occupe
-                    </span>
-                  </div>
-
-                  <div className="grid gap-4 text-sm md:grid-cols-2">
-                    <div className="rounded-xl border border-gold/15 bg-white/5 p-4">
-                      <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-gold/70">
-                        Client occupant
-                      </p>
-                      <p className="font-semibold text-cream">
-                        {reservation.user?.name || "Client non renseigne"}
-                      </p>
-                      <p className="mt-2 flex items-center gap-2 text-cream/65">
-                        <Mail size={13} />
-                        {reservation.user?.email || "Email non renseigne"}
-                      </p>
-                      <p className="mt-1 flex items-center gap-2 text-cream/65">
-                        <Phone size={13} />
-                        {reservation.user?.phone || "Telephone non renseigne"}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-gold/15 bg-white/5 p-4">
-                      <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-gold/70">
-                        Occupation
-                      </p>
-                      <p className="text-cream/70">
-                        Demande :{" "}
-                        <strong className="text-cream">
-                          {formatAdminDateTime(reservation.created_at)}
-                        </strong>
-                      </p>
-                      <p className="mt-1 text-cream/70">
-                        Arrivee :{" "}
-                        <strong className="text-cream">
-                          {formatAdminDate(reservation.check_in)}
-                        </strong>
-                      </p>
-                      <p className="mt-1 text-cream/70">
-                        Depart prevu :{" "}
-                        <strong className="text-cream">
-                          {formatAdminDate(reservation.check_out)}
-                        </strong>
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 grid gap-3 text-xs sm:grid-cols-3">
-                    <div className="rounded-xl bg-white/5 p-3">
-                      <span className="block text-[9px] font-bold uppercase tracking-widest text-cream/45">
-                        Duree totale
-                      </span>
-                      <strong className="mt-1 block text-cream">
-                        {countStayDays(reservation)} nuit(s)
-                      </strong>
-                    </div>
-                    <div className="rounded-xl bg-white/5 p-3">
-                      <span className="block text-[9px] font-bold uppercase tracking-widest text-cream/45">
-                        Jour actuel
-                      </span>
-                      <strong className="mt-1 block text-cream">
-                        {occupiedSinceDays(reservation)}e jour
-                      </strong>
-                    </div>
-                    <div className="rounded-xl bg-white/5 p-3">
-                      <span className="block text-[9px] font-bold uppercase tracking-widest text-cream/45">
-                        Statut
-                      </span>
-                      <strong className="mt-1 block text-cream">
-                        {statusLabels[reservation.status] || reservation.status}
-                      </strong>
-                    </div>
-                  </div>
-
-                  {reservation.special_requests && (
-                    <div className="mt-4 rounded-xl border border-gold/15 bg-white/5 p-3 text-xs leading-relaxed text-cream/65">
-                      <span className="mb-1 block text-[9px] font-bold uppercase tracking-widest text-gold/70">
-                        Demande speciale
-                      </span>
-                      {reservation.special_requests}
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => handleOpenRelease(reservation)}
-                    className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-gold-light to-gold px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-night transition hover:brightness-105"
-                  >
-                    <DoorOpen size={14} />
-                    Liberer l'appartement
-                  </button>
-                </article>
+      {todo.length > 0 && (
+        <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-gold/30 bg-gold/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <CircleAlert size={20} className="mt-0.5 shrink-0 text-gold-light" />
+            <p className="text-sm text-cream/80">
+              À traiter :{" "}
+              {todo.map((item, index) => (
+                <span key={item.label}>
+                  <strong className="text-cream">{item.count}</strong> {item.label}
+                  {index < todo.length - 1 ? " · " : ""}
+                </span>
               ))}
-            </div>
-          )}
-        </section>
-
-        <div className="space-y-6">
-          <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-            <h2 className="font-display text-2xl font-bold uppercase tracking-wider text-cream">
-              Demandes de sejour
-            </h2>
-          </div>
-
-          <div className="glass-warm glass-edge rounded-3xl p-5 md:p-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div className="flex flex-1 flex-col gap-4 sm:flex-row sm:items-end">
-                <label className="block sm:flex-1">
-                  <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-gold/80">
-                    Recherche
-                  </span>
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-cream/40" />
-                    <input
-                      type="search"
-                      value={searchQuery}
-                      onChange={(event) => setSearchQuery(event.target.value)}
-                      placeholder="Nom, email, telephone, n de reservation..."
-                      className="glass-input w-full rounded-xl py-3 pl-11 pr-4 text-sm outline-none"
-                    />
-                  </div>
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-gold/80">
-                    Arrivee du
-                  </span>
-                  <input
-                    type="date"
-                    value={dateFrom}
-                    max={dateTo || undefined}
-                    onChange={(event) => setDateFrom(event.target.value)}
-                    className="glass-input w-full rounded-xl px-4 py-3 text-sm outline-none"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-gold/80">
-                    Arrivee au
-                  </span>
-                  <input
-                    type="date"
-                    value={dateTo}
-                    min={dateFrom || undefined}
-                    onChange={(event) => setDateTo(event.target.value)}
-                    className="glass-input w-full rounded-xl px-4 py-3 text-sm outline-none"
-                  />
-                </label>
-              </div>
-
-              <div className="flex items-center gap-3">
-                {(searchQuery || dateFrom || dateTo) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchQuery("");
-                      setDateFrom("");
-                      setDateTo("");
-                    }}
-                    className="rounded-full border border-gold/15 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-cream/60 transition hover:border-gold/40 hover:text-gold-light"
-                  >
-                    Reinitialiser
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={handleExportPdf}
-                  disabled={filteredReservations.length === 0 || exportingReport}
-                  className="flex items-center gap-2 rounded-full bg-gradient-to-br from-gold-light to-gold px-5 py-3 text-[10px] font-black uppercase tracking-widest text-night transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Download size={14} className={exportingReport ? "animate-bounce" : ""} />
-                  {exportingReport ? "Création du PDF..." : "Export PDF"}
-                </button>
-              </div>
-            </div>
-
-            <p className="mt-4 text-[11px] uppercase tracking-widest text-cream/45">
-              {filteredReservations.length} resultat(s) affiche(s)
             </p>
           </div>
+          <Link
+            href="/admin/reservations"
+            className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-gold-light hover:underline"
+          >
+            Ouvrir les réservations <ArrowRight size={15} />
+          </Link>
+        </div>
+      )}
 
-          <div className="flex flex-wrap gap-2 border-b border-gold/10 pb-7 text-xs font-semibold uppercase tracking-wider">
-            {filtersList.map((filter) => (
-              <div key={filter.key} className="group relative">
-                <button
-                  type="button"
-                  onClick={() => setStatusFilter(filter.key)}
-                  aria-describedby={`admin-filter-help-${filter.key}`}
-                  className={`rounded-full border px-4 py-2 transition ${
-                    statusFilter === filter.key
-                      ? "border-gold bg-gradient-to-br from-gold-light to-gold text-night"
-                      : "border-gold/15 bg-transparent text-cream/60 hover:border-gold/40 hover:text-gold-light"
-                  }`}
-                >
-                  {filter.label}
-                </button>
-                <div
-                  id={`admin-filter-help-${filter.key}`}
-                  role="tooltip"
-                  className="admin-filter-tooltip pointer-events-none absolute left-1/2 top-[calc(100%+0.5rem)] z-40 w-72 -translate-x-1/2 rounded-2xl border border-gold/20 bg-night-700 px-4 py-3 text-left text-[11px] font-semibold normal-case leading-relaxed tracking-normal opacity-0 shadow-2xl shadow-black/50 transition-opacity duration-150 delay-0 group-hover:delay-1000 group-hover:opacity-100 group-focus-within:delay-1000 group-focus-within:opacity-100"
-                >
-                  <span className="absolute -top-1.5 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 border-l border-t border-gold/20 bg-night-700" />
-                  {filter.description}
-                </div>
-              </div>
-            ))}
+      <div className="grid grid-cols-12 gap-4 md:gap-6">
+        {/* Métriques + CA mensuel */}
+        <div className="col-span-12 space-y-4 md:space-y-6 xl:col-span-7">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-6">
+            <MetricCard icon={Users} title="Clients" value={loading ? "…" : String(stats?.total_users ?? 0)} />
+            <MetricCard
+              icon={CalendarRange}
+              title="Réservations"
+              value={loading ? "…" : String(stats?.total_reservations ?? 0)}
+            />
+            <MetricCard
+              icon={Wallet}
+              title="Chiffre d'affaires total"
+              value={loading ? "…" : formatCurrency(stats?.total_revenue ?? 0)}
+            />
+            <MetricCard
+              icon={WalletCards}
+              title="Encaissé ce mois-ci"
+              value={loading ? "…" : formatCurrency(stats?.revenue_this_month ?? insights.current)}
+              change={insights.revenueChange}
+            />
           </div>
 
-          {filteredReservations.length === 0 ? (
-            <div className="glass-dark glass-edge rounded-3xl py-20 text-center">
-              <p className="text-sm text-cream/45">Aucune demande ne correspond a ce filtre.</p>
+          <AdminCard className="overflow-hidden px-5 pt-5 sm:px-6 sm:pt-6">
+            <CardTitle
+              title="Encaissements mensuels"
+              subtitle="Acomptes et soldes de séjour réglés"
+              action={<YearSelect years={years} value={year} onChange={setYear} />}
+            />
+            <div className="overflow-x-auto">
+              <MonthlyRevenueChart data={series.revenue} />
             </div>
-          ) : (
-            <div className="space-y-4">
-              {filteredReservations.map((reservation) => (
-                <div
-                  key={reservation.id}
-                  className="glass-dark glass-edge flex flex-col justify-between gap-6 rounded-3xl p-6 transition-all duration-300 hover:border-gold/30 md:p-8 lg:flex-row"
-                >
-                  <div className="flex-1 space-y-4">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <span className="font-display text-lg font-bold uppercase text-cream">
-                        {reservationApartmentLabel(reservation)}
-                      </span>
-                      <span className="text-[10px] uppercase tracking-widest text-cream/45">
-                        Ref #{reservation.id}
-                      </span>
-                      <span
-                        className={`rounded border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${statusClasses(reservation.status)}`}
-                      >
-                        {statusLabels[reservation.status] || reservation.status}
-                      </span>
-                    </div>
+          </AdminCard>
+        </div>
 
-                    <div className="grid gap-6 border-t border-gold/10 pt-2 text-xs text-cream/60 sm:grid-cols-3">
-                      <div>
-                        <span className="mb-1 block text-[9px] uppercase tracking-widest text-cream/40">
-                          Client
-                        </span>
-                        <p className="font-semibold text-cream">{reservation.user?.name}</p>
-                        <p className="text-cream/55">{reservation.user?.email}</p>
-                      </div>
-                      <div>
-                        <span className="mb-1 block text-[9px] uppercase tracking-widest text-cream/40">
-                          Dates
-                        </span>
-                        <p className="font-semibold text-cream">
-                          Du {new Date(reservation.check_in).toLocaleDateString("fr-FR")} au{" "}
-                          {new Date(reservation.check_out).toLocaleDateString("fr-FR")}
-                        </p>
-                        <p className="text-cream/55">
-                          {reservation.room?.type || reservation.category_type}
-                        </p>
-                      </div>
-                      <div>
-                        <span className="mb-1 block text-[9px] uppercase tracking-widest text-cream/40">
-                          Acompte / sejour
-                        </span>
-                        <p className="text-sm font-bold text-cream">
-                          {(reservation.deposit_amount ?? reservation.total_price).toLocaleString(
-                            "fr-FR"
-                          )}{" "}
-                          FCFA
-                        </p>
-                        <p className="text-cream/55">
-                          {(reservation.stay_amount ?? 0).toLocaleString("fr-FR")} FCFA sejour
-                        </p>
-                        {(reservation.status === "ANNULEE" ||
-                          reservation.status === "REMBOURSEE") && (
-                          <p className="mt-1 font-semibold text-orange-300">
-                            A rembourser :{" "}
-                            {(reservation.cancellation_refund_amount ?? 0).toLocaleString("fr-FR")}{" "}
-                            FCFA
-                          </p>
-                        )}
-                      </div>
-                    </div>
+        {/* Occupation */}
+        <div className="col-span-12 xl:col-span-5">
+          <AdminCard className="flex h-full flex-col bg-white/[0.02]">
+            <div className="flex flex-1 flex-col rounded-2xl px-5 pb-6 pt-5 sm:px-6 sm:pt-6">
+              <CardTitle title="Taux d'occupation" subtitle="Appartements occupés aujourd'hui" />
+              <div className="relative">
+                <OccupancyGauge value={stats?.occupancy_rate ?? 0} />
+              </div>
+              <p className="mx-auto mt-2 max-w-sm text-center text-sm text-cream/60">
+                {loading
+                  ? "Chargement…"
+                  : `${occupied.length} appartement(s) occupé(s) sur ${stats?.total_rooms ?? 0}.`}
+              </p>
 
-                    {reservation.special_requests && (
-                      <div className="rounded-xl border border-gold/10 bg-white/5 p-3 text-xs text-cream/60">
-                        <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-gold/70">
-                          Demande client
+              {/* Séjours en cours : qui occupe quoi, jusqu'à quand */}
+              <div className="mt-6 flex-1">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-cream/45">En ce moment</p>
+                {occupied.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-gold/20 px-4 py-5 text-center text-sm text-cream/50">
+                    Aucun appartement occupé.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-gold/10">
+                    {occupied.slice(0, 4).map((reservation) => (
+                      <li key={reservation.id} className="flex items-center justify-between gap-3 py-2.5">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-cream">{reservationTitle(reservation)}</p>
+                          <p className="truncate text-xs text-cream/50">{reservation.user?.name || "Client"}</p>
+                        </div>
+                        <span className="shrink-0 text-xs text-cream/60">
+                          Départ {formatDay(reservation.check_out, { day: "numeric", month: "short" })}
                         </span>
-                        {reservation.special_requests}
-                      </div>
-                    )}
-
-                    {reservation.extension_status && (
-                      <div className="rounded-xl border border-gold/15 bg-white/5 p-3 text-xs leading-relaxed text-cream/70">
-                        <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-gold/80">
-                          Prolongation du séjour
-                        </span>
-                        <p>
-                          Statut :{" "}
-                          <strong>
-                            {reservation.extension_status === "EN_ATTENTE"
-                              ? "En attente"
-                              : reservation.extension_status === "APPROUVEE"
-                                ? "Acceptée"
-                                : "Refusée"}
-                          </strong>
-                        </p>
-                        {reservation.extension_previous_check_out && (
-                          <p>
-                            Départ initial :{" "}
-                            {new Date(reservation.extension_previous_check_out).toLocaleDateString(
-                              "fr-FR"
-                            )}
-                          </p>
-                        )}
-                        {reservation.extension_requested_check_out && (
-                          <p>
-                            Nouveau départ demandé :{" "}
-                            {new Date(reservation.extension_requested_check_out).toLocaleDateString(
-                              "fr-FR"
-                            )}
-                          </p>
-                        )}
-                        {reservation.extension_admin_notes && (
-                          <p>Note admin : {reservation.extension_admin_notes}</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex min-w-[180px] flex-row items-center justify-end gap-3 border-gold/10 lg:flex-col lg:border-l lg:pl-6">
-                    {/* Plus de Confirmer / Rejeter : reserver ouvre directement
-                        le paiement, plus aucune demande n'attend une decision. */}
-                    {reservation.extension_status === "EN_ATTENTE" ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenAction(reservation, "extension-approve")}
-                          className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-gold-light to-gold py-3 text-[10px] font-black uppercase tracking-widest text-night transition hover:brightness-105"
-                        >
-                          <Check size={14} />
-                          Accepter prolongation
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenAction(reservation, "extension-reject")}
-                          className="flex w-full items-center justify-center gap-2 rounded-xl border border-terracotta/40 py-3 text-[10px] font-black uppercase tracking-widest text-terracotta-light transition hover:bg-terracotta/15"
-                        >
-                          <X size={14} />
-                          Rejeter prolongation
-                        </button>
-                      </>
-                    ) : reservation.status === "ANNULEE" ? (
-                      <button
-                        type="button"
-                        disabled={submitting}
-                        onClick={() => handleMarkRefunded(reservation)}
-                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-gold-light to-gold py-3 text-[10px] font-black uppercase tracking-widest text-night transition hover:brightness-105 disabled:opacity-50"
-                      >
-                        <RefreshCcw size={14} />
-                        Remboursement effectue
-                      </button>
-                    ) : (
-                      <div className="py-4 text-xs italic text-cream/35">Traitee</div>
-                    )}
-                  </div>
-                </div>
-              ))}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {occupied.length > 0 && (
+                  <Link
+                    href="/admin/reservations#occupation"
+                    className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-gold-light hover:underline"
+                  >
+                    Gérer l'occupation <ArrowRight size={14} />
+                  </Link>
+                )}
+              </div>
             </div>
-          )}
+            <div className="grid grid-cols-3 divide-x divide-gold/10 border-t border-gold/10 px-2 py-4 sm:py-5">
+              <MiniStat label="Occupés" value={occupied.length} />
+              <MiniStat label="Arrivées du jour" value={insights.arrivals} />
+              <MiniStat label="Départs du jour" value={insights.departures} />
+            </div>
+          </AdminCard>
+        </div>
+
+        {/* Activité */}
+        <div className="col-span-12">
+          <AdminCard className="px-5 pb-5 pt-5 sm:px-6 sm:pt-6">
+            <CardTitle
+              title="Activité"
+              subtitle={`Demandes reçues et séjours confirmés en ${year}`}
+              action={<YearSelect years={years} value={year} onChange={setYear} />}
+            />
+            <ActivityChart requests={series.requests} confirmed={series.confirmed} />
+          </AdminCard>
+        </div>
+
+        {/* Répartition par catégorie */}
+        <div className="col-span-12 xl:col-span-5">
+          <AdminCard className="h-full p-5 sm:p-6">
+            <CardTitle title="Par catégorie" subtitle="Toutes réservations confondues" />
+            <CategoryDonut
+              labels={[categoryLabels.vip, categoryLabels.deux_chambres, categoryLabels.une_chambre]}
+              values={insights.byCategory}
+            />
+            <ul className="mt-4 space-y-3">
+              {(["vip", "deux_chambres", "une_chambre"] as const).map((type, index) => {
+                const total = insights.byCategory.reduce((sum, value) => sum + value, 0) || 1;
+                const value = insights.byCategory[index];
+                const colors = ["bg-gold", "bg-olive-light", "bg-terracotta"];
+                return (
+                  <li key={type}>
+                    <div className="mb-1.5 flex items-center justify-between text-sm">
+                      <span className="text-cream/75">{categoryLabels[type]}</span>
+                      <span className="font-semibold text-cream">{value}</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                      <div className={cn("h-full rounded-full", colors[index])} style={{ width: `${(value / total) * 100}%` }} />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </AdminCard>
+        </div>
+
+        {/* Réservations récentes */}
+        <div className="col-span-12 xl:col-span-7">
+          <AdminCard className="h-full overflow-hidden px-4 pb-3 pt-4 sm:px-6">
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <h3 className="text-lg font-semibold text-cream">Réservations récentes</h3>
+              <Link
+                href="/admin/reservations"
+                className="rounded-lg border border-gold/20 px-3.5 py-2 text-sm font-medium text-cream/75 transition hover:border-gold/50 hover:text-cream"
+              >
+                Tout voir
+              </Link>
+            </div>
+            <div className="max-w-full overflow-x-auto">
+              <table className="w-full min-w-[560px] text-left">
+                <thead className="border-y border-gold/10">
+                  <tr className="text-xs font-medium text-cream/50">
+                    <th className="py-3 pr-3 font-medium">Appartement</th>
+                    <th className="py-3 pr-3 font-medium">Client</th>
+                    <th className="py-3 pr-3 font-medium">Arrivée</th>
+                    <th className="py-3 font-medium">Statut</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gold/10">
+                  {loading
+                    ? [0, 1, 2, 3].map((index) => (
+                        <tr key={index}>
+                          <td colSpan={4} className="py-3">
+                            <div className="h-10 animate-pulse rounded-lg bg-white/5" />
+                          </td>
+                        </tr>
+                      ))
+                    : insights.recent.map((reservation) => (
+                        <tr key={reservation.id}>
+                          <td className="py-3 pr-3">
+                            <div className="flex items-center gap-3">
+                              <div className="relative size-11 shrink-0 overflow-hidden rounded-lg bg-white/5">
+                                <Image
+                                  src={reservation.room?.images?.[0] || "/assets/rooms/room1.jpg"}
+                                  alt=""
+                                  fill
+                                  sizes="44px"
+                                  className="object-cover"
+                                />
+                              </div>
+                              <div className="min-w-0 max-w-[160px] 2xl:max-w-[240px]">
+                                <p className="truncate text-sm font-medium text-cream" title={reservationTitle(reservation)}>
+                                  {reservationTitle(reservation)}
+                                </p>
+                                <span className="text-xs text-cream/50">Réf. #{reservation.id}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="whitespace-nowrap py-3 pr-3 text-sm text-cream/70">
+                            {reservation.user?.name || "Non renseigné"}
+                          </td>
+                          <td className="whitespace-nowrap py-3 pr-3 text-sm text-cream/70">
+                            {formatDay(reservation.check_in)}
+                          </td>
+                          <td className="py-3">
+                            <span
+                              className={cn(
+                                "inline-flex whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium",
+                                statusTone(reservation.status)
+                              )}
+                            >
+                              {statusLabels[reservation.status]}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                  {!loading && insights.recent.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="py-10 text-center text-sm text-cream/50">
+                        Aucune réservation pour le moment.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </AdminCard>
         </div>
       </div>
+    </div>
+  );
+}
 
-      <AnimatePresence>
-        {selectedRes && actionType && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => !submitting && setSelectedRes(null)}
-              className="absolute inset-0 bg-night/80 backdrop-blur-md"
-            />
-
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="glass-dark glass-edge relative w-full max-w-lg rounded-3xl p-8 shadow-2xl text-cream"
-            >
-              <div className="space-y-6">
-                <div>
-                  <h3 className="font-display text-2xl font-bold uppercase tracking-wide text-cream">
-                    {actionType === "approve"
-                      ? "Confirmer la demande"
-                      : actionType === "reject"
-                        ? "Rejeter la demande"
-                        : actionType === "extension-approve"
-                          ? "Accepter la prolongation"
-                          : "Rejeter la prolongation"}
-                  </h3>
-                  <p className="mt-1 text-[10px] uppercase tracking-widest text-cream/50">
-                    Reservation #{selectedRes.id} - {selectedRes.user?.name}
-                  </p>
-                </div>
-
-                <div className="space-y-2 rounded-2xl border border-gold/10 bg-white/5 p-4 text-xs text-cream/70">
-                  <p>
-                    <strong>Appartement :</strong> {reservationApartmentLabel(selectedRes)}
-                  </p>
-                  <p>
-                    <strong>Dates :</strong> du {formatAdminDate(selectedRes.check_in)} au{" "}
-                    {formatAdminDate(selectedRes.check_out)}
-                  </p>
-                  {(actionType === "extension-approve" || actionType === "extension-reject") &&
-                    selectedRes.extension_requested_check_out && (
-                      <p>
-                        <strong>Nouveau départ demandé :</strong>{" "}
-                        {formatAdminDate(selectedRes.extension_requested_check_out)}
-                      </p>
-                    )}
-                  <p>
-                    <strong>Acompte :</strong>{" "}
-                    {(selectedRes.deposit_amount ?? selectedRes.total_price).toLocaleString(
-                      "fr-FR"
-                    )}{" "}
-                    FCFA
-                  </p>
-                </div>
-
-                <label className="block">
-                  <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-gold/80">
-                    {actionType === "approve" || actionType === "extension-approve"
-                      ? "Notes facultatives"
-                      : "Motif du rejet obligatoire"}
-                  </span>
-                  <textarea
-                    rows={4}
-                    value={adminNotes}
-                    onChange={(event) => setAdminNotes(event.target.value)}
-                    className="glass-input w-full resize-none rounded-xl p-4 text-sm outline-none"
-                  />
-                </label>
-
-                {error && <p className="text-xs font-semibold text-red-400">{error}</p>}
-
-                <div className="flex gap-3 border-t border-gold/10 pt-4">
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={() => setSelectedRes(null)}
-                    className="flex-1 rounded-xl border border-gold/15 py-4 text-xs font-bold uppercase tracking-wider text-cream/70 transition hover:bg-white/5 disabled:opacity-50"
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={handleSubmitAction}
-                    className={`flex-1 rounded-xl py-4 text-xs font-black uppercase tracking-[0.2em] transition disabled:opacity-50 ${
-                      actionType === "approve" || actionType === "extension-approve"
-                        ? "bg-gradient-to-br from-gold-light to-gold text-night hover:brightness-105"
-                        : "bg-terracotta text-cream hover:brightness-110"
-                    }`}
-                  >
-                    {submitting ? "Envoi..." : "Confirmer"}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
+function MetricCard({
+  icon: Icon,
+  title,
+  value,
+  change
+}: {
+  icon: ComponentType<{ size?: number; className?: string }>;
+  title: string;
+  value: string;
+  change?: number | null;
+}) {
+  return (
+    <AdminCard className="p-5 md:p-6">
+      <div className="flex size-12 items-center justify-center rounded-xl bg-gold/15 text-gold-light">
+        <Icon size={24} />
+      </div>
+      <div className="mt-5 flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
+        <div className="min-w-0">
+          <span className="text-sm text-cream/55">{title}</span>
+          <h4 className="mt-2 whitespace-nowrap font-display text-xl font-bold text-cream 2xl:text-2xl">{value}</h4>
+        </div>
+        {typeof change === "number" && Number.isFinite(change) && (
+          <span
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold",
+              change >= 0 ? "bg-olive/15 text-olive-light" : "bg-terracotta/15 text-terracotta-light"
+            )}
+          >
+            {change >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
+            {Math.abs(change).toFixed(1)}%
+          </span>
         )}
-      </AnimatePresence>
+      </div>
+    </AdminCard>
+  );
+}
 
-      <AnimatePresence>
-        {releaseTarget && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => !submitting && setReleaseTarget(null)}
-              className="absolute inset-0 bg-night/80 backdrop-blur-md"
-            />
+function CardTitle({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {
+  return (
+    <div className="mb-4 flex items-start justify-between gap-3">
+      <div>
+        <h3 className="text-lg font-semibold text-cream">{title}</h3>
+        {subtitle && <p className="mt-0.5 text-sm text-cream/50">{subtitle}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="glass-dark glass-edge relative w-full max-w-xl rounded-3xl p-8 text-cream shadow-2xl"
-            >
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={() => setReleaseTarget(null)}
-                className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full border border-gold/20 bg-white/5 text-cream transition hover:border-gold hover:text-gold-light disabled:opacity-50"
-                aria-label="Fermer"
-              >
-                <X size={16} />
-              </button>
+function YearSelect({ years, value, onChange }: { years: number[]; value: number; onChange: (year: number) => void }) {
+  return (
+    <select
+      value={value}
+      onChange={(event) => onChange(Number(event.target.value))}
+      aria-label="Année"
+      className="glass-input h-9 rounded-lg px-2.5 text-sm"
+    >
+      {years.map((year) => (
+        <option key={year} value={year} className="text-night">
+          {year}
+        </option>
+      ))}
+    </select>
+  );
+}
 
-              <div className="space-y-6">
-                <div className="pr-12">
-                  <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-gold/20 bg-white/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-gold-light">
-                    <DoorOpen size={14} />
-                    Liberation manuelle
-                  </div>
-                  <h3 className="font-display text-2xl font-bold uppercase tracking-wide text-cream">
-                    Liberer l'appartement
-                  </h3>
-                  <p className="mt-2 text-sm leading-relaxed text-cream/60">
-                    Cette action marque l'occupation comme terminee et rend l'appartement disponible
-                    pour d'autres clients. L'historique de la reservation reste conserve.
-                  </p>
-                </div>
-
-                <div className="space-y-2 rounded-2xl border border-gold/15 bg-white/5 p-4 text-sm text-cream/70">
-                  <p>
-                    <strong>Appartement :</strong> {reservationApartmentLabel(releaseTarget)}
-                  </p>
-                  <p>
-                    <strong>Client :</strong> {releaseTarget.user?.name || "Client non renseigne"}
-                  </p>
-                  <p>
-                    <strong>Demande :</strong> {formatAdminDateTime(releaseTarget.created_at)}
-                  </p>
-                  <p>
-                    <strong>Occupation :</strong> du {formatAdminDate(releaseTarget.check_in)} au{" "}
-                    {formatAdminDate(releaseTarget.check_out)}
-                  </p>
-                </div>
-
-                <label className="block">
-                  <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-gold/80">
-                    Note interne facultative
-                  </span>
-                  <textarea
-                    rows={4}
-                    value={releaseNotes}
-                    onChange={(event) => setReleaseNotes(event.target.value)}
-                    placeholder="Ex: depart anticipe, chambre remise a disposition..."
-                    className="glass-input w-full resize-none rounded-xl p-4 text-sm outline-none"
-                  />
-                </label>
-
-                {error && <p className="text-xs font-semibold text-red-400">{error}</p>}
-
-                <div className="flex flex-col gap-3 border-t border-gold/15 pt-4 sm:flex-row">
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={() => setReleaseTarget(null)}
-                    className="flex-1 rounded-xl border border-gold/15 py-4 text-xs font-bold uppercase tracking-wider text-cream/70 transition hover:bg-white/5 disabled:opacity-50"
-                  >
-                    Retour
-                  </button>
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={handleReleaseRoom}
-                    className="flex-1 rounded-xl bg-gradient-to-br from-gold-light to-gold py-4 text-xs font-black uppercase tracking-[0.2em] text-night transition hover:brightness-105 disabled:opacity-50"
-                  >
-                    {submitting ? "Liberation..." : "Liberer l'appartement"}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-    </main>
+function MiniStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="px-2 text-center">
+      <p className="mb-1 text-xs text-cream/50 sm:text-sm">{label}</p>
+      <p className="font-display text-lg font-semibold text-cream sm:text-xl">{value}</p>
+    </div>
   );
 }

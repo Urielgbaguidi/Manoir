@@ -2,6 +2,7 @@ import { ArrowUpRight, Mail, MapPin, Phone } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import ManorMark from "@/components/visual/ManorMark";
+import { CONTACT_EMAIL, contactMailto } from "@/lib/site";
 
 export default function Footer() {
   const year = new Date().getFullYear();
@@ -14,7 +15,7 @@ export default function Footer() {
   ];
 
   const contacts = [
-    { icon: Mail, label: "contact@lemanoir.com", href: "mailto:contact@lemanoir.com" },
+    { icon: Mail, label: CONTACT_EMAIL, href: contactMailto() },
     { icon: Phone, label: "+229 00 00 00 00", href: "tel:+22900000000" },
     { icon: MapPin, label: "Place de l'Étoile Rouge, Cotonou", href: "#" }
   ];
@@ -28,7 +29,7 @@ export default function Footer() {
       <ManorMark className="pointer-events-none absolute -right-10 bottom-0 w-[420px] text-gold/[0.06] md:w-[560px]" />
       <div className="pointer-events-none absolute -left-16 top-0 h-[40vh] w-[40vh] rounded-full bg-olive/10 blur-[120px]" />
 
-      <div className="relative mx-auto max-w-7xl px-6 py-20 md:px-10">
+      <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 md:px-10 md:py-20">
         <div className="grid gap-14 lg:grid-cols-[1.5fr_1fr_1fr]">
           {/* Marque */}
           <div className="space-y-6">

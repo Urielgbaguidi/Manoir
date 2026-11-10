@@ -5,8 +5,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { api, Room, RoomCategory } from "@/lib/api";
 import { motion } from "framer-motion";
-import { Ban, Check, Image as ImageIcon, Plus, Save, Sparkles, Trash2, Video } from "lucide-react";
-import Link from "next/link";
+import { Ban, Check, Image as ImageIcon, Plus, Save, Trash2, Video } from "lucide-react";
+import { AdminPageHeader } from "@/components/dashboard/admin/AdminShell";
 import Image from "next/image";
 import { useToast } from "@/context/ToastContext";
 
@@ -250,49 +250,16 @@ export default function AdminRoomsPage() {
 
   if (authLoading || loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-night">
+      <div className="flex min-h-[50vh] items-center justify-center">
         <div className="h-12 w-12 animate-spin rounded-full border-4 border-gold border-t-transparent" />
       </div>
     );
   }
 
   return (
-    <main className="relative min-h-screen px-6 py-32 text-cream md:px-10">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-12 flex flex-col items-start justify-between gap-6 border-b border-gold/15 pb-8 md:flex-row md:items-center">
-          <div>
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-gold/25 bg-white/5 px-4 py-2 backdrop-blur-md">
-              <Sparkles className="h-4 w-4 text-gold-light" />
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-cream/85">
-                Portail Administrateur
-              </span>
-            </div>
-            <h1 className="font-display text-4xl font-semibold uppercase tracking-tight text-cream md:text-5xl">
-              Catalogue <span className="text-gradient-gold">Appartements</span>
-            </h1>
-          </div>
-
-          <div className="flex flex-wrap gap-4 text-xs font-black uppercase tracking-wider">
-            <Link
-              href="/admin"
-              className="border border-gold/20 px-5 py-3 text-gold/80 transition hover:border-gold hover:text-gold-light"
-            >
-              Reservations
-            </Link>
-            <Link
-              href="/admin/rooms"
-              className="border border-gold bg-gradient-to-br from-gold-light to-gold px-5 py-3 text-night transition"
-            >
-              Appartements
-            </Link>
-            <Link
-              href="/admin/users"
-              className="border border-gold/20 px-5 py-3 text-gold/80 transition hover:border-gold hover:text-gold-light"
-            >
-              Utilisateurs
-            </Link>
-          </div>
-        </div>
+    <div className="relative text-cream">
+      <div>
+        <AdminPageHeader title="Appartements" />
 
         <div className="grid gap-8">
           {categories.map((category, index) => (
@@ -766,6 +733,6 @@ export default function AdminRoomsPage() {
           ))}
         </div>
       </div>
-    </main>
+    </div>
   );
 }
