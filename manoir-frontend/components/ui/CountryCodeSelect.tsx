@@ -84,7 +84,7 @@ export default function CountryCodeSelect({ value, onChange, className }: Countr
         onClick={() => setOpen((current) => !current)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="glass-input flex w-[104px] shrink-0 items-center gap-2 rounded-xl px-3 py-3.5 text-sm outline-none"
+        className="glass-input flex h-12 w-[104px] shrink-0 items-center gap-2 rounded-xl px-3 text-sm outline-none"
       >
         <Flag iso={selected.iso} />
         <span className="font-medium">{selected.code}</span>

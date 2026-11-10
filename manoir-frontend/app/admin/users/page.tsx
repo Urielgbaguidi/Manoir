@@ -4,8 +4,8 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { api, User } from "@/lib/api";
-import { Edit3, Save, Sparkles, Shield, User as UserIcon, Trash2, X } from "lucide-react";
-import Link from "next/link";
+import { Edit3, Save, Shield, User as UserIcon, Trash2, X } from "lucide-react";
+import { AdminPageHeader } from "@/components/dashboard/admin/AdminShell";
 
 export default function AdminUsersPage() {
   const { user: currentUser, loading: authLoading } = useAuth();
@@ -131,50 +131,16 @@ export default function AdminUsersPage() {
 
   if (authLoading || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-night">
+      <div className="flex min-h-[50vh] items-center justify-center">
         <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gold border-t-transparent"></div>
       </div>
     );
   }
 
   return (
-    <main className="relative min-h-screen px-6 py-32 text-cream md:px-10">
-      <div className="mx-auto max-w-7xl">
-        {/* Menu Administration */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12 border-b border-gold/15 pb-8">
-          <div>
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/5 backdrop-blur-md rounded-full border border-gold/25 mb-4">
-              <Sparkles className="w-4 h-4 text-gold-light" />
-              <span className="text-cream/85 font-semibold uppercase tracking-widest text-[10px]">
-                Portail Administrateur
-              </span>
-            </div>
-            <h1 className="text-4xl md:text-5xl font-semibold font-display uppercase tracking-tight text-cream">
-              Comptes <span className="text-gradient-gold">Utilisateurs</span>
-            </h1>
-          </div>
-
-          <div className="flex flex-wrap gap-4 text-xs font-black uppercase tracking-wider">
-            <Link
-              href="/admin"
-              className="border border-gold/20 text-gold/80 px-5 py-3 hover:border-gold hover:text-gold-light transition"
-            >
-              Réservations
-            </Link>
-            <Link
-              href="/admin/rooms"
-              className="border border-gold/20 text-gold/80 px-5 py-3 hover:border-gold hover:text-gold-light transition"
-            >
-              Suites
-            </Link>
-            <Link
-              href="/admin/users"
-              className="border border-gold bg-gradient-to-br from-gold-light to-gold text-night px-5 py-3 transition"
-            >
-              Utilisateurs
-            </Link>
-          </div>
-        </div>
+    <div className="relative text-cream">
+      <div>
+        <AdminPageHeader title="Utilisateurs" />
 
         {/* Tableau des utilisateurs */}
         <div className="glass-dark glass-edge rounded-3xl overflow-hidden">
@@ -296,6 +262,6 @@ export default function AdminUsersPage() {
           </div>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

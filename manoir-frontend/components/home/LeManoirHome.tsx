@@ -8,10 +8,11 @@ import {
   Building2,
   KeyRound,
   LogIn,
+  Mail,
   ShieldCheck,
-  Sparkles,
   UserRound
 } from "lucide-react";
+import { contactMailto } from "@/lib/site";
 import Image from "next/image";
 import Link from "next/link";
 import type { ComponentType, MouseEvent } from "react";
@@ -54,7 +55,7 @@ const stats = [
   { value: "3", label: "Catégories d'appartements" },
   { value: "24/7", label: "Cadre sécurisé" },
   { value: "100%", label: "Kitchenettes privées" },
-  { value: "★", label: "Cœur de Cotonou" }
+  { value: "Cotonou", label: "Au cœur de la ville" }
 ];
 
 type ActionCard = {
@@ -111,7 +112,7 @@ export default function LeManoirHome() {
         {
           label: "Mon Espace",
           href: "/espace-client",
-          description: "Suivre vos demandes, paiements et documents.",
+          description: "Vos réservations, paiements et factures au même endroit.",
           icon: UserRound,
           index: "03"
         }
@@ -120,7 +121,7 @@ export default function LeManoirHome() {
         {
           label: "Connexion",
           href: "/auth/login",
-          description: "Accéder à votre compte client et vos réservations.",
+          description: "Retrouvez vos réservations en un clic.",
           icon: LogIn,
           index: "03"
         }
@@ -133,7 +134,7 @@ export default function LeManoirHome() {
         id="home"
         ref={heroRef}
         onMouseMove={onHeroMove}
-        className="on-dark relative min-h-[100svh] overflow-hidden px-6 pb-16 pt-32 md:px-10"
+        className="on-dark relative min-h-[100svh] overflow-hidden px-4 pb-20 pt-28 sm:px-6 md:px-10 md:pb-16 md:pt-32"
       >
         <motion.div style={{ scale: imageScale, y: imageY }} className="absolute inset-0">
           <Image
@@ -162,7 +163,7 @@ export default function LeManoirHome() {
           initial={{ opacity: 0, y: -12, scale: 0.9 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 1, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
-          className="absolute right-6 top-28 z-20 md:right-12 md:top-32"
+          className="absolute right-6 top-28 z-20 hidden sm:block md:right-12 md:top-32"
         >
           <LogoSeal sizeClassName="size-20 md:size-28" />
         </motion.div>
@@ -175,10 +176,9 @@ export default function LeManoirHome() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.35 }}
-            className="mb-7 inline-flex w-fit items-center gap-2.5 rounded-full border border-gold/25 bg-white/5 px-4 py-2 backdrop-blur-md"
+            className="mb-6 inline-flex w-fit max-w-full items-center rounded-full border border-gold/25 bg-white/5 px-4 py-2 backdrop-blur-md md:mb-7"
           >
-            <Sparkles size={14} className="text-gold-light" />
-            <span className="text-[11px] font-semibold uppercase tracking-[0.28em] text-cream/90">
+            <span className="text-[10px] font-semibold uppercase leading-5 tracking-[0.22em] text-cream/90 sm:text-[11px] sm:tracking-[0.28em]">
               Une parenthèse enchantée au cœur de Cotonou
             </span>
           </motion.div>
@@ -192,23 +192,23 @@ export default function LeManoirHome() {
             </h1>
           </motion.div>
 
-          <div className="mt-8 grid gap-8 md:grid-cols-[1fr_auto] md:items-end">
+          <div className="mt-6 grid gap-6 md:mt-8 md:grid-cols-[1fr_auto] md:items-end md:gap-8">
             <p className="max-w-md text-[15px] leading-7 text-cream/80">
               Que le temps vous y soit doux. Bien plus qu'une maison d'hôtes, Le Manoir est une
-              invitation à ralentir — bois, pierre, lin et lumière chaude.
+              invitation à ralentir.
             </p>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <MagneticButton href="/rooms" variant="gold">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center [&>div]:w-full sm:[&>div]:w-auto">
+              <MagneticButton href="/rooms" variant="gold" className="w-full sm:w-auto">
                 Réserver un séjour <ArrowUpRight size={16} />
               </MagneticButton>
-              <MagneticButton href="/comment-reserver" variant="glass">
+              <MagneticButton href="/comment-reserver" variant="glass" className="w-full sm:w-auto">
                 Comment réserver ?
               </MagneticButton>
             </div>
           </div>
 
-          <div className="mt-10 flex items-center gap-4">
+          <div className="mt-10 hidden items-center gap-4 sm:flex">
             <a
               href="#decouvrir"
               aria-label="Découvrir"
@@ -222,15 +222,15 @@ export default function LeManoirHome() {
       </section>
 
       {/* ================= BANDE STATS ================= */}
-      <section className="relative z-10 px-6 md:px-10">
+      <section className="relative z-10 px-4 sm:px-6 md:px-10">
         <div className="mx-auto -mt-10 max-w-7xl">
-          <div className="glass-dark glass-edge grid grid-cols-2 gap-px overflow-hidden rounded-3xl md:grid-cols-4">
+          <div className="glass-dark glass-edge grid grid-cols-2 divide-gold/10 overflow-hidden rounded-3xl md:grid-cols-4 md:divide-x">
             {stats.map((stat) => (
               <div
                 key={stat.label}
-                className="flex flex-col items-center gap-1 px-4 py-7 text-center"
+                className="flex flex-col items-center gap-1 px-3 py-6 text-center sm:px-4 sm:py-7"
               >
-                <span className="font-display text-4xl font-semibold text-gradient-gold md:text-5xl">
+                <span className="font-display text-3xl font-semibold text-gradient-gold sm:text-4xl md:text-5xl">
                   {stat.value}
                 </span>
                 <span className="text-[10px] uppercase tracking-[0.24em] text-cream/55">
@@ -243,7 +243,7 @@ export default function LeManoirHome() {
       </section>
 
       {/* ================= ACTIONS (BENTO VERRE) ================= */}
-      <section id="decouvrir" className="relative px-6 py-20 md:px-10 md:py-28">
+      <section id="decouvrir" className="relative px-4 py-16 sm:px-6 md:px-10 md:py-28">
         <div className="mx-auto max-w-7xl">
           <Reveal className="mb-12 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
@@ -253,17 +253,17 @@ export default function LeManoirHome() {
               </h2>
             </div>
             <p className="max-w-sm text-sm leading-7 text-cream/60">
-              Choisissez votre porte d'entrée : découvrir les appartements, comprendre la
-              réservation, ou retrouver votre espace personnel.
+              Choisissez votre appartement, réservez en quelques clics et retrouvez tout votre
+              séjour dans votre espace.
             </p>
           </Reveal>
 
-          <div className="grid gap-5 md:grid-cols-3 md:auto-rows-[minmax(0,1fr)]">
+          <div className="grid gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 lg:auto-rows-[minmax(0,1fr)]">
             {/* Carte vedette : appartements */}
-            <Reveal className="md:col-span-2 md:row-span-2" delay={0.05}>
+            <Reveal className="sm:col-span-2 lg:row-span-2" delay={0.05}>
               <Link
                 href="/rooms"
-                className="on-dark group relative block h-full min-h-[22rem] overflow-hidden rounded-3xl"
+                className="on-dark group relative block h-full min-h-[20rem] overflow-hidden rounded-3xl sm:min-h-[22rem]"
               >
                 <Image
                   src="/assets/rooms/room1.jpg"
@@ -288,8 +288,8 @@ export default function LeManoirHome() {
                       Nos appartements
                     </h3>
                     <p className="mt-3 max-w-md text-sm leading-6 text-cream/75">
-                      Découvrir les catégories VIP, 2 chambres et 1 chambre — et choisir votre
-                      séjour.
+                      VIP, 2 chambres ou 1 chambre : trouvez l&apos;appartement qui vous
+                      ressemble.
                     </p>
                     <span className="mt-5 inline-flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.22em] text-gold-light">
                       Explorer les suites{" "}
@@ -310,7 +310,7 @@ export default function LeManoirHome() {
                   label: "Comment réserver ?",
                   href: "/comment-reserver",
                   description:
-                    "Comprendre chaque étape, de la demande jusqu'au paiement et au suivi.",
+                    "Réserver, payer, arriver : tout est expliqué en 3 étapes simples.",
                   icon: BookOpenCheck,
                   index: "01"
                 }}
@@ -328,25 +328,25 @@ export default function LeManoirHome() {
       </section>
 
       {/* ================= SANCTUAIRE ================= */}
-      <section className="relative px-6 py-20 md:px-10 md:py-28">
+      <section className="relative px-4 py-16 sm:px-6 md:px-10 md:py-28">
         <BotanicalLeaf
           variant="olive"
           className="pointer-events-none absolute left-[3%] top-16 w-24 rotate-12 text-olive/10 md:w-40"
         />
-        <div className="mx-auto grid max-w-7xl gap-12 md:grid-cols-[1.05fr_0.95fr] md:items-center">
+        <div className="mx-auto grid max-w-7xl gap-10 md:grid-cols-[1.05fr_0.95fr] md:items-center md:gap-12">
           <Reveal className="space-y-6">
             <p className="eyebrow">Votre refuge privé</p>
             <h2 className="font-display text-[clamp(2.2rem,6vw,4.4rem)] font-semibold uppercase leading-[0.95] tracking-[-0.04em]">
               Un sanctuaire <br />
               <span className="text-gradient-gold">de calme.</span>
             </h2>
-            <p className="max-w-xl text-base leading-8 text-cream/70">
+            <p className="max-w-xl text-[15px] leading-7 text-cream/70 sm:text-base sm:leading-8">
               Chaque appartement a été imaginé comme un havre de paix. Bois, pierre, lin et coton
               s'y mêlent pour créer un univers harmonieux, complété par une bibliothèque botanique
               et une sélection musicale soignée. Voyage d'affaires ou escapade romantique, vous y
               trouverez le confort absolu et l'intimité dont vous avez besoin.
             </p>
-            <div className="flex flex-wrap gap-3 pt-2">
+            <div className="flex flex-wrap gap-2 pt-2 sm:gap-3">
               {[
                 "Bois & pierre",
                 "Kitchenette privée",
@@ -355,7 +355,7 @@ export default function LeManoirHome() {
               ].map((tag) => (
                 <span
                   key={tag}
-                  className="rounded-full border border-gold/20 bg-white/5 px-4 py-2 text-[11px] uppercase tracking-[0.16em] text-cream/70 backdrop-blur-md"
+                  className="rounded-full border border-gold/20 bg-white/5 px-3 py-1.5 text-[10px] uppercase tracking-[0.14em] text-cream/70 backdrop-blur-md sm:px-4 sm:py-2 sm:text-[11px] sm:tracking-[0.16em]"
                 >
                   {tag}
                 </span>
@@ -364,7 +364,7 @@ export default function LeManoirHome() {
           </Reveal>
 
           <Reveal delay={0.1} className="relative">
-            <div className="glass-warm glass-edge relative aspect-[4/5] overflow-hidden rounded-[2rem] p-2 shadow-glass-lg">
+            <div className="glass-warm glass-edge relative mx-auto aspect-[4/5] max-h-[70svh] overflow-hidden rounded-[2rem] p-2 shadow-glass-lg md:max-h-none">
               <div className="relative size-full overflow-hidden rounded-[1.6rem]">
                 <Image
                   src="/assets/hero_detail.jpg"
@@ -376,7 +376,7 @@ export default function LeManoirHome() {
                 <div className="absolute inset-0 bg-gradient-to-t from-night/40 to-transparent" />
               </div>
             </div>
-            <div className="glass-dark glass-edge !absolute -bottom-5 -left-5 hidden items-center gap-3 rounded-2xl px-5 py-4 shadow-glass sm:flex">
+            <div className="glass-dark glass-edge !absolute -bottom-5 left-3 hidden items-center gap-3 rounded-2xl px-5 py-4 shadow-glass sm:flex lg:-left-5">
               <span className="grid size-10 place-items-center rounded-full bg-gold/20 text-gold-light">
                 <KeyRound size={18} />
               </span>
@@ -392,7 +392,7 @@ export default function LeManoirHome() {
       </section>
 
       {/* ================= SUITES ================= */}
-      <section id="suites" className="relative px-6 pb-24 md:px-10 md:pb-32">
+      <section id="suites" className="relative px-4 pb-20 sm:px-6 md:px-10 md:pb-32">
         <div className="border-y border-gold/15 py-6">
           <div className="w-full overflow-hidden">
             <span className="single-marquee-text whitespace-nowrap font-display text-[clamp(3rem,9vw,7.5rem)] font-semibold uppercase leading-none tracking-[-0.05em] text-gold/25">
@@ -417,7 +417,7 @@ export default function LeManoirHome() {
           </Link>
         </Reveal>
 
-        <div className="mx-auto mt-10 grid max-w-7xl gap-6 md:grid-cols-3">
+        <div className="mx-auto mt-10 grid max-w-7xl gap-5 sm:grid-cols-2 md:gap-6 lg:grid-cols-3">
           {suites.map((suite, index) => (
             <SuiteRevealCard key={suite.image} suite={suite} index={index} />
           ))}
@@ -428,7 +428,7 @@ export default function LeManoirHome() {
       <Testimonials />
 
       {/* ================= L'ART DE RECEVOIR ================= */}
-      <section className="relative overflow-hidden px-6 py-24 md:px-10 md:py-32">
+      <section className="relative overflow-hidden px-4 py-20 sm:px-6 md:px-10 md:py-32">
         <div className="absolute inset-0 -z-[1] bg-gradient-to-br from-olive/25 via-transparent to-terracotta/15" />
         <ManorMark className="pointer-events-none absolute -left-16 bottom-0 w-[380px] text-cream/[0.05] md:w-[520px]" />
         <div className="mx-auto grid max-w-7xl gap-12 md:grid-cols-[1.15fr_0.85fr] md:items-center">
@@ -440,15 +440,22 @@ export default function LeManoirHome() {
           </Reveal>
 
           <Reveal delay={0.1} className="space-y-8">
-            <p className="text-lg leading-8 text-cream/80">
-              Au Manoir, l'hospitalité est une manière d'être. Nous cultivons le luxe de l'espace,
-              du silence et du détail. Profitez d'appartements entièrement équipés avec kitchenettes
-              privées pour un séjour en toute autonomie, dans un cadre sécurisé et central, idéal
-              pour découvrir les trésors de Cotonou.
+            <p className="text-base leading-7 text-cream/80 sm:text-lg sm:leading-8">
+              Ici, on vous reçoit comme à la maison. Des appartements tout équipés, avec cuisine
+              privée, dans un quartier calme et sécurisé au centre de Cotonou. Vous arrivez, vous
+              posez vos valises, et vous profitez.
             </p>
-            <MagneticButton href="/rooms" variant="outline">
-              Demander une suite <ArrowUpRight size={18} />
-            </MagneticButton>
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap [&>div]:w-full sm:[&>div]:w-auto">
+              <MagneticButton href="/rooms" variant="outline" className="w-full sm:w-auto">
+                Voir nos appartements <ArrowUpRight size={18} />
+              </MagneticButton>
+              <a
+                href={contactMailto()}
+                className="inline-flex items-center justify-center gap-2 rounded-full px-6 py-4 text-[12px] font-bold uppercase tracking-[0.22em] text-cream/70 transition hover:text-gold-light"
+              >
+                <Mail size={16} /> Nous contacter
+              </a>
+            </div>
           </Reveal>
         </div>
       </section>

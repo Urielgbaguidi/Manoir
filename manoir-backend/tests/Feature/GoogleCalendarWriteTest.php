@@ -34,6 +34,10 @@ class GoogleCalendarWriteTest extends TestCase
     {
         parent::setUp();
 
+        // Les scenarios utilisent des dates fixes de septembre 2026 : on fige
+        // l'horloge pour que la suite reste valable apres cette periode.
+        $this->travelTo('2026-09-01 10:00:00');
+
         $this->room = Room::where('apartment_number', 1)->firstOrFail();
 
         config([
@@ -58,6 +62,13 @@ class GoogleCalendarWriteTest extends TestCase
             'deposit_amount' => 27000,
             'status' => 'CONFIRMEE',
         ]);
+    }
+
+    protected function tearDown(): void
+    {
+        $this->travelBack();
+
+        parent::tearDown();
     }
 
     /**

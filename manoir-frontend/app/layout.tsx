@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Inter } from "next/font/google";
 import Footer from "@/components/layout/Footer";
 import Navbar from "@/components/layout/Navbar";
+import SiteChrome from "@/components/layout/SiteChrome";
 import AmbientBackground from "@/components/visual/AmbientBackground";
 import NavigationProgress from "@/components/ui/NavigationProgress";
 import { AuthProvider } from "@/context/AuthContext";
@@ -22,7 +23,7 @@ const bricolage = Bricolage_Grotesque({
 });
 
 export const metadata: Metadata = {
-  title: "Le Manoir | Maison d'hôtes de prestige — Cotonou",
+  title: "Le Manoir | Maison d'hôtes de prestige à Cotonou",
   description:
     "Le Manoir, une parenthèse enchantée au cœur de Cotonou. Appartements de prestige, séjours d'exception et réservation en ligne.",
   keywords: ["Le Manoir", "maison d'hôtes", "appartements", "luxe", "Cotonou", "réservation"]
@@ -67,9 +68,13 @@ export default function RootLayout({
         <NavigationProgress />
         <AuthProvider>
           <ToastProvider>
-            <Navbar />
+            <SiteChrome>
+              <Navbar />
+            </SiteChrome>
             {children}
-            <Footer />
+            <SiteChrome>
+              <Footer />
+            </SiteChrome>
           </ToastProvider>
         </AuthProvider>
       </body>

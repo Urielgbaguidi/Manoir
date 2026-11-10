@@ -111,7 +111,7 @@ export default function InvoicePage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <p className="text-terracotta-light mb-4">{error || "Facture non trouvée"}</p>
-          <Link href="/reservations" className="text-gold-light hover:text-gold underline">
+          <Link href="/espace-client/reservations" className="text-gold-light hover:text-gold underline">
             Retour à mes réservations
           </Link>
         </div>
@@ -125,7 +125,7 @@ export default function InvoicePage() {
       <div className="max-w-4xl mx-auto px-4 mb-4 print:hidden">
         <div className="flex justify-between items-center">
           <Link
-            href="/reservations"
+            href="/espace-client/reservations"
             className="text-gold-light hover:text-gold flex items-center gap-2 text-sm font-semibold uppercase tracking-wider"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

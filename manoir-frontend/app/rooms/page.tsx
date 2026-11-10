@@ -2,10 +2,12 @@
 export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowUpRight, Images, Sparkles } from "lucide-react";
+import { Images, Mail } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import Eyebrow from "@/components/ui/Eyebrow";
 import { api, RoomCategory } from "@/lib/api";
+import { CONTACT_EMAIL, contactMailto } from "@/lib/site";
 
 const fallbackCategories: RoomCategory[] = [
   {
@@ -92,7 +94,7 @@ export default function RoomsPage() {
   }, []);
 
   return (
-    <main className="relative min-h-screen px-6 py-32 text-cream md:px-10">
+    <main className="relative min-h-screen px-4 pb-20 pt-28 text-cream sm:px-6 md:px-10 md:py-32">
       <div className="mx-auto max-w-7xl">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
@@ -100,18 +102,15 @@ export default function RoomsPage() {
           transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
           className="mb-16 text-center"
         >
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-gold/25 bg-white/5 px-4 py-2 backdrop-blur-md">
-            <Sparkles className="h-4 w-4 text-gold-light" />
-            <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cream/85">
-              La Collection du Manoir
-            </span>
-          </div>
+          <Eyebrow centered className="mb-6">
+            La Collection du Manoir
+          </Eyebrow>
           <h1 className="mb-6 font-display text-[clamp(2.6rem,7vw,5rem)] font-semibold uppercase leading-[0.9] tracking-[-0.04em]">
             Nos <span className="text-gradient-gold">Appartements</span>
           </h1>
           <p className="mx-auto max-w-2xl text-lg leading-relaxed text-cream/70">
-            Trois catégories soigneusement pensées pour choisir votre expérience avant de découvrir
-            la galerie complète.
+            Trois façons de séjourner au Manoir. Choisissez celle qui vous ressemble, puis
+            découvrez les photos.
           </p>
         </motion.div>
 
@@ -194,16 +193,19 @@ export default function RoomsPage() {
           <p className="mx-auto mb-8 max-w-xl text-[15px] leading-6 text-cream/65 md:text-base">
             Notre équipe peut vous orienter vers la catégorie la plus adaptée à votre séjour.
           </p>
-          <Link
-            href="/reservations"
+          <a
+            href={contactMailto("Conseil avant réservation | Le Manoir")}
             className="group inline-flex items-center gap-3 rounded-full bg-gradient-to-br from-gold-light to-gold px-8 py-4 text-xs font-bold uppercase tracking-[0.25em] text-night shadow-[0_10px_36px_-10px_rgba(201,164,92,0.7)] transition hover:brightness-105"
           >
+            <Mail size={16} />
             Nous contacter
-            <ArrowUpRight
-              size={16}
-              className="transition-transform group-hover:translate-x-1 group-hover:-translate-y-1"
-            />
-          </Link>
+          </a>
+          <p className="mt-4 text-xs text-cream/50">
+            Ou écrivez-nous directement à{" "}
+            <a href={`mailto:${CONTACT_EMAIL}`} className="font-semibold underline hover:text-gold-light">
+              {CONTACT_EMAIL}
+            </a>
+          </p>
         </motion.section>
       </div>
     </main>

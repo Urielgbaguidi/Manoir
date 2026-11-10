@@ -40,13 +40,13 @@ const testimonials: Testimonial[] = [
     location: "Accra, Ghana",
     rating: 4,
     quote:
-      "Je séjourne au Manoir à chacun de mes passages à Cotonou. Autonomie totale, cadre sécurisé et un confort constant — la sérénité d'un lieu sur lequel on peut compter."
+      "Je séjourne au Manoir à chacun de mes passages à Cotonou. Autonomie totale, cadre sécurisé et un confort constant : un lieu sur lequel on peut compter."
   }
 ];
 
 export default function Testimonials() {
   return (
-    <section id="temoignages" className="relative px-6 py-20 md:px-10 md:py-28">
+    <section id="temoignages" className="relative px-4 py-16 sm:px-6 md:px-10 md:py-28">
       <div className="mx-auto max-w-6xl">
         <Reveal className="mb-12 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
@@ -56,8 +56,8 @@ export default function Testimonials() {
             </h2>
           </div>
           <p className="max-w-sm text-sm leading-7 text-cream/60">
-            Voyages d&apos;affaires, escapades à deux ou échappées au cœur de Cotonou — quelques
-            mots de celles et ceux qui ont poussé notre porte.
+            Voyage d&apos;affaires ou escapade à deux, ils nous ont fait confiance. Voici ce
+            qu&apos;ils en disent.
           </p>
         </Reveal>
 

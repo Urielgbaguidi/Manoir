@@ -13,7 +13,6 @@ import {
   Pause,
   Play,
   ShieldCheck,
-  Sparkles,
   Video,
   Volume2,
   VolumeX,
@@ -157,7 +156,7 @@ const roomDisplayName = (room: Room) => {
   // Les appartements d'une meme categorie portent le meme nom en base
   // (« Appartement 2 Chambres » x4) : sans le numero, le client ne peut pas
   // les distinguer les uns des autres.
-  return room.apartment_number ? `${base} — N°${room.apartment_number}` : base;
+  return room.apartment_number ? `${base} · N°${room.apartment_number}` : base;
 };
 
 const videoPreviewSrc = (video: string) => (video.includes("#") ? video : `${video}#t=0.1`);
@@ -177,22 +176,6 @@ const formatJour = (iso: string) =>
 const libelleCourt = (a: RoomAvailability) =>
   a.status === "occupied" ? "Occupé" : "Disponible";
 
-/**
- * Phrase complète : ce qui intéresse vraiment le client, c'est la date à
- * laquelle il peut venir, pas celle où le logement se libère « techniquement ».
- */
-const libelleDetaille = (a: RoomAvailability) => {
-  if (a.status === "occupied") {
-    return a.occupied_until
-      ? `Occupé jusqu'au ${formatJour(a.occupied_until)}`
-      : "Occupé actuellement";
-  }
-
-  return a.free_until
-    ? `Disponible jusqu'au ${formatJour(a.free_until)}`
-    : "Aucune réservation à venir";
-};
-
 /** Pastille posée sur la photo : opaque, pour rester lisible sur toute image. */
 function AvailabilityBadge({ availability }: { availability?: RoomAvailability }) {
   if (!availability) return null;
@@ -211,26 +194,21 @@ function AvailabilityBadge({ availability }: { availability?: RoomAvailability }
   );
 }
 
-/** Bandeau dans le corps de la carte, ou l'information est vraiment lue. */
+/** Étiquette simple « Disponible » / « Occupé » dans la fiche, sans date. */
 function AvailabilityStrip({ availability }: { availability?: RoomAvailability }) {
   if (!availability) return null;
 
   const occupe = availability.status === "occupied";
 
   return (
-    <div
-      className={`mt-5 flex items-center gap-3 rounded-xl border-l-4 px-4 py-3 ${
-        occupe
-          ? "border-l-terracotta bg-terracotta/10"
-          : "border-l-olive bg-olive/10"
+    <span
+      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] font-black uppercase tracking-widest text-white ${
+        occupe ? "bg-terracotta" : "bg-olive"
       }`}
     >
-      <span
-        className={`h-3 w-3 shrink-0 rounded-full ${occupe ? "bg-terracotta" : "bg-olive"}`}
-        aria-hidden
-      />
-      <p className="text-[13px] font-bold text-cream">{libelleDetaille(availability)}</p>
-    </div>
+      <span className="h-2 w-2 rounded-full bg-white/90" aria-hidden />
+      {libelleCourt(availability)}
+    </span>
   );
 }
 
@@ -460,7 +438,7 @@ export default function RoomCategoryDetailPage() {
         setAlternatives([]);
         setSuggestions([]);
         setOwnWindow(null);
-        showToast("Impossible de verifier la disponibilite pour le moment.", "error");
+        showToast("Impossible de vérifier la disponibilité pour le moment.", "error");
       } finally {
         setChecking(false);
       }
@@ -510,12 +488,12 @@ export default function RoomCategoryDetailPage() {
     if (!category) return;
 
     if (category.is_blocked) {
-      showToast("Cette categorie est indisponible pour le moment.", "info");
+      showToast("Cette catégorie est indisponible pour le moment.", "error");
       return;
     }
 
     if (activeRoomBlocked) {
-      showToast("Cet appartement est indisponible pour le moment.", "info");
+      showToast("Cet appartement est indisponible pour le moment.", "error");
       return;
     }
 
@@ -523,7 +501,7 @@ export default function RoomCategoryDetailPage() {
     const retour = `/rooms/${category.slug}?${unitQuery}reserve=1`;
 
     if (!user) {
-      showToast("Creez votre compte pour continuer la demande de reservation.", "info");
+      showToast("Créez votre compte pour finaliser votre réservation.", "info");
       router.push(`/auth/register?redirect=${encodeURIComponent(retour)}`);
       return;
     }
@@ -532,7 +510,7 @@ export default function RoomCategoryDetailPage() {
     // confirmee : autant amener le client au bon endroit plutot que de le
     // laisser remplir un formulaire qui sera rejete.
     if (user.email_verified_at === null) {
-      showToast("Confirmez votre adresse email pour reserver.", "info");
+      showToast("Confirmez votre adresse e-mail pour réserver.", "info");
       router.push(`/auth/confirmer-email?redirect=${encodeURIComponent(retour)}`);
       return;
     }
@@ -556,17 +534,17 @@ export default function RoomCategoryDetailPage() {
     }
 
     if (new Date(checkOut) <= new Date(checkIn)) {
-      showToast("La date de depart doit etre posterieure a la date d'arrivee.", "error");
+      showToast("La date de départ doit être après la date d'arrivée.", "error");
       return;
     }
 
     if (activeRoomBlocked) {
-      showToast("Cet appartement VIP est indisponible pour le moment.", "info");
+      showToast("Cet appartement VIP est indisponible pour le moment.", "error");
       return;
     }
 
     if (available !== true) {
-      showToast("Cette categorie n'est pas disponible sur ces dates.", "info");
+      showToast("Aucun appartement libre sur ces dates. Essayez d'autres dates.", "error");
       return;
     }
 
@@ -585,7 +563,7 @@ export default function RoomCategoryDetailPage() {
       // Le paiement s'ouvre tout seul a l'arrivee : l'appartement n'est retenu
       // que quelques heures, faire chercher le bouton au client lui ferait
       // perdre une partie de ce delai.
-      router.push(`/espace-client?payer=${response.reservation.id}`);
+      router.push(`/espace-client/reservations?payer=${response.reservation.id}`);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Une erreur est survenue.", "error");
     } finally {
@@ -648,8 +626,7 @@ export default function RoomCategoryDetailPage() {
             transition={{ duration: 0.7 }}
             className="mb-12 max-w-3xl"
           >
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-gold/15 bg-white/5 px-4 py-2 backdrop-blur-md">
-              <Sparkles className="h-4 w-4 text-cream" />
+            <div className="mb-6 inline-flex items-center rounded-full border border-gold/15 bg-white/5 px-4 py-2 backdrop-blur-md">
               <span className="text-[10px] font-semibold uppercase tracking-widest text-cream">
                 {category.rank_label || "Selection"}
               </span>
@@ -699,8 +676,6 @@ export default function RoomCategoryDetailPage() {
                     <p className="min-h-[4rem] text-[15px] leading-6 text-cream/70">
                       {unit.description}
                     </p>
-
-                    <AvailabilityStrip availability={unit.availability} />
 
                     <div className="mt-6 flex items-end justify-between gap-4 border-t border-gold/15 pt-5">
                       <div>
@@ -774,8 +749,7 @@ export default function RoomCategoryDetailPage() {
               <span className="text-cream/70">{detailTitle}</span>
             </nav>
 
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-gold/15 bg-white/5 px-4 py-2 backdrop-blur-md">
-              <Sparkles className="h-4 w-4 text-cream" />
+            <div className="mb-6 inline-flex items-center rounded-full border border-gold/15 bg-white/5 px-4 py-2 backdrop-blur-md">
               <span className="text-[10px] font-semibold uppercase tracking-widest text-cream">
                 {category.rank_label}
               </span>
@@ -948,7 +922,7 @@ export default function RoomCategoryDetailPage() {
             </div>
 
             <aside id="reservation" className="scroll-mt-28">
-              <div className="glass-dark glass-edge sticky top-28 space-y-6 rounded-3xl p-8">
+              <div className="glass-dark glass-edge !sticky top-28 space-y-6 rounded-3xl p-8">
                 <div className="border-b border-gold/15 pb-5">
                   <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-gold/80">
                     Demande de reservation

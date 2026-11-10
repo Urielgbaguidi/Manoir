@@ -11,13 +11,16 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "apexcharts": "^4.7.0",
     "clsx": "^2.1.1",
     "framer-motion": "^11.18.2",
     "gsap": "^3.12.7",
     "lucide-react": "^0.468.0",
     "next": "^15.5.29",
     "react": "^19.0.0",
+    "react-apexcharts": "^1.7.0",
     "react-dom": "^19.0.0",
+    "react-toastify": "^11.0.5",
     "sharp": "^0.35.5",
     "tailwind-merge": "^2.5.4"
   },

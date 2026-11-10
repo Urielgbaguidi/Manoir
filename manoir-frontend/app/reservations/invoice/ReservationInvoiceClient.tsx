@@ -122,7 +122,7 @@ const apartmentLabel = (reservation: Reservation) => {
             ? "1 Chambre"
             : room.name;
 
-    return `Appartement N°${room.apartment_number} — ${label}`;
+    return `Appartement N°${room.apartment_number} · ${label}`;
   }
 
   return categoryLabels[reservation.category_type || ""] || room?.name || "Appartement";
@@ -186,7 +186,7 @@ export default function ReservationInvoicePage() {
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
           <p className="mb-4 text-red-600">{error || "Document non trouvé."}</p>
-          <Link href="/reservations" className="text-amber-700 underline">
+          <Link href="/espace-client/reservations" className="text-amber-700 underline">
             Retour à mes réservations
           </Link>
         </div>
@@ -301,7 +301,7 @@ export default function ReservationInvoicePage() {
       <div className="mx-auto mb-4 max-w-4xl px-4 print:hidden">
         <div className="flex items-center justify-between">
           <Link
-            href="/reservations"
+            href="/espace-client/reservations"
             className={`flex items-center gap-2 ${theme.text} ${theme.hoverText}`}
           >
             Retour aux réservations
