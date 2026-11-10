@@ -44,6 +44,7 @@ class EmailVerificationCodeTest extends TestCase
             'name' => 'Marie Test',
             'email' => 'marie@manoir.test',
             'phone' => '+22997000000',
+            'country' => 'BJ',
             'password' => 'password123',
         ])->assertCreated();
 

@@ -8,7 +8,9 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import AuthShell, { AuthDivider, AuthField, AuthSubmit } from "@/components/auth/AuthShell";
 import GoogleSignInButton from "@/components/auth/GoogleSignInButton";
+import type { CountryCode } from "libphonenumber-js/min";
 import CountryCodeSelect from "@/components/ui/CountryCodeSelect";
+import { DEFAULT_DIAL_COUNTRY, checkPhone } from "@/lib/phone";
 
 /** Force indicative du mot de passe : 0 à 4. */
 function passwordScore(value: string) {
@@ -29,8 +31,9 @@ function RegisterContent() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
-  const [countryCode, setCountryCode] = useState("+229");
+  const [phoneCountry, setPhoneCountry] = useState<CountryCode>(DEFAULT_DIAL_COUNTRY);
   const [phone, setPhone] = useState("");
+  const [phoneError, setPhoneError] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -56,13 +59,22 @@ function RegisterContent() {
       showToast("Les deux mots de passe ne correspondent pas.", "error");
       return;
     }
+    const phoneCheck = checkPhone(phone, phoneCountry);
+    if (!phoneCheck.valid) {
+      setPhoneError(phoneCheck.message);
+      showToast(phoneCheck.message, "error");
+      document.getElementById("phone")?.focus();
+      return;
+    }
 
     setLoading(true);
     const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
-    const fullPhone = phone.trim().startsWith("+") ? phone.trim() : `${countryCode} ${phone.trim()}`;
 
     try {
-      await register(fullName, email.trim(), fullPhone, password, redirectTo);
+      // Numéro enregistré au format international lisible : « +229 01 97 00 00 00 ».
+      // Plus de champ « Pays de résidence » : le pays transmis à l'API (qui
+      // l'exige) est celui de l'indicatif téléphonique choisi.
+      await register(fullName, email.trim(), phoneCheck.international, password, phoneCountry, redirectTo);
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Une erreur est survenue", "error");
       setLoading(false);
@@ -138,19 +150,43 @@ function RegisterContent() {
             Téléphone<span className="ml-0.5 text-gold">*</span>
           </label>
           <div className="flex gap-2">
-            <CountryCodeSelect value={countryCode} onChange={setCountryCode} />
+            <CountryCodeSelect
+              value={phoneCountry}
+              onChange={(code) => {
+                setPhoneCountry(code);
+                setPhoneError("");
+              }}
+            />
             <input
               id="phone"
               type="tel"
               autoComplete="tel-national"
               inputMode="tel"
               value={phone}
-              onChange={(event) => setPhone(event.target.value)}
+              onChange={(event) => {
+                setPhone(event.target.value);
+                if (phoneError) setPhoneError("");
+              }}
+              onBlur={() => {
+                if (!phone.trim()) return;
+                const result = checkPhone(phone, phoneCountry);
+                setPhoneError(result.valid ? "" : result.message);
+              }}
               required
-              className="glass-input h-12 w-full min-w-0 flex-1 rounded-xl px-4 text-[15px] outline-none"
-              placeholder="01 00 00 00 00"
+              aria-invalid={Boolean(phoneError)}
+              aria-describedby={phoneError ? "phone-hint" : undefined}
+              className={`glass-input h-12 w-full min-w-0 flex-1 rounded-xl px-4 text-[15px] outline-none ${
+                phoneError ? "!border-red-500/70" : ""
+              }`}
+              placeholder="Votre numéro"
             />
           </div>
+          {/* Plus de texte d'aide permanent : seul un numéro invalide est signalé. */}
+          {phoneError && (
+            <p id="phone-hint" role="alert" className="text-xs leading-5 text-red-500">
+              {phoneError}
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">

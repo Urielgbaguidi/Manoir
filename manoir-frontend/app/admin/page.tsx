@@ -14,16 +14,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { AdminCard, AdminPageHeader } from "@/components/dashboard/admin/AdminShell";
-import {
-  ActivityChart,
-  CategoryDonut,
-  MonthlyRevenueChart,
-  OccupancyGauge
-} from "@/components/dashboard/admin/charts";
+import { MonthlyRevenueChart, OccupancyGauge } from "@/components/dashboard/admin/charts";
 import { useToast } from "@/context/ToastContext";
 import { api, type AdminStatsResponse, type Reservation } from "@/lib/api";
 import {
-  categoryLabels,
   formatCurrency,
   formatDay,
   parseDay,
@@ -72,24 +66,18 @@ export default function AdminDashboardPage() {
 
   const series = useMemo(() => {
     const revenue = Array(12).fill(0) as number[];
-    const requests = Array(12).fill(0) as number[];
-    const confirmed = Array(12).fill(0) as number[];
 
     reservations.forEach((reservation) => {
-      const created = new Date(reservation.created_at);
-      if (created.getFullYear() === year) requests[created.getMonth()] += 1;
-
       (reservation.payments || [])
         .filter((payment) => payment.status === "success")
         .forEach((payment) => {
           const paid = new Date(payment.paid_at || payment.created_at);
           if (paid.getFullYear() !== year) return;
           revenue[paid.getMonth()] += Number(payment.amount || 0);
-          if (payment.payment_type !== "stay") confirmed[paid.getMonth()] += 1;
         });
     });
 
-    return { revenue, requests, confirmed };
+    return { revenue };
   }, [reservations, year]);
 
   const insights = useMemo(() => {
@@ -121,15 +109,11 @@ export default function AdminDashboardPage() {
     const refunds = reservations.filter((reservation) => reservation.status === "ANNULEE").length;
     const awaitingDeposit = reservations.filter((reservation) => reservation.status === "VALIDEE_PAIEMENT_REQUIS").length;
 
-    const byCategory = (["vip", "deux_chambres", "une_chambre"] as const).map(
-      (type) => reservations.filter((reservation) => reservation.category_type === type).length
-    );
-
     const recent = [...reservations]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .slice(0, 6);
 
-    return { current, revenueChange, arrivals, departures, extensions, refunds, awaitingDeposit, byCategory, recent };
+    return { current, revenueChange, arrivals, departures, extensions, refunds, awaitingDeposit, recent };
   }, [reservations]);
 
   const todo = [
@@ -254,49 +238,8 @@ export default function AdminDashboardPage() {
           </AdminCard>
         </div>
 
-        {/* Activité */}
-        <div className="col-span-12">
-          <AdminCard className="px-5 pb-5 pt-5 sm:px-6 sm:pt-6">
-            <CardTitle
-              title="Activité"
-              subtitle={`Demandes reçues et séjours confirmés en ${year}`}
-              action={<YearSelect years={years} value={year} onChange={setYear} />}
-            />
-            <ActivityChart requests={series.requests} confirmed={series.confirmed} />
-          </AdminCard>
-        </div>
-
-        {/* Répartition par catégorie */}
-        <div className="col-span-12 xl:col-span-5">
-          <AdminCard className="h-full p-5 sm:p-6">
-            <CardTitle title="Par catégorie" subtitle="Toutes réservations confondues" />
-            <CategoryDonut
-              labels={[categoryLabels.vip, categoryLabels.deux_chambres, categoryLabels.une_chambre]}
-              values={insights.byCategory}
-            />
-            <ul className="mt-4 space-y-3">
-              {(["vip", "deux_chambres", "une_chambre"] as const).map((type, index) => {
-                const total = insights.byCategory.reduce((sum, value) => sum + value, 0) || 1;
-                const value = insights.byCategory[index];
-                const colors = ["bg-gold", "bg-olive-light", "bg-terracotta"];
-                return (
-                  <li key={type}>
-                    <div className="mb-1.5 flex items-center justify-between text-sm">
-                      <span className="text-cream/75">{categoryLabels[type]}</span>
-                      <span className="font-semibold text-cream">{value}</span>
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-                      <div className={cn("h-full rounded-full", colors[index])} style={{ width: `${(value / total) * 100}%` }} />
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </AdminCard>
-        </div>
-
         {/* Réservations récentes */}
-        <div className="col-span-12 xl:col-span-7">
+        <div className="col-span-12">
           <AdminCard className="h-full overflow-hidden px-4 pb-3 pt-4 sm:px-6">
             <div className="mb-4 flex items-center justify-between gap-2">
               <h3 className="text-lg font-semibold text-cream">Réservations récentes</h3>
@@ -343,7 +286,6 @@ export default function AdminDashboardPage() {
                                 <p className="truncate text-sm font-medium text-cream" title={reservationTitle(reservation)}>
                                   {reservationTitle(reservation)}
                                 </p>
-                                <span className="text-xs text-cream/50">Réf. #{reservation.id}</span>
                               </div>
                             </div>
                           </td>

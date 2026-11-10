@@ -236,7 +236,7 @@ function AdminHeader({ mobileOpen, onToggle }: { mobileOpen: boolean; onToggle: 
 
           <form onSubmit={onSearch} className="hidden w-full max-w-[430px] md:block">
             <label className="relative block">
-              <Search size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-cream/45" />
+              <Search size={18} className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-cream/50" />
               <input
                 ref={inputRef}
                 type="search"

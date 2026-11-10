@@ -18,6 +18,7 @@ class AuthController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'phone' => 'required|string|max:30',
+            'country' => 'required|string|size:2|alpha:ascii',
             'password' => 'required|string|min:8',
         ]);
 
@@ -25,6 +26,7 @@ class AuthController extends Controller
             'name' => $request->name,
             'email' => $request->email,
             'phone' => $request->phone,
+            'country' => strtoupper($request->country),
             'password' => Hash::make($request->password),
             'is_admin' => false,
         ]);

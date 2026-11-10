@@ -4,20 +4,12 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Lock, Save, User, XCircle } from "lucide-react";
 import { ClientPageHeader } from "@/components/dashboard/client/ClientShell";
-import CountryCodeSelect, { COUNTRY_CODES } from "@/components/ui/CountryCodeSelect";
+import type { CountryCode } from "libphonenumber-js/min";
+import CountryCodeSelect from "@/components/ui/CountryCodeSelect";
 import { api } from "@/lib/api";
+import { DEFAULT_DIAL_COUNTRY, checkPhone, isDialCountry, splitStoredPhone } from "@/lib/phone";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-
-/** "+229 01 97 00 00 00" -> { code: "+229", local: "01 97 00 00 00" } */
-function splitPhone(phone?: string | null) {
-  const value = (phone || "").trim();
-  const match = [...COUNTRY_CODES]
-    .sort((a, b) => b.code.length - a.code.length)
-    .find((country) => value.startsWith(country.code));
-  if (!match) return { code: "+229", local: value };
-  return { code: match.code, local: value.slice(match.code.length).trim() };
-}
 
 const normalizePhone = (value?: string | null) => (value || "").replace(/\s+/g, "");
 
@@ -26,7 +18,7 @@ export default function ProfilePage() {
   const { user, loading: authLoading, refreshUser } = useAuth();
   const { showToast } = useToast();
   const [name, setName] = useState("");
-  const [countryCode, setCountryCode] = useState("+229");
+  const [phoneCountry, setPhoneCountry] = useState<CountryCode>(DEFAULT_DIAL_COUNTRY);
   const [phone, setPhone] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
@@ -47,9 +39,11 @@ export default function ProfilePage() {
   useEffect(() => {
     if (user) {
       setName(user.name || "");
-      const parts = splitPhone(user.phone);
-      setCountryCode(parts.code);
-      setPhone(parts.local);
+      // Sans numéro enregistré, l'indicatif part du pays de résidence.
+      const fallback = isDialCountry(user.country) ? user.country : DEFAULT_DIAL_COUNTRY;
+      const parts = splitStoredPhone(user.phone, fallback);
+      setPhoneCountry(parts.country);
+      setPhone(parts.national);
     }
   }, [user]);
 
@@ -63,13 +57,13 @@ export default function ProfilePage() {
       return;
     }
 
-    const digits = phone.replace(/\D/g, "");
-    if (digits.length < 8 || digits.length > 15) {
-      setProfileError("Saisissez un numéro de téléphone valide (8 chiffres minimum).");
+    const phoneCheck = checkPhone(phone, phoneCountry);
+    if (!phoneCheck.valid) {
+      setProfileError(phoneCheck.message);
       return;
     }
 
-    const fullPhone = phone.trim().startsWith("+") ? phone.trim() : `${countryCode} ${phone.trim()}`;
+    const fullPhone = phoneCheck.international;
 
     setSavingProfile(true);
     try {
@@ -209,7 +203,7 @@ export default function ProfilePage() {
                   Téléphone
                 </label>
                 <div className="flex gap-2">
-                  <CountryCodeSelect value={countryCode} onChange={setCountryCode} />
+                  <CountryCodeSelect value={phoneCountry} onChange={setPhoneCountry} />
                   <input
                     id="profile-phone"
                     type="tel"

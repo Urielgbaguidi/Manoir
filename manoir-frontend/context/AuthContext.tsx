@@ -18,6 +18,7 @@ interface AuthContextType {
     email: string,
     phone: string,
     password: string,
+    country: string,
     redirectTo?: string
   ) => Promise<void>;
   logout: (redirectTo?: string) => void;
@@ -107,9 +108,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     email: string,
     phone: string,
     password: string,
+    country: string,
     redirectTo?: string
   ) => {
-    const response = await api.register({ name, email, phone, password });
+    const response = await api.register({ name, email, phone, password, country });
     setUser(response.user);
     toast.success("Compte créé ! Saisissez le code reçu par e-mail.", { toastId: "register-success" });
     // Le code vient d'être envoyé et le serveur refuse toute réservation tant
