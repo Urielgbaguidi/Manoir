@@ -459,9 +459,6 @@ function AdminReservations() {
                       <p className="font-display text-xl font-bold uppercase text-cream">
                         {reservationApartmentLabel(reservation)}
                       </p>
-                      <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-cream/45">
-                        Reservation #{reservation.id}
-                      </p>
                     </div>
                     <span className="w-fit rounded-full border border-olive/40 bg-olive/15 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-olive-light">
                       Occupe
@@ -576,7 +573,7 @@ function AdminReservations() {
                     Recherche
                   </span>
                   <div className="relative">
-                    <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-cream/40" />
+                    <Search className="pointer-events-none absolute left-4 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-cream/50" />
                     <input
                       type="search"
                       value={searchQuery}
@@ -687,9 +684,6 @@ function AdminReservations() {
                     <div className="flex flex-wrap items-center gap-3">
                       <span className="font-display text-lg font-bold uppercase text-cream">
                         {reservationApartmentLabel(reservation)}
-                      </span>
-                      <span className="text-[10px] uppercase tracking-widest text-cream/45">
-                        Ref #{reservation.id}
                       </span>
                       <span
                         className={`rounded border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${statusClasses(reservation.status)}`}
@@ -861,7 +855,7 @@ function AdminReservations() {
                           : "Rejeter la prolongation"}
                   </h3>
                   <p className="mt-1 text-[10px] uppercase tracking-widest text-cream/50">
-                    Reservation #{selectedRes.id} - {selectedRes.user?.name}
+                    {selectedRes.user?.name || "Client"}
                   </p>
                 </div>
 

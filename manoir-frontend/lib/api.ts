@@ -170,6 +170,7 @@ export interface User {
   name: string;
   email: string;
   phone?: string;
+  country?: string | null;
   is_admin: boolean;
   is_super_admin: boolean;
   email_verified_at?: string | null;
@@ -591,6 +592,7 @@ class ApiClient {
     email: string;
     phone: string;
     password: string;
+    country: string;
   }): Promise<{ token: string; user: User }> {
     const response = await this.request<{ token: string; user: User }>("/register", {
       method: "POST",

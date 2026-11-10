@@ -346,21 +346,6 @@ export default function LeManoirHome() {
               et une sélection musicale soignée. Voyage d'affaires ou escapade romantique, vous y
               trouverez le confort absolu et l'intimité dont vous avez besoin.
             </p>
-            <div className="flex flex-wrap gap-2 pt-2 sm:gap-3">
-              {[
-                "Bois & pierre",
-                "Kitchenette privée",
-                "Bibliothèque botanique",
-                "Cadre sécurisé"
-              ].map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-full border border-gold/20 bg-white/5 px-3 py-1.5 text-[10px] uppercase tracking-[0.14em] text-cream/70 backdrop-blur-md sm:px-4 sm:py-2 sm:text-[11px] sm:tracking-[0.16em]"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
           </Reveal>
 
           <Reveal delay={0.1} className="relative">

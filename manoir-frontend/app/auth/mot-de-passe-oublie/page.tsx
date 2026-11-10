@@ -85,7 +85,7 @@ export default function MotDePasseOubliePage() {
                   Email
                 </label>
                 <div className="relative">
-                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-cream/40">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 z-10 flex items-center pl-4 text-cream/50">
                     <Mail size={16} />
                   </div>
                   <input
