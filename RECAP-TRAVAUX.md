@@ -134,4 +134,4 @@ De **7 a 21 tests** (57 assertions) : `PasswordResetTest` (7) et `EmailVerificat
 
 - `.env.example` **cree** — il n'existait pas, la commande `copy .env.example .env` d'INSTALL.md echouait.
 - INSTALL.md : retrait de `db:seed --class=RoomSeeder`, qui plante (`UNIQUE constraint failed: rooms.slug`) car les migrations creent deja les 8 appartements.
-- `suppressHydrationWarning` sur `<body>` (`app/layout.tsx`) : les extensions de navigateur injectent leurs attributs avant l'hydratation React et declenchaient une erreur console a tort.
+- `suppressHydrationWarning` sur `<body>` (`app/layout.tsx`) : les extensions de navigateur injectent leurs attributs avant l'hydratation React et declenchaient une erreur console a tort

@@ -1,6 +1,6 @@
 "use client";
 
-import { CreditCard, FileText, Receipt, Wallet } from "lucide-react";
+import { Receipt } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ClientPageHeader } from "@/components/dashboard/client/ClientShell";
@@ -57,15 +57,6 @@ export default function PaiementsPage() {
     [reservations]
   );
 
-  const totals = useMemo(() => {
-    const success = rows.filter((row) => row.payment.status === "success");
-    return {
-      paid: success.reduce((sum, row) => sum + Number(row.payment.amount || 0), 0),
-      count: success.length,
-      documents: reservations.reduce((sum, reservation) => sum + availableDocuments(reservation).length, 0)
-    };
-  }, [rows, reservations]);
-
   const withDocuments = reservations.filter((reservation) => availableDocuments(reservation).length > 0);
 
   return (
@@ -74,12 +65,6 @@ export default function PaiementsPage() {
         title="Paiements & factures"
         description="Vos règlements et l'ensemble de vos documents de séjour, au même endroit."
       />
-
-      <div className="mb-8 grid gap-4 sm:grid-cols-3">
-        <SummaryCard icon={Wallet} label="Total réglé" value={loading ? "…" : formatCurrency(totals.paid)} />
-        <SummaryCard icon={CreditCard} label="Paiements réussis" value={loading ? "…" : String(totals.count)} />
-        <SummaryCard icon={FileText} label="Documents disponibles" value={loading ? "…" : String(totals.documents)} />
-      </div>
 
       {/* Historique des paiements */}
       <section className="glass-warm glass-edge mb-8 overflow-hidden rounded-3xl">
@@ -205,28 +190,6 @@ export default function PaiementsPage() {
           </div>
         )}
       </section>
-    </div>
-  );
-}
-
-function SummaryCard({
-  icon: Icon,
-  label,
-  value
-}: {
-  icon: typeof Wallet;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="glass-warm glass-edge flex items-center gap-4 rounded-2xl p-5">
-      <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-gold/15 text-gold-light">
-        <Icon size={22} />
-      </span>
-      <div className="min-w-0">
-        <p className="text-sm text-cream/55">{label}</p>
-        <p className="truncate font-display text-xl font-semibold text-cream">{value}</p>
-      </div>
     </div>
   );
 }

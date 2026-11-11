@@ -1,16 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import {
-  AlertCircle,
-  ArrowRight,
-  BadgeCheck,
-  CalendarDays,
-  Hash,
-  Moon,
-  UserRound,
-  Wallet
-} from "lucide-react";
+import { AlertCircle, ArrowRight, CalendarCheck2, FileText, Wallet } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -21,7 +12,7 @@ import { useToast } from "@/context/ToastContext";
 import { api, type Reservation } from "@/lib/api";
 import {
   ACTIVE_STATUSES,
-  countNights,
+  availableDocuments,
   effectiveStatus,
   formatCurrency,
   formatDay,
@@ -65,15 +56,18 @@ export default function EspaceClientAccueil() {
     }));
     const active = withStatus.filter((item) => ACTIVE_STATUSES.includes(item.status));
     const toPay = active.filter((item) => item.status === "VALIDEE_PAIEMENT_REQUIS");
-    const completed = withStatus.filter((item) => item.status === "SEJOUR_PAYE").length;
     const totalPaid = reservations.reduce(
       (sum, reservation) =>
         sum + successfulPayments(reservation).reduce((acc, payment) => acc + Number(payment.amount || 0), 0),
       0
     );
-    const nights = withStatus
-      .filter((item) => item.status === "SEJOUR_PAYE" || item.status === "CONFIRMEE")
-      .reduce((sum, item) => sum + countNights(item.reservation.check_in, item.reservation.check_out), 0);
+    const paymentsCount = reservations.reduce((sum, reservation) => sum + successfulPayments(reservation).length, 0);
+    // Factures = factures d'acompte + factures de séjour émises (les bons de
+    // réservation, de séjour et d'annulation ne sont pas des factures).
+    const documents = reservations.flatMap((reservation) => availableDocuments(reservation));
+    const depositInvoices = documents.filter((kind) => kind === "deposit").length;
+    const stayInvoices = documents.filter((kind) => kind === "stay").length;
+    const invoices = depositInvoices + stayInvoices;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -84,13 +78,20 @@ export default function EspaceClientAccueil() {
           (parseDay(a.reservation.check_in)?.getTime() ?? 0) - (parseDay(b.reservation.check_in)?.getTime() ?? 0)
       )[0];
 
-    return { active, toPay, completed, totalPaid, nights, next };
+    return {
+      active,
+      toPay,
+      totalPaid,
+      paymentsCount,
+      invoices,
+      depositInvoices,
+      stayInvoices,
+      bookings: reservations.length,
+      next
+    };
   }, [reservations]);
 
   if (!user) return null;
-
-  const clientNumber = `LM-${String(user.id).padStart(5, "0")}`;
-  const memberSince = formatDay(user.created_at, { month: "long", year: "numeric" });
 
   return (
     <div className="space-y-8">
@@ -105,11 +106,40 @@ export default function EspaceClientAccueil() {
 
       <EmailVerificationBanner user={user} />
 
-      {/* Cartes d'identité */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <IdentityCard icon={UserRound} label="Nom" value={user.name} />
-        <IdentityCard icon={Hash} label="N° client" value={clientNumber} />
-        <IdentityCard icon={CalendarDays} label="Membre depuis" value={memberSince} />
+      {/* Chiffres clés : icône à gauche, puis libellé, chiffre et détail. */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <StatCard
+          icon={FileText}
+          tone="gold"
+          label="Factures"
+          value={loading ? "…" : String(summary.invoices)}
+          detail={
+            loading
+              ? "Chargement…"
+              : `${summary.depositInvoices} d'acompte · ${summary.stayInvoices} de séjour`
+          }
+          href="/espace-client/paiements"
+        />
+        <StatCard
+          icon={Wallet}
+          tone="olive"
+          label="Total réglé (FCFA)"
+          value={loading ? "…" : Number(summary.totalPaid || 0).toLocaleString("fr-FR")}
+          detail={
+            loading
+              ? "Chargement…"
+              : `${summary.paymentsCount} paiement${summary.paymentsCount > 1 ? "s" : ""} réussi${summary.paymentsCount > 1 ? "s" : ""}`
+          }
+          href="/espace-client/paiements"
+        />
+        <StatCard
+          icon={CalendarCheck2}
+          tone="terracotta"
+          label="Réservations effectuées"
+          value={loading ? "…" : String(summary.bookings)}
+          detail={loading ? "Chargement…" : `${summary.active.length} en cours`}
+          href="/espace-client/reservations"
+        />
       </div>
 
       {/* Action requise */}
@@ -194,42 +224,56 @@ export default function EspaceClientAccueil() {
           </div>
         </section>
 
-        {/* Colonne latérale : prochain séjour + chiffres */}
-        <div className="space-y-6">
+        {/* Colonne latérale : prochain séjour */}
+        <div>
           <NextStayCard loading={loading} next={summary.next} />
-
-          <div className="glass-warm glass-edge grid grid-cols-1 divide-y divide-gold/15 rounded-3xl py-2">
-            <Stat icon={BadgeCheck} value={loading ? "…" : String(summary.completed)} label="Séjours effectués" />
-            <Stat icon={Moon} value={loading ? "…" : String(summary.nights)} label="Nuits réservées" />
-            <Stat icon={Wallet} value={loading ? "…" : formatCurrency(summary.totalPaid)} label="Total réglé" />
-          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function IdentityCard({
+const statTones = {
+  gold: "bg-gold/15 text-gold-light",
+  olive: "bg-olive/15 text-olive-light",
+  terracotta: "bg-terracotta/15 text-terracotta-light"
+} as const;
+
+/** Carte de stat : icône carrée colorée à gauche ; libellé, chiffre et détail empilés à droite. */
+function StatCard({
   icon: Icon,
+  tone,
   label,
-  value
+  value,
+  detail,
+  href
 }: {
   icon: ComponentType<{ size?: number; className?: string }>;
+  tone: keyof typeof statTones;
   label: string;
   value: string;
+  detail: string;
+  href: string;
 }) {
   return (
-    <div className="glass-warm glass-edge flex items-center justify-between gap-3 rounded-2xl px-4 py-3.5 sm:flex-col sm:justify-center sm:px-5 sm:py-6 sm:text-center">
-      <div className="flex shrink-0 items-center gap-3">
-        <span className="grid size-10 place-items-center rounded-xl bg-gold/15 text-gold-light">
-          <Icon size={20} />
-        </span>
-        <span className="text-[15px] font-bold text-cream sm:text-[17px]">{label} :</span>
+    <Link
+      href={href}
+      className="glass-warm glass-edge flex items-start gap-4 rounded-3xl p-5 lg:p-4 xl:p-6"
+    >
+      <span className={cn("grid size-12 shrink-0 place-items-center rounded-2xl", statTones[tone])}>
+        <Icon size={22} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[12px] font-semibold uppercase leading-4 tracking-[0.08em] text-cream/60">{label}</p>
+        <p
+          className="mt-1.5 whitespace-nowrap font-display text-[1.75rem] font-bold leading-none text-cream md:text-xl xl:text-[1.75rem]"
+          title={value}
+        >
+          {value}
+        </p>
+        <p className="mt-2 text-[13px] leading-5 text-cream/55">{detail}</p>
       </div>
-      <p className="min-w-0 truncate text-right text-[15px] text-cream/80 sm:w-full sm:text-center sm:text-[17px]" title={value}>
-        {value}
-      </p>
-    </div>
+    </Link>
   );
 }
 
@@ -249,28 +293,6 @@ function InlineLink({ href, children }: { href: string; children: ReactNode }) {
     <Link href={href} className="font-semibold text-gold-light underline underline-offset-4 hover:text-gold">
       {children}
     </Link>
-  );
-}
-
-function Stat({
-  icon: Icon,
-  value,
-  label
-}: {
-  icon: ComponentType<{ size?: number; className?: string }>;
-  value: string;
-  label: string;
-}) {
-  return (
-    <div className="flex items-center gap-4 px-5 py-3.5 text-left sm:px-6 sm:py-4">
-      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-gold/15 text-gold-light">
-        <Icon size={18} />
-      </span>
-      <div className="min-w-0">
-        <p className="truncate font-display text-lg font-semibold text-cream sm:text-xl">{value}</p>
-        <p className="text-[11px] uppercase tracking-[0.14em] text-cream/50">{label}</p>
-      </div>
-    </div>
   );
 }
 
