@@ -27,10 +27,32 @@ class UserFactory extends Factory
         return [
             'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
+            'phone' => '+22901'.fake()->numerify('########'),
+            'country' => 'BJ',
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
         ];
+    }
+
+    public function admin(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_admin' => true,
+        ]);
+    }
+
+    /**
+     * Compte cree via Google, qui n'a pas encore saisi son telephone.
+     */
+    public function fromGoogle(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'google_id' => (string) fake()->unique()->numerify('1#################'),
+            'password' => null,
+            'phone' => null,
+            'country' => null,
+        ]);
     }
 
     /**

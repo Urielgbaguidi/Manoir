@@ -132,7 +132,7 @@ class AdminRoomController extends Controller
 
         $path = $request->file('file')->store("rooms/{$room->slug}/{$data['kind']}", 'public');
         $url = Storage::url($path);
-        if (!str_starts_with($url, 'http://') && !str_starts_with($url, 'https://')) {
+        if (! str_starts_with($url, 'http://') && ! str_starts_with($url, 'https://')) {
             $url = $request->getSchemeAndHttpHost().$url;
         }
         $media = $room->{$data['kind']} ?? [];
@@ -154,6 +154,15 @@ class AdminRoomController extends Controller
     public function destroy(string $id): JsonResponse
     {
         $room = Room::findOrFail($id);
+
+        // La suppression d'un appartement efface en cascade ses reservations
+        // (factures, paiements) : on la refuse des qu'il a un historique.
+        if ($room->reservations()->exists()) {
+            return response()->json([
+                'message' => 'Cet appartement a deja des reservations : il ne peut pas etre supprime. Bloquez-le plutot pour le retirer de la vente.',
+            ], 422);
+        }
+
         $room->delete();
         $this->syncCategoryPrice($room);
 

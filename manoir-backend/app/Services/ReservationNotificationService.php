@@ -46,14 +46,8 @@ class ReservationNotificationService
             ->limit(30)
             ->get()
             ->each(function (Reservation $reservation) {
-                $paidDeposit = $reservation->payments
-                    ->first(fn ($payment) => $payment->payment_type === 'deposit' && $payment->status === 'success');
-                $depositValue = (int) ($reservation->deposit_amount
-                    ?: $reservation->total_price
-                    ?: $paidDeposit?->amount
-                    ?: 0);
                 $amount = number_format(
-                    $depositValue,
+                    (int) ($reservation->status === 'CONFIRMEE' ? $reservation->deposit_amount : $reservation->stay_amount),
                     0,
                     ',',
                     ' '
@@ -68,7 +62,7 @@ class ReservationNotificationService
                     'VALIDEE_PAIEMENT_REQUIS' => self::sendOnce(
                         $reservation,
                         'reservation_approved',
-                        "Votre demande #{$reservation->id} a été acceptée. Payez l'acompte de {$amount} FCFA dans votre espace client avant l’expiration du délai pour confirmer la réservation."
+                        "Votre demande #{$reservation->id} a été validée. Réglez votre séjour ({$amount} FCFA) dans votre espace client avant l’expiration du délai."
                     ),
                     'CONFIRMEE' => self::sendOnce(
                         $reservation,
@@ -78,7 +72,7 @@ class ReservationNotificationService
                     'SEJOUR_PAYE' => self::sendOnce(
                         $reservation,
                         'stay_paid',
-                        "Le paiement de votre séjour pour la réservation #{$reservation->id} est confirmé. Votre facture est disponible dans votre espace client."
+                        "Le paiement de votre séjour pour la réservation #{$reservation->id} est confirmé. Votre Bon de Séjour est disponible dans votre espace client."
                     ),
                     'REFUSEE' => self::sendOnce(
                         $reservation,
@@ -88,17 +82,17 @@ class ReservationNotificationService
                     'EXPIREE' => self::sendOnce(
                         $reservation,
                         'reservation_expired',
-                        "La réservation #{$reservation->id} a expiré : l’acompte n’a pas été payé dans le délai prévu. L’appartement a été remis à disposition."
+                        "La réservation #{$reservation->id} a expiré : le séjour n’a pas été payé dans le délai prévu. L’appartement a été remis à disposition."
                     ),
                     'ANNULEE' => self::sendOnce(
                         $reservation,
                         'reservation_cancelled',
-                        "Votre réservation #{$reservation->id} est annulée. Le montant prévu pour le remboursement est de ".number_format((int) ($reservation->cancellation_refund_amount ?? 0), 0, ',', ' ')." FCFA."
+                        "Votre réservation #{$reservation->id} est annulée. Le montant prévu pour le remboursement est de ".number_format((int) ($reservation->cancellation_refund_amount ?? 0), 0, ',', ' ').' FCFA.'
                     ),
                     'REMBOURSEE' => self::sendOnce(
                         $reservation,
                         'refund_completed',
-                        "Le remboursement de ".number_format((int) ($reservation->cancellation_refund_amount ?? 0), 0, ',', ' ')." FCFA pour la réservation #{$reservation->id} a été confirmé."
+                        'Le remboursement de '.number_format((int) ($reservation->cancellation_refund_amount ?? 0), 0, ',', ' ')." FCFA pour la réservation #{$reservation->id} a été confirmé."
                     ),
                     'LIBEREE' => self::sendOnce(
                         $reservation,

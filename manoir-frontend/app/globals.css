@@ -31,6 +31,9 @@
 }
 
 html {
+  /* Position non statique exigée par framer-motion (useScroll) pour mesurer
+     correctement les decalages de defilement. */
+  position: relative;
   min-height: 100%;
   scroll-behavior: smooth;
   background: var(--night);
@@ -693,6 +696,41 @@ body.overlay-open .grain-layer::after {
 }
 :root[data-theme="light"] .admin-panel {
   background: #fffdf8;
+}
+/* Tableaux (DataTable) : traits de séparation bien visibles, dans les deux thèmes */
+.dt-line {
+  border-color: rgb(201 164 92 / 0.32);
+}
+/* Grille complète : traits horizontaux ET verticaux, comme DataTables */
+.dt-grid th,
+.dt-grid td {
+  border: 1px solid rgb(201 164 92 / 0.24);
+}
+.dt-grid thead th {
+  background-color: rgb(255 255 255 / 0.03);
+}
+:root[data-theme="light"] .dt-line {
+  border-color: rgb(61 40 23 / 0.2);
+}
+:root[data-theme="light"] .dt-grid th,
+:root[data-theme="light"] .dt-grid td {
+  border-color: rgb(61 40 23 / 0.16);
+}
+:root[data-theme="light"] .dt-grid thead th {
+  background-color: rgb(61 40 23 / 0.03);
+}
+/* Piste d'un interrupteur éteint (components/ui/Switch) */
+.switch-track {
+  background-color: rgb(255 255 255 / 0.18);
+}
+.switch-track:hover {
+  background-color: rgb(255 255 255 / 0.26);
+}
+:root[data-theme="light"] .switch-track {
+  background-color: rgb(61 40 23 / 0.16);
+}
+:root[data-theme="light"] .switch-track:hover {
+  background-color: rgb(61 40 23 / 0.24);
 }
 /* Infobulles ApexCharts aux couleurs du Manoir */
 .apexcharts-tooltip.apexcharts-theme-light {

@@ -73,6 +73,27 @@ return [
             'replace_placeholders' => true,
         ],
 
+        /*
+        | Evenements de securite (connexions, echecs, revocations, rejeux,
+        | CSRF...). Jamais de jeton ni de mot de passe dedans. Sur un
+        | hebergement au disque ephemere (Render), mettre
+        | LOG_SECURITY_CHANNELS=stderr pour ne pas les perdre.
+        */
+        'security' => [
+            'driver' => 'stack',
+            // Valeur `null` (tests) : journal desactive.
+            'channels' => array_values(array_filter(explode(',', (string) env('LOG_SECURITY_CHANNELS', 'security_file')))) ?: ['null'],
+            'ignore_exceptions' => false,
+        ],
+
+        'security_file' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/security.log'),
+            'level' => 'info',
+            'days' => env('LOG_SECURITY_DAYS', 90),
+            'replace_placeholders' => true,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

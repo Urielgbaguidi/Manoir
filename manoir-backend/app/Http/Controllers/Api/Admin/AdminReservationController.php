@@ -3,13 +3,12 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\AdminTableRequest;
 use App\Mail\RefundCompleted;
-use App\Mail\ReservationApproved;
-use App\Mail\ReservationRejected;
 use App\Models\Reservation;
 use App\Models\Room;
 use App\Models\RoomCategory;
-use App\Services\GoogleCalendarWriter;
+use App\Services\Notifications\RequestMailer;
 use App\Services\ReservationNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,29 +18,77 @@ use Illuminate\Support\Facades\Mail;
 
 class AdminReservationController extends Controller
 {
-    public function index(Request $request): JsonResponse
+    /**
+     * Demandes de reservation, filtrees et paginees cote serveur.
+     *
+     * Filtres : statut (liste), periode (sejour ou date de demande),
+     * appartement, client (nom, email, telephone), recherche libre.
+     */
+    public function index(AdminTableRequest $request): JsonResponse
     {
         Reservation::expireOverduePaymentRequests();
 
-        $query = Reservation::with(['user', 'room', 'payments', 'releasedByAdmin']);
+        $query = Reservation::query()
+            ->with(['user', 'room', 'payments', 'releasedByAdmin', 'extensions', 'vouchers'])
+            ->when($request->validated('status'), fn ($q, $statuses) => $q->whereIn('status', $statuses))
+            ->when($request->validated('room_id'), fn ($q, $roomId) => $q->where('room_id', $roomId))
+            ->when($request->filled('category_type'), fn ($q) => $q->where('category_type', (string) $request->input('category_type')));
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
+        $this->applyPeriod($query, $request, 'check_in', 'check_out');
+
+        if ($client = $request->validated('client')) {
+            $term = $request->likeTerm($client);
+            $query->whereHas('user', fn ($q) => $q->where(fn ($q) => $q
+                ->where('name', 'like', $term)
+                ->orWhere('email', 'like', $term)
+                ->orWhere('phone', 'like', $term)));
         }
 
-        if ($request->filled('room_id')) {
-            $query->where('room_id', $request->room_id);
+        if ($search = $request->validated('search')) {
+            $term = $request->likeTerm($search);
+            $query->where(fn ($q) => $q
+                ->when(ctype_digit(ltrim($search, '#')), fn ($q) => $q->orWhere('id', (int) ltrim($search, '#')))
+                ->orWhereHas('user', fn ($q) => $q->where('name', 'like', $term)->orWhere('email', 'like', $term)->orWhere('phone', 'like', $term))
+                ->orWhereHas('room', fn ($q) => $q->where('name', 'like', $term)->orWhere('apartment_number', 'like', $term)));
         }
 
-        if ($request->filled('category_type')) {
-            $query->where('category_type', $request->category_type);
+        $sort = $request->sortColumn([
+            'id' => 'id',
+            'created_at' => 'created_at',
+            'check_in' => 'check_in',
+            'check_out' => 'check_out',
+            'status' => 'status',
+            'amount' => 'stay_amount',
+        ], 'created_at');
+
+        return response()->json(
+            $query->orderBy($sort, $request->direction())->orderByDesc('id')->paginate($request->perPage())
+        );
+    }
+
+    /**
+     * Periode : chevauchement avec le sejour, ou date de la demande.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<*>  $query
+     */
+    private function applyPeriod($query, AdminTableRequest $request, string $startColumn, string $endColumn): void
+    {
+        $from = $request->validated('date_from');
+        $to = $request->validated('date_to');
+
+        if (! $from && ! $to) {
+            return;
         }
 
-        // Les filtres front (statut, etc.) s'appliquent sur l'ensemble renvoye :
-        // on ne plafonne plus a 20 (perte de donnees). Page large + pagination possible.
-        $perPage = min(max((int) $request->input('per_page', 200), 1), 500);
+        if ($request->validated('date_field') === 'created') {
+            $query->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
+                ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to));
 
-        return response()->json($query->orderByDesc('created_at')->paginate($perPage));
+            return;
+        }
+
+        $query->when($to, fn ($q) => $q->whereDate($startColumn, '<=', $to))
+            ->when($from, fn ($q) => $q->whereDate($endColumn, '>=', $from));
     }
 
     public function occupiedRooms(): JsonResponse
@@ -107,7 +154,7 @@ class AdminReservationController extends Controller
         ]);
     }
 
-    public function approve(Request $request, string $id): JsonResponse
+    public function approve(Request $request, string $id, RequestMailer $mailer): JsonResponse
     {
         $request->validate([
             'admin_notes' => 'nullable|string|max:1000',
@@ -189,27 +236,24 @@ class AdminReservationController extends Controller
             return response()->json(['message' => $exception->getMessage()], 422);
         }
 
-        try {
-            Mail::to($reservation->user->email)->send(new ReservationApproved($reservation->fresh(['room', 'user'])));
-        } catch (\Exception $exception) {
-            Log::warning('Failed to send approval email: '.$exception->getMessage());
-        }
-
         $approvedReservation = $reservation->fresh(['room', 'user', 'payments']);
-        $depositAmount = number_format((int) ($approvedReservation->deposit_amount ?? $approvedReservation->total_price), 0, ',', ' ');
+        $amount = number_format($approvedReservation->amountDue(), 0, ',', ' ');
         ReservationNotificationService::sendOnce(
             $approvedReservation,
             'reservation_approved',
-            "Votre demande #{$approvedReservation->id} a été acceptée. Payez l'acompte de {$depositAmount} FCFA dans votre espace client avant le {$approvedReservation->payment_deadline->format('d/m/Y à H:i')} pour confirmer la réservation."
+            "Votre demande #{$approvedReservation->id} a été validée. Réglez votre séjour ({$amount} FCFA) dans votre espace client avant le {$approvedReservation->payment_deadline->format('d/m/Y à H:i')}."
         );
 
+        // Confirmation au client par email (file d'attente, sans bloquer).
+        $mailer->reservationApproved($approvedReservation);
+
         return response()->json([
-            'message' => 'Demande confirmee. Le client a 24h pour payer la acompte de réservation.',
-            'reservation' => $reservation->fresh(['room', 'user', 'payments']),
+            'message' => 'Demande validee. Le client a ete prevenu par email et peut maintenant payer son sejour.',
+            'reservation' => $approvedReservation,
         ]);
     }
 
-    public function reject(Request $request, string $id): JsonResponse
+    public function reject(Request $request, string $id, RequestMailer $mailer): JsonResponse
     {
         $request->validate([
             'admin_notes' => 'required|string|max:1000',
@@ -223,16 +267,23 @@ class AdminReservationController extends Controller
             ], 422);
         }
 
+        $hasPaymentInProgress = $reservation->payments()
+            ->whereIn('status', ['pending', 'success'])
+            ->where('created_at', '>', now()->subMinutes(30))
+            ->exists();
+
+        if ($hasPaymentInProgress) {
+            return response()->json([
+                'message' => 'Un paiement est en cours pour cette demande : elle ne peut pas etre refusee pour le moment.',
+            ], 422);
+        }
+
         $reservation->update([
             'status' => 'REFUSEE',
             'admin_notes' => $request->admin_notes,
         ]);
 
-        try {
-            Mail::to($reservation->user->email)->send(new ReservationRejected($reservation->fresh(['room', 'user'])));
-        } catch (\Exception $exception) {
-            Log::warning('Failed to send rejection email: '.$exception->getMessage());
-        }
+        $mailer->reservationRejected($reservation->fresh(['room', 'user']));
 
         ReservationNotificationService::sendOnce(
             $reservation,
@@ -272,111 +323,12 @@ class AdminReservationController extends Controller
         ReservationNotificationService::sendOnce(
             $reservation,
             'refund_completed',
-            "Le remboursement de ".number_format((int) ($reservation->cancellation_refund_amount ?? 0), 0, ',', ' ')." FCFA pour la réservation #{$reservation->id} a été confirmé."
+            'Le remboursement de '.number_format((int) ($reservation->cancellation_refund_amount ?? 0), 0, ',', ' ')." FCFA pour la réservation #{$reservation->id} a été confirmé."
         );
 
         return response()->json([
             'message' => 'Remboursement marque comme effectue.',
             'reservation' => $reservation,
-        ]);
-    }
-
-    public function approveExtension(Request $request, string $id): JsonResponse
-    {
-        $request->validate([
-            'admin_notes' => 'nullable|string|max:1000',
-        ]);
-
-        $reservation = Reservation::with(['room', 'user', 'payments'])->findOrFail($id);
-
-        if ($reservation->extension_status !== 'EN_ATTENTE' || ! $reservation->extension_requested_check_out) {
-            return response()->json([
-                'message' => 'Aucune demande de prolongation en attente pour cette reservation.',
-            ], 422);
-        }
-
-        if ($reservation->status !== 'CONFIRMEE') {
-            return response()->json([
-                'message' => 'Seule une reservation confirmee peut etre prolongee.',
-            ], 422);
-        }
-
-        $currentCheckOut = $reservation->check_out->copy()->startOfDay();
-        $requestedCheckOut = $reservation->extension_requested_check_out->copy()->startOfDay();
-
-        if ($requestedCheckOut->lessThanOrEqualTo($currentCheckOut)) {
-            return response()->json([
-                'message' => 'La nouvelle date de depart n\'est plus valide.',
-            ], 422);
-        }
-
-        if (! $reservation->room->isAvailableForDates(
-            $currentCheckOut->toDateString(),
-            $requestedCheckOut->toDateString(),
-            $reservation->id
-        )) {
-            return response()->json([
-                'message' => 'Cet appartement n\'est plus disponible jusqu\'a la date demandee.',
-            ], 422);
-        }
-
-        $category = RoomCategory::where('type', $reservation->category_type ?: $reservation->room->type)->first();
-        $pricePerNight = (int) ($reservation->room->base_price ?: $category?->price_per_night ?: 0);
-        $nights = max(1, $reservation->check_in->copy()->startOfDay()->diffInDays($requestedCheckOut));
-
-        $reservation->update([
-            'check_out' => $requestedCheckOut,
-            'stay_amount' => $nights * $pricePerNight,
-            'extension_status' => 'APPROUVEE',
-            'extension_processed_at' => now(),
-            'extension_admin_notes' => $request->admin_notes,
-        ]);
-
-        // La date de depart a bouge : l'evenement de l'agenda doit suivre, sans
-        // quoi les nuits gagnees paraitraient libres a l'equipe.
-        app(GoogleCalendarWriter::class)->publier($reservation->loadMissing(['room', 'user']));
-
-        ReservationNotificationService::sendOnce(
-            $reservation,
-            'extension_approved',
-            "Votre demande de prolongation #{$reservation->id} a été acceptée. Votre nouveau départ est prévu le {$requestedCheckOut->format('d/m/Y')} et le montant du séjour est maintenant de ".number_format((int) $reservation->stay_amount, 0, ',', ' ')." FCFA."
-        );
-
-        return response()->json([
-            'message' => 'Prolongation acceptee. La date de depart et le montant du sejour ont ete mis a jour.',
-            'reservation' => $reservation->fresh(['room', 'user', 'payments']),
-        ]);
-    }
-
-    public function rejectExtension(Request $request, string $id): JsonResponse
-    {
-        $request->validate([
-            'admin_notes' => 'required|string|max:1000',
-        ]);
-
-        $reservation = Reservation::with(['room', 'user', 'payments'])->findOrFail($id);
-
-        if ($reservation->extension_status !== 'EN_ATTENTE') {
-            return response()->json([
-                'message' => 'Aucune demande de prolongation en attente pour cette reservation.',
-            ], 422);
-        }
-
-        $reservation->update([
-            'extension_status' => 'REFUSEE',
-            'extension_processed_at' => now(),
-            'extension_admin_notes' => $request->admin_notes,
-        ]);
-
-        ReservationNotificationService::sendOnce(
-            $reservation,
-            'extension_rejected',
-            "Votre demande de prolongation #{$reservation->id} a été refusée. Motif : {$request->admin_notes}."
-        );
-
-        return response()->json([
-            'message' => 'Prolongation refusee avec motif.',
-            'reservation' => $reservation->fresh(['room', 'user', 'payments']),
         ]);
     }
 

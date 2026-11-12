@@ -21,6 +21,18 @@ class ReservationInvoicePdfController extends Controller
             ->findOrFail($id);
 
         $documentType = $data['type'];
+
+        // Le Bon de Sejour n'existe qu'apres le paiement : il est genere par
+        // PaymentService et rendu par StayVoucherController.
+        if ($documentType === 'stay-voucher') {
+            $voucher = $reservation->vouchers()->whereNull('stay_extension_id')->first();
+
+            if (! $voucher) {
+                abort(422, 'Le Bon de Séjour sera disponible après le paiement de votre séjour.');
+            }
+
+            return app(StayVoucherController::class)->renderPdf($voucher);
+        }
         $isInvoice = in_array($documentType, ['deposit', 'stay'], true);
         $paymentType = $documentType === 'stay' ? 'stay' : 'deposit';
         $payment = $isInvoice

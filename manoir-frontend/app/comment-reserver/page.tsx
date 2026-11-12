@@ -13,73 +13,72 @@ import {
 
 const reservationSteps = [
   {
-    title: "Choisir un appartement",
-    text: "Le client consulte les categories, les photos, les videos, la description et le prix par nuit. Il choisit ensuite l'appartement precis qui l'interesse, avec son etat de disponibilite.",
+    title: "Dates et appartement",
+    text: "Le client consulte les categories, les photos, les videos et le prix par nuit, choisit l'appartement precis qui l'interesse puis ses dates d'arrivee et de depart. La disponibilite s'affiche aussitot.",
     icon: CalendarCheck
   },
   {
-    title: "Creer son profil",
-    text: "Au moment de reserver, le client cree son compte avec son nom, son email, son telephone et un mot de passe. S'il possede deja un compte, il peut se connecter.",
+    title: "Vos informations",
+    text: "Le client se connecte ou cree son compte (email confirme et telephone obligatoires), indique le nombre de voyageurs et ses demandes speciales, puis verifie le recapitulatif.",
     icon: UserPlus
   },
   {
-    title: "Reserver",
-    text: "Le client choisit la date d'arrivee, la date de depart et ajoute ses demandes speciales. La reservation est enregistree aussitot : il n'y a aucune validation a attendre.",
+    title: "Demande envoyee",
+    text: "La demande est gratuite : rien n'est paye a cette etape. Elle passe en attente de validation par l'equipe du Manoir, et le client est prevenu par email des qu'elle est traitee.",
     icon: FileText
   },
   {
-    title: "Payer l'acompte sous 12h",
-    text: "L'appartement est retenu 12 heures, le temps de regler l'acompte de 30 % du sejour. Passe ce delai sans paiement, la reservation expire et le logement repart a la location : un autre client peut alors le prendre.",
+    title: "Paiement du sejour",
+    text: "Une fois la demande validee, le paiement s'ouvre dans l'espace client, avec une heure limite. Le client regle le sejour complet en ligne, par Mobile Money (MTN, Moov, Celtiis) ou par carte bancaire, via FeexPay.",
     icon: CreditCard
   },
   {
-    title: "Commencer le sejour",
-    text: "A la date d'arrivee, la reservation devient une occupation reelle. Le client ne peut plus annuler la reservation depuis son espace client.",
+    title: "Confirme et Bon de Sejour",
+    text: "Des que le paiement est confirme par FeexPay, la reservation est confirmee et le Bon de Sejour est disponible au telechargement. Il est a presenter a l'arrivee.",
     icon: CheckCircle2
-  },
-  {
-    title: "Payer le sejour",
-    text: "Le client regle le solde du sejour depuis son espace client. L'acompte deja verse en est deduit : acompte + solde = prix du sejour. Apres paiement, la reservation passe dans l'historique.",
-    icon: CreditCard
   }
 ];
 
 const keyRules = [
   {
-    title: "Premier paye, premier servi",
-    text: "Reserver met l'appartement de cote, sans le garantir. Tant que l'acompte n'est pas regle, la reservation reste fragile : c'est le paiement qui la rend ferme.",
-    icon: CalendarCheck
+    title: "Validation avant paiement",
+    text: "Aucun paiement n'est demande a l'envoi de la demande. Le paiement ne s'ouvre qu'apres validation par l'equipe du Manoir.",
+    icon: ShieldCheck
   },
   {
-    title: "Expiration automatique",
-    text: "Une reservation expire si l'acompte n'est pas paye dans les 12h, ou si la date d'arrivee est passee. L'appartement est alors libere sans intervention.",
+    title: "Delai de paiement",
+    text: "Apres validation, le sejour doit etre regle avant l'heure limite affichee. Passe ce delai, ou si la date d'arrivee est depassee, la demande expire et l'appartement est remis a la location.",
     icon: Clock3
   },
   {
     title: "Annulation",
-    text: "Le client peut annuler jusqu'au jour de l'arrivee inclus. L'appartement se relibere aussitot. Une fois la date d'arrivee passee, le bouton d'annulation disparait.",
+    text: "Une demande pas encore payee peut etre annulee sans frais jusqu'au jour de l'arrivee inclus. Pour un sejour deja paye, contactez l'equipe du Manoir.",
     icon: XCircle
   },
   {
     title: "Prolongation du sejour",
-    text: "Le client peut demander une prolongation seulement si le sejour a commence, qu'au moins une journee est passee et que le sejour n'est pas encore paye.",
-    icon: ShieldCheck
+    text: "Pendant un sejour paye, apres au moins une journee sur place et avant la date de depart, le client peut demander une prolongation. Elle est validee par l'equipe, puis reglee en ligne : un nouveau Bon de Sejour est alors emis.",
+    icon: CalendarCheck
   }
 ];
 
 const statusRows = [
   [
-    "VALIDEE_PAIEMENT_REQUIS",
-    "La reservation est enregistree et l'appartement retenu. L'acompte doit etre paye avant l'heure limite affichee, au plus tard 12h apres la reservation."
+    "EN_ATTENTE",
+    "La demande est envoyee et attend la validation de l'equipe du Manoir. Rien n'est a payer."
   ],
-  ["CONFIRMEE", "L'acompte est paye. La reservation est definitivement confirmee."],
-  ["SEJOUR_PAYE", "Les frais de sejour ont ete regles. La reservation passe dans l'historique."],
+  [
+    "VALIDEE_PAIEMENT_REQUIS",
+    "La demande est validee. Le paiement du sejour est ouvert dans l'espace client et doit etre fait avant l'heure limite affichee."
+  ],
+  ["SEJOUR_PAYE", "Le sejour est paye et confirme. Le Bon de Sejour est disponible."],
+  ["CONFIRMEE", "Ancien parcours : reservation confirmee par le versement d'un acompte."],
   ["REFUSEE", "La demande a ete refusee par l'administration."],
   [
     "EXPIREE",
-    "Le delai de paiement est depasse, ou la date d'arrivee est passee sans paiement. Le paiement est bloque et l'appartement est libere."
+    "Le delai de paiement est depasse, ou la date d'arrivee est passee sans paiement. Le paiement est ferme et l'appartement est libere."
   ],
-  ["ANNULEE", "Le client a annule sa reservation avant le debut de l'occupation."],
+  ["ANNULEE", "Le client a annule sa demande avant le debut du sejour."],
   ["REMBOURSEE", "L'administration a confirme le remboursement."],
   [
     "LIBEREE",
@@ -88,10 +87,11 @@ const statusRows = [
 ];
 
 const documentRows = [
-  ["Bon de Reservation", "Visible des la reservation enregistree, avant le paiement de l'acompte."],
-  ["Facture Acompte", "Visible apres paiement de l'acompte de reservation."],
-  ["Bon du Sejour", "Visible quand la reservation est confirmee et que le sejour reste a regler."],
-  ["Facture Sejour", "Visible apres paiement des frais de sejour."],
+  ["Bon de Sejour", "Emis automatiquement des que le paiement du sejour est confirme."],
+  [
+    "Bon de Sejour de prolongation",
+    "Emis pour chaque prolongation payee, avec la nouvelle date de depart."
+  ],
   ["Bon d'Annulation", "Visible si le client annule sa reservation."]
 ];
 
@@ -111,9 +111,9 @@ export default function HowToReservePage() {
               Comment <span className="text-gradient-gold">reserver</span> au Manoir
             </h1>
             <p className="mt-6 max-w-3xl text-lg leading-8 text-cream/70">
-              Cette page explique tout le parcours : choix de l'appartement, creation du compte,
-              validation par l'administration, acompte de reservation, occupation reelle, documents,
-              paiement du sejour, historique, annulation et prolongation.
+              Cette page explique tout le parcours : choix de l'appartement et des dates, envoi de
+              la demande, validation par l'equipe du Manoir, paiement en ligne du sejour, Bon de
+              Sejour, annulation et prolongation.
             </p>
           </div>
 
@@ -122,13 +122,13 @@ export default function HowToReservePage() {
               <Clock3 className="mt-1 h-6 w-6 flex-shrink-0 text-gold-light" />
               <div>
                 <h2 className="font-display text-3xl font-semibold uppercase leading-none">
-                  Delai de <span className="text-gradient-gold">paiement</span>
+                  Payer apres <span className="text-gradient-gold">validation</span>
                 </h2>
                 <p className="mt-4 text-sm leading-7 text-cream/70">
-                  Reserver retient l'appartement pendant 12 heures, le temps de regler l'acompte de
-                  30 % du sejour. Passe ce delai sans paiement, ou si la date d'arrivee est
-                  depassee, la reservation expire : le paiement est bloque et l'appartement repart
-                  a la location, ou un autre client peut le prendre.
+                  Envoyer une demande est gratuit. Des qu'elle est validee, vous etes prevenu par
+                  email et le paiement du sejour s'ouvre dans votre espace client, avec une heure
+                  limite. Passe ce delai sans paiement, la demande expire et l'appartement repart a
+                  la location.
                 </p>
               </div>
             </div>
@@ -206,13 +206,13 @@ export default function HowToReservePage() {
             </h2>
             <div className="mt-7 space-y-5 text-sm leading-7 text-cream/70">
               <p>
-                L'acompte confirme la reservation. Elle est calculee selon le nombre de jours entre
-                la date de demande et la date d'arrivee.
+                Le sejour se paie en une fois, apres validation de la demande : nombre de nuits
+                multiplie par le prix par nuit. Mobile Money (MTN, Moov, Celtiis) ou carte bancaire,
+                via la plateforme securisee FeexPay.
               </p>
               <p>
-                Les frais de sejour correspondent au nombre de nuits multiplie par le prix par nuit.
-                Apres paiement du sejour, la reservation quitte les demandes en cours et passe dans
-                l'historique.
+                Le paiement est toujours verifie aupres de FeexPay avant d'etre confirme. Le Bon de
+                Sejour est ensuite disponible dans l'espace client.
               </p>
             </div>
             <div className="mt-7 divide-y divide-gold/10 rounded-2xl border border-gold/15 bg-white/5">
@@ -253,10 +253,9 @@ export default function HowToReservePage() {
                   Annulation
                 </h2>
                 <p className="mt-3 text-sm leading-7 text-cream/70">
-                  Le client peut annuler tant que la date d'arrivee n'est pas passee, que
-                  l'acompte soit deja regle ou non. L'appartement se relibere aussitot. Si un
-                  acompte a ete verse, le montant rembourse lui est indique avant qu'il ne
-                  confirme.
+                  Une demande en attente de validation ou de paiement peut etre annulee sans frais
+                  jusqu'au jour de l'arrivee inclus : l'appartement se relibere aussitot. Pour un
+                  sejour deja paye, contactez l'equipe du Manoir.
                 </p>
               </div>
             </div>
@@ -270,9 +269,8 @@ export default function HowToReservePage() {
                   Espace <span className="text-gradient-gold">client</span>
                 </h2>
                 <p className="mt-3 text-sm leading-7 text-cream/70">
-                  L'espace client centralise les demandes en cours, l'historique, les paiements, les
-                  documents, le compte a rebours, la gestion du profil et les demandes de
-                  prolongation.
+                  L'espace client suit chaque demande etape par etape : validation, paiement avec
+                  compte a rebours, Bons de Sejour, historique, profil et demandes de prolongation.
                 </p>
               </div>
             </div>

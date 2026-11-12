@@ -87,10 +87,13 @@ function GoogleGlyph() {
  */
 export default function GoogleSignInButton({
   mode = "signin",
-  redirectTo
+  redirectTo,
+  onTwoFactor
 }: {
   mode?: "signin" | "signup";
   redirectTo?: string;
+  /** Compte protégé par la 2FA : la page affiche la saisie du code. */
+  onTwoFactor?: (challengeToken: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
@@ -106,6 +109,8 @@ export default function GoogleSignInButton({
   loginRef.current = loginWithGoogle;
   const toastRef = useRef(showToast);
   toastRef.current = showToast;
+  const twoFactorRef = useRef(onTwoFactor);
+  twoFactorRef.current = onTwoFactor;
 
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID) return;
@@ -127,7 +132,18 @@ export default function GoogleSignInButton({
             }
             setPending(true);
             try {
-              await loginRef.current(response.credential, redirectRef.current);
+              const result = await loginRef.current(response.credential, redirectRef.current);
+              if (result.kind === "two_factor") {
+                if (twoFactorRef.current) {
+                  twoFactorRef.current(result.challengeToken);
+                } else {
+                  toastRef.current(
+                    "Votre compte est protégé par la double authentification : connectez-vous depuis la page de connexion.",
+                    "info"
+                  );
+                  window.location.href = "/auth/login";
+                }
+              }
             } catch (error) {
               toastRef.current(
                 error instanceof Error ? error.message : "Connexion Google impossible.",

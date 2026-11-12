@@ -16,7 +16,7 @@ return [
     */
 
     'defaults' => [
-        'guard' => env('AUTH_GUARD', 'web'),
+        'guard' => env('AUTH_GUARD', 'api'),
         'passwords' => env('AUTH_PASSWORD_BROKER', 'users'),
     ],
 
@@ -40,6 +40,13 @@ return [
     'guards' => [
         'web' => [
             'driver' => 'session',
+            'provider' => 'users',
+        ],
+
+        // Jetons d'acces JWT (cookie HttpOnly ou en-tete Authorization),
+        // resolus par App\Services\Auth\JwtRequestAuthenticator.
+        'api' => [
+            'driver' => 'jwt',
             'provider' => 'users',
         ],
     ],

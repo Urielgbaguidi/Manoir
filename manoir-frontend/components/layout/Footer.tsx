@@ -1,17 +1,25 @@
+"use client";
+
 import { ArrowUpRight, Mail, MapPin, Phone } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import ManorMark from "@/components/visual/ManorMark";
+import { useAuth } from "@/context/AuthContext";
+import { isAdminUser } from "@/lib/roles";
 import { CONTACT_EMAIL, contactMailto } from "@/lib/site";
 
 export default function Footer() {
   const year = new Date().getFullYear();
+  const { user } = useAuth();
+  const isAdmin = isAdminUser(user);
 
   const nav = [
     { label: "Accueil", href: "/" },
     { label: "Nos appartements", href: "/rooms" },
     { label: "Comment réserver", href: "/comment-reserver" },
-    { label: "Mon espace", href: "/espace-client" }
+    isAdmin
+      ? { label: "Back-office", href: "/admin" }
+      : { label: "Mon espace", href: "/espace-client" }
   ];
 
   const contacts = [

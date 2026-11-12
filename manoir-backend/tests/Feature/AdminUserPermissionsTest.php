@@ -38,17 +38,12 @@ class AdminUserPermissionsTest extends TestCase
         $this->assertFalse($user->fresh()->is_admin);
     }
 
-    public function test_super_admin_cannot_be_demoted_or_deleted(): void
+    public function test_super_admin_cannot_be_demoted(): void
     {
         [$superAdmin, $superToken] = $this->authenticatedAdmin(true);
-        [, $adminToken] = $this->authenticatedAdmin();
 
         $this->withToken($superToken)
             ->putJson("/api/admin/users/{$superAdmin->id}/toggle-admin")
-            ->assertForbidden();
-
-        $this->withToken($adminToken)
-            ->deleteJson("/api/admin/users/{$superAdmin->id}")
             ->assertForbidden();
 
         $this->assertDatabaseHas('users', [
@@ -58,22 +53,94 @@ class AdminUserPermissionsTest extends TestCase
         ]);
     }
 
-    public function test_regular_admin_can_delete_a_client_but_not_an_admin(): void
+    /**
+     * Aucun administrateur, pas meme le super administrateur, ne peut
+     * supprimer un compte : la route n'existe pas.
+     */
+    public function test_no_admin_can_delete_a_user(): void
+    {
+        [, $superToken] = $this->authenticatedAdmin(true);
+        $client = User::factory()->create();
+
+        $this->withToken($superToken)
+            ->deleteJson("/api/admin/users/{$client->id}")
+            ->assertStatus(405);
+
+        $this->assertDatabaseHas('users', ['id' => $client->id]);
+    }
+
+    public function test_the_user_policy_never_allows_deletion(): void
+    {
+        $superAdmin = User::factory()->create(['is_admin' => true, 'is_super_admin' => true]);
+        $client = User::factory()->create();
+
+        $this->assertFalse($superAdmin->can('delete', $client));
+        $this->assertFalse($superAdmin->can('forceDelete', $client));
+    }
+
+    public function test_the_model_refuses_to_be_deleted(): void
+    {
+        $client = User::factory()->create();
+
+        $this->expectException(\LogicException::class);
+
+        try {
+            $client->delete();
+        } finally {
+            $this->assertDatabaseHas('users', ['id' => $client->id]);
+        }
+    }
+
+    public function test_users_table_is_paginated_searchable_and_sortable(): void
     {
         [, $token] = $this->authenticatedAdmin();
-        $otherAdmin = User::factory()->create(['is_admin' => true]);
-        $client = User::factory()->create(['is_admin' => false]);
+        User::factory()->create(['name' => 'Zoe Martin', 'email' => 'zoe@manoir.test']);
+        User::factory()->count(3)->create();
 
         $this->withToken($token)
-            ->deleteJson("/api/admin/users/{$otherAdmin->id}")
-            ->assertForbidden();
+            ->getJson('/api/admin/users?search=zoe&per_page=10')
+            ->assertOk()
+            ->assertJsonPath('total', 1)
+            ->assertJsonPath('data.0.email', 'zoe@manoir.test');
 
         $this->withToken($token)
-            ->deleteJson("/api/admin/users/{$client->id}")
+            ->getJson('/api/admin/users?per_page=2&sort=name&direction=asc')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('total', 5);
+    }
+
+    public function test_a_client_cannot_list_users(): void
+    {
+        $client = User::factory()->create();
+
+        $this->actingAsJwt($client)->getJson('/api/admin/users')->assertForbidden();
+    }
+
+    public function test_super_admin_without_admin_flag_can_still_list_users(): void
+    {
+        $superAdmin = User::factory()->create([
+            'is_admin' => false,
+            'is_super_admin' => true,
+        ]);
+
+        $this->actingAsJwt($superAdmin)
+            ->getJson('/api/admin/users')
             ->assertOk();
+    }
 
-        $this->assertDatabaseHas('users', ['id' => $otherAdmin->id]);
-        $this->assertDatabaseMissing('users', ['id' => $client->id]);
+    public function test_admin_filter_includes_super_admins_without_admin_flag(): void
+    {
+        [, $token] = $this->authenticatedAdmin();
+        $superAdmin = User::factory()->create([
+            'is_admin' => false,
+            'is_super_admin' => true,
+        ]);
+
+        $this->withToken($token)
+            ->getJson('/api/admin/users?is_admin=1')
+            ->assertOk()
+            ->assertJsonFragment(['id' => $superAdmin->id]);
     }
 
     public function test_regular_admin_can_edit_a_client_but_not_other_admins(): void
@@ -113,7 +180,7 @@ class AdminUserPermissionsTest extends TestCase
             'is_super_admin' => $isSuperAdmin,
         ]);
 
-        $token = $user->createToken('tests', ['*'], now()->addHour())->plainTextToken;
+        $token = $this->openSession($user)->accessToken;
 
         return [$user, $token];
     }

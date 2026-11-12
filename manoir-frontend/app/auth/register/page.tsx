@@ -2,7 +2,8 @@
 
 import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { api } from "@/lib/api";
 import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
@@ -11,6 +12,7 @@ import GoogleSignInButton from "@/components/auth/GoogleSignInButton";
 import type { CountryCode } from "libphonenumber-js/min";
 import CountryCodeSelect from "@/components/ui/CountryCodeSelect";
 import { DEFAULT_DIAL_COUNTRY, checkPhone } from "@/lib/phone";
+import { isAdminUser, roleSafeRedirect } from "@/lib/roles";
 
 /** Force indicative du mot de passe : 0 à 4. */
 function passwordScore(value: string) {
@@ -25,9 +27,124 @@ function passwordScore(value: string) {
 const strengthLabels = ["Trop court", "Faible", "Correct", "Bon", "Excellent"];
 const strengthColors = ["bg-terracotta", "bg-terracotta", "bg-gold", "bg-olive-light", "bg-olive"];
 
+/**
+ * Étape obligatoire après une connexion Google : le numéro de téléphone.
+ * Sans lui, l'inscription n'est pas confirmée et l'API refuse l'accès à
+ * l'espace client (vérifié côté serveur, pas seulement ici).
+ */
+function PhoneCompletionForm({ redirectTo }: { redirectTo?: string }) {
+  const { user, setUser, logout } = useAuth();
+  const { showToast } = useToast();
+  const router = useRouter();
+  const [phoneCountry, setPhoneCountry] = useState<CountryCode>(DEFAULT_DIAL_COUNTRY);
+  const [phone, setPhone] = useState("");
+  const [phoneError, setPhoneError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const phoneCheck = checkPhone(phone, phoneCountry);
+    if (!phoneCheck.valid) {
+      setPhoneError(phoneCheck.message);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await api.completePhone(phoneCheck.international, phoneCountry);
+      setUser(response.user);
+      showToast("Inscription finalisée. Bienvenue au Manoir !", "success");
+      router.push(roleSafeRedirect(response.user, redirectTo));
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Une erreur est survenue", "error");
+      setLoading(false);
+    }
+  };
+
+  return (
+    <AuthShell
+      title="Dernière étape"
+      subtitle={`Bienvenue ${user?.name.split(" ")[0] ?? ""} ! Indiquez votre numéro de téléphone pour finaliser votre inscription : nous en avons besoin pour vous joindre pendant votre séjour.`}
+      image="/assets/rooms/room2.jpg"
+      headline="Un sanctuaire de calme, rien que pour vous."
+      footer={
+        <button
+          type="button"
+          onClick={() => logout("/auth/login")}
+          className="font-semibold text-gold-light underline-offset-4 hover:underline"
+        >
+          Utiliser un autre compte
+        </button>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="space-y-1.5">
+          <label htmlFor="phone" className="text-sm font-medium text-cream/85">
+            Téléphone<span className="ml-0.5 text-gold">*</span>
+          </label>
+          <div className="flex gap-2">
+            <CountryCodeSelect
+              value={phoneCountry}
+              onChange={(code) => {
+                setPhoneCountry(code);
+                setPhoneError("");
+              }}
+            />
+            <input
+              id="phone"
+              type="tel"
+              autoComplete="tel-national"
+              inputMode="tel"
+              value={phone}
+              onChange={(event) => {
+                setPhone(event.target.value);
+                if (phoneError) setPhoneError("");
+              }}
+              required
+              autoFocus
+              aria-invalid={Boolean(phoneError)}
+              aria-describedby={phoneError ? "phone-hint" : undefined}
+              className={`glass-input h-12 w-full min-w-0 flex-1 rounded-xl px-4 text-[15px] outline-none ${
+                phoneError ? "!border-red-500/70" : ""
+              }`}
+              placeholder="Votre numéro"
+            />
+          </div>
+          {phoneError && (
+            <p id="phone-hint" role="alert" className="text-xs leading-5 text-red-500">
+              {phoneError}
+            </p>
+          )}
+        </div>
+
+        <AuthSubmit loading={loading}>Finaliser mon inscription</AuthSubmit>
+      </form>
+    </AuthShell>
+  );
+}
+
 function RegisterContent() {
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get("redirect") || undefined;
+  const { user, loading: authLoading } = useAuth();
+  const isAdmin = isAdminUser(user);
+
+  // Un administrateur connecté n'a rien à faire sur l'inscription client :
+  // AuthContext le redirige vers /admin. On évite seulement le clignotement.
+  if (isAdmin) {
+    return null;
+  }
+
+  // Connecté via Google sans téléphone : même page, petit formulaire.
+  // Les administrateurs n'ont jamais à renseigner de téléphone.
+  if (!authLoading && user && user.profile_completed === false) {
+    return <PhoneCompletionForm redirectTo={redirectTo} />;
+  }
+
+  return <RegisterForm redirectTo={redirectTo} />;
+}
+
+function RegisterForm({ redirectTo }: { redirectTo?: string }) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -74,7 +191,14 @@ function RegisterContent() {
       // Numéro enregistré au format international lisible : « +229 01 97 00 00 00 ».
       // Plus de champ « Pays de résidence » : le pays transmis à l'API (qui
       // l'exige) est celui de l'indicatif téléphonique choisi.
-      await register(fullName, email.trim(), phoneCheck.international, password, phoneCountry, redirectTo);
+      await register(
+        fullName,
+        email.trim(),
+        phoneCheck.international,
+        password,
+        phoneCountry,
+        redirectTo
+      );
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Une erreur est survenue", "error");
       setLoading(false);
@@ -101,7 +225,10 @@ function RegisterContent() {
       footer={
         <>
           Vous avez déjà un compte ?{" "}
-          <Link href={loginHref} className="font-semibold text-gold-light underline-offset-4 hover:underline">
+          <Link
+            href={loginHref}
+            className="font-semibold text-gold-light underline-offset-4 hover:underline"
+          >
             Se connecter
           </Link>
         </>
@@ -230,7 +357,11 @@ function RegisterContent() {
           placeholder="Retapez votre mot de passe"
           aria-invalid={mismatch}
           className={mismatch ? "!border-terracotta/70" : ""}
-          hint={mismatch ? <span className="text-terracotta-light">Les mots de passe ne correspondent pas.</span> : undefined}
+          hint={
+            mismatch ? (
+              <span className="text-terracotta-light">Les mots de passe ne correspondent pas.</span>
+            ) : undefined
+          }
         />
 
         <p className="text-xs leading-5 text-cream/50">

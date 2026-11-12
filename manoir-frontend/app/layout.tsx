@@ -7,6 +7,7 @@ import AmbientBackground from "@/components/visual/AmbientBackground";
 import NavigationProgress from "@/components/ui/NavigationProgress";
 import { AuthProvider } from "@/context/AuthContext";
 import { ToastProvider } from "@/context/ToastContext";
+import { CONTENT_SECURITY_POLICY } from "@/lib/security";
 import "./globals.css";
 
 const inter = Inter({
@@ -42,10 +43,17 @@ export default function RootLayout({
     <html
       lang="fr"
       data-theme="light"
+      data-scroll-behavior="smooth"
       suppressHydrationWarning
       className={`${inter.variable} ${bricolage.variable}`}
     >
       <head>
+        {/* En dev, `next dev` a besoin d'eval (rechargement à chaud) : la CSP
+            ne s'applique qu'au build de production. */}
+        {process.env.NODE_ENV === "production" && (
+          <meta httpEquiv="Content-Security-Policy" content={CONTENT_SECURITY_POLICY} />
+        )}
+        <meta name="referrer" content="strict-origin-when-cross-origin" />
         <script
           dangerouslySetInnerHTML={{
             __html:

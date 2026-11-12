@@ -8,9 +8,11 @@
     "require": {
         "php": "^8.3",
         "barryvdh/laravel-dompdf": "^3.1.2",
+        "firebase/php-jwt": "^7.2",
         "laravel/framework": "^13.30",
         "laravel/sanctum": "^4.3",
         "laravel/tinker": "^3.0",
+        "wendelladriel/laravel-idempotency": "^1.5",
         "wotz/laravel-swagger-ui": "^2.1"
     },
     "require-dev": {

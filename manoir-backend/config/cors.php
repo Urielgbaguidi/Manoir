@@ -1,29 +1,43 @@
 <?php
 
+$isProduction = env('APP_ENV') === 'production';
+
 return [
-    // Le middleware CORS de Laravel s'applique aux routes API.
-    'paths' => ['api/*', 'sanctum/csrf-cookie'],
+    'paths' => ['api/*'],
 
-    'allowed_methods' => ['*'],
+    'allowed_methods' => ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 
-    // Origines autorisées : le frontend Vercel (via FRONTEND_URL) + le dev local.
-    'allowed_origins' => array_values(array_filter([
-        env('FRONTEND_URL'),
-        'http://localhost:3000',
-        'http://127.0.0.1:3000',
-    ])),
+    /*
+    | Origines approuvees UNIQUEMENT : FRONTEND_URL, plus d'eventuelles
+    | origines supplementaires separees par des virgules dans
+    | CORS_EXTRA_ORIGINS (ex : https://www.lemanoir.bj).
+    | Le developpement local n'est autorise qu'en dehors de la production.
+    | Aucun joker : avec des cookies d'authentification, autoriser par exemple
+    | tout *.vercel.app laisserait n'importe quel projet Vercel agir au nom
+    | des utilisateurs connectes.
+    */
+    'allowed_origins' => array_values(array_filter(array_merge(
+        [rtrim((string) env('FRONTEND_URL', ''), '/')],
+        array_map(fn (string $origin) => rtrim(trim($origin), '/'), explode(',', (string) env('CORS_EXTRA_ORIGINS', ''))),
+        $isProduction ? [] : ['http://localhost:3000', 'http://127.0.0.1:3000'],
+    ))),
 
-    // Couvre automatiquement tous les domaines *.vercel.app (previews inclus).
-    'allowed_origins_patterns' => [
-        '#^https://.*\.vercel\.app$#',
+    'allowed_origins_patterns' => [],
+
+    'allowed_headers' => [
+        'Accept',
+        'Content-Type',
+        'Authorization',
+        'X-CSRF-Token',
+        'Idempotency-Key',
+        'X-Requested-With',
     ],
 
-    'allowed_headers' => ['*'],
-
-    'exposed_headers' => [],
+    'exposed_headers' => ['Content-Disposition', 'Idempotency-Replayed', 'Retry-After'],
 
     'max_age' => 3600,
 
-    // Auth par token dans l'en-tête Authorization (pas de cookies) → pas de credentials.
-    'supports_credentials' => false,
+    // Les jetons voyagent dans des cookies HttpOnly : le navigateur ne les
+    // envoie a l'API que si les credentials sont autorises.
+    'supports_credentials' => true,
 ];

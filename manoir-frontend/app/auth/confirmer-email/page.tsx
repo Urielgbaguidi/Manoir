@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { BadgeCheck, MailCheck } from "lucide-react";
 import Eyebrow from "@/components/ui/Eyebrow";
 import { api } from "@/lib/api";
@@ -12,19 +12,26 @@ import { useToast } from "@/context/ToastContext";
 
 const LONGUEUR = 6;
 
+/**
+ * « Vérifiez votre email ».
+ *
+ * Aucune session n'existe avant la confirmation : l'inscription ne connecte
+ * pas. Le code valide ouvre la session (cookies HttpOnly) et redirige.
+ */
 function ConfirmerEmailContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, refreshUser, loading: authLoading } = useAuth();
+  const { user, verifyEmail } = useAuth();
   const { showToast } = useToast();
 
   // Destination voulue avant la confirmation (une fiche appartement, par
-  // exemple) : on y ramene le client une fois son adresse validee.
-  const retour = searchParams.get("redirect");
+  // exemple) : on y ramène le client une fois son adresse validée.
+  const retour = searchParams.get("redirect") || undefined;
 
+  const [email, setEmail] = useState(searchParams.get("email") || user?.email || "");
   const [chiffres, setChiffres] = useState<string[]>(Array(LONGUEUR).fill(""));
   const [envoi, setEnvoi] = useState(false);
   const [renvoi, setRenvoi] = useState(false);
+  const [attente, setAttente] = useState(0);
   const [confirme, setConfirme] = useState(false);
   const cases = useRef<Array<HTMLInputElement | null>>([]);
 
@@ -32,38 +39,34 @@ function ConfirmerEmailContent() {
   const complet = code.length === LONGUEUR;
 
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/auth/login");
-    }
-  }, [authLoading, user, router]);
-
-  useEffect(() => {
-    if (user?.email_verified_at) {
-      setConfirme(true);
-    }
+    if (user?.email_verified_at) setConfirme(true);
   }, [user]);
 
   useEffect(() => {
     cases.current[0]?.focus();
   }, []);
 
+  // Le renvoi est limité côté serveur (3 par heure) : on espace les clics.
+  useEffect(() => {
+    if (attente <= 0) return;
+    const timer = window.setTimeout(() => setAttente((value) => value - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [attente]);
+
   const valider = async (valeur: string) => {
     if (valeur.length !== LONGUEUR || envoi) return;
+    if (!email.trim()) {
+      showToast("Indiquez l'adresse e-mail utilisée à l'inscription.", "error");
+      return;
+    }
 
     setEnvoi(true);
 
     try {
-      await api.verifyEmailCode(valeur);
+      // Le code valide ouvre la session et redirige (espace client, ou
+      // saisie du téléphone s'il manque).
+      await verifyEmail(email.trim(), valeur, retour);
       setConfirme(true);
-      showToast("Adresse email confirmée.", "success");
-
-      // Sans ce rafraichissement, l'application croit encore l'adresse non
-      // confirmee et rebloquerait la reservation.
-      await refreshUser();
-
-      if (retour) {
-        router.push(retour);
-      }
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Une erreur est survenue", "error");
       setChiffres(Array(LONGUEUR).fill(""));
@@ -81,9 +84,7 @@ function ConfirmerEmailContent() {
 
     // Un collage de 6 chiffres remplit toutes les cases d'un coup.
     propre.split("").forEach((chiffre, decalage) => {
-      if (index + decalage < LONGUEUR) {
-        suivants[index + decalage] = chiffre;
-      }
+      if (index + decalage < LONGUEUR) suivants[index + decalage] = chiffre;
     });
 
     setChiffres(suivants);
@@ -92,9 +93,7 @@ function ConfirmerEmailContent() {
     cases.current[prochaineVide === -1 ? LONGUEUR - 1 : prochaineVide]?.focus();
 
     const assemble = suivants.join("");
-    if (assemble.length === LONGUEUR) {
-      void valider(assemble);
-    }
+    if (assemble.length === LONGUEUR) void valider(assemble);
   };
 
   const touche = (index: number, event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -115,21 +114,21 @@ function ConfirmerEmailContent() {
       }
     }
 
-    if (event.key === "ArrowLeft" && index > 0) {
-      cases.current[index - 1]?.focus();
-    }
-
-    if (event.key === "ArrowRight" && index < LONGUEUR - 1) {
-      cases.current[index + 1]?.focus();
-    }
+    if (event.key === "ArrowLeft" && index > 0) cases.current[index - 1]?.focus();
+    if (event.key === "ArrowRight" && index < LONGUEUR - 1) cases.current[index + 1]?.focus();
   };
 
   const renvoyer = async () => {
+    if (!email.trim()) {
+      showToast("Indiquez votre adresse e-mail.", "error");
+      return;
+    }
     setRenvoi(true);
 
     try {
-      const { message } = await api.resendEmailVerification();
+      const { message } = await api.resendEmailVerification(email.trim());
       showToast(message, "success");
+      setAttente(60);
       setChiffres(Array(LONGUEUR).fill(""));
       cases.current[0]?.focus();
     } catch (err) {
@@ -156,13 +155,13 @@ function ConfirmerEmailContent() {
           </Eyebrow>
           <h1 className="mb-2 font-display text-4xl font-semibold uppercase tracking-tight">
             <span className="text-gradient-gold">
-              {confirme ? "Adresse confirmée" : "Confirmez votre email"}
+              {confirme ? "Adresse confirmée" : "Vérifiez votre email"}
             </span>
           </h1>
-          {!confirme && user && (
+          {!confirme && (
             <p className="text-sm text-cream/55">
-              Nous avons envoyé un code à 6 chiffres à{" "}
-              <span className="text-gold-light">{user.email}</span>
+              Saisissez le code à 6 chiffres envoyé par e-mail. L&apos;accès à votre espace reste
+              bloqué tant que votre adresse n&apos;est pas confirmée.
             </p>
           )}
         </div>
@@ -174,8 +173,7 @@ function ConfirmerEmailContent() {
                 <BadgeCheck className="h-7 w-7 text-olive-light" />
               </div>
               <p className="text-sm leading-6 text-cream/60">
-                Votre compte est désormais entièrement sécurisé. Vous pouvez réserver en toute
-                sérénité.
+                Votre compte est actif. Redirection en cours…
               </p>
               <Link
                 href={retour || "/espace-client"}
@@ -186,6 +184,23 @@ function ConfirmerEmailContent() {
             </div>
           ) : (
             <>
+              <div className="space-y-1.5">
+                <label htmlFor="email" className="text-sm font-medium text-cream/85">
+                  Adresse e-mail
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  inputMode="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                  className="glass-input h-12 w-full rounded-xl px-4 text-[15px] outline-none"
+                  placeholder="vous@exemple.com"
+                />
+              </div>
+
               <div className="flex justify-center gap-2 sm:gap-3">
                 {chiffres.map((chiffre, index) => (
                   <input
@@ -228,11 +243,15 @@ function ConfirmerEmailContent() {
                 <button
                   type="button"
                   onClick={renvoyer}
-                  disabled={renvoi}
+                  disabled={renvoi || attente > 0}
                   className="inline-flex items-center gap-2 text-xs font-semibold tracking-wide text-cream/60 transition duration-300 hover:text-gold-light disabled:opacity-50"
                 >
                   <MailCheck size={14} />
-                  {renvoi ? "Envoi..." : "Renvoyer un code"}
+                  {renvoi
+                    ? "Envoi..."
+                    : attente > 0
+                      ? `Renvoyer un code (${attente} s)`
+                      : "Renvoyer un code"}
                 </button>
               </div>
             </>
@@ -241,9 +260,9 @@ function ConfirmerEmailContent() {
 
         {!confirme && (
           <p className="mt-6 text-center text-xs text-cream/40">
-            La confirmation est nécessaire pour réserver. Vous pouvez tout de même{" "}
-            <Link href="/espace-client" className="text-cream/60 underline hover:text-gold-light">
-              consulter votre espace
+            Mauvaise adresse ?{" "}
+            <Link href="/auth/register" className="text-cream/60 underline hover:text-gold-light">
+              Recommencer l&apos;inscription
             </Link>
           </p>
         )}

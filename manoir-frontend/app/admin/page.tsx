@@ -40,16 +40,24 @@ export default function AdminDashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [occupied, setOccupied] = useState<Reservation[]>([]);
+  const [pendingExtensions, setPendingExtensions] = useState(0);
   const [loading, setLoading] = useState(true);
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
 
   useEffect(() => {
-    Promise.all([api.getAdminStats(), api.getAdminReservations({ per_page: 500 }), api.getOccupiedRooms()])
-      .then(([statsData, reservationData, occupiedData]) => {
+    Promise.all([
+      api.getAdminStats(),
+      api.getAdminReservations({ per_page: 500 }),
+      api.getOccupiedRooms(),
+      // Les prolongations ont leur propre table : seul le total est utile ici.
+      api.getAdminExtensions({ status: "EN_ATTENTE", per_page: 1 })
+    ])
+      .then(([statsData, reservationData, occupiedData, extensionData]) => {
         setStats(statsData.stats);
         setReservations(reservationData.data);
         setOccupied(occupiedData.data);
+        setPendingExtensions(extensionData.total);
       })
       .catch(() => showToast("Impossible de charger le tableau de bord.", "error"))
       .finally(() => setLoading(false));
@@ -89,7 +97,8 @@ export default function AdminDashboardPage() {
         .filter((payment) => payment.status === "success")
         .forEach((payment) => {
           const paid = new Date(payment.paid_at || payment.created_at);
-          const offset = (today.getFullYear() - paid.getFullYear()) * 12 + (thisMonth - paid.getMonth());
+          const offset =
+            (today.getFullYear() - paid.getFullYear()) * 12 + (thisMonth - paid.getMonth());
           if (offset >= 0 && offset < 24) revenueAll[offset] += Number(payment.amount || 0);
         })
     );
@@ -99,27 +108,55 @@ export default function AdminDashboardPage() {
 
     const stayed = ["CONFIRMEE", "SEJOUR_PAYE"];
     const arrivals = reservations.filter(
-      (reservation) => stayed.includes(reservation.status) && sameDay(parseDay(reservation.check_in), today)
+      (reservation) =>
+        stayed.includes(reservation.status) && sameDay(parseDay(reservation.check_in), today)
     ).length;
     const departures = reservations.filter(
-      (reservation) => stayed.includes(reservation.status) && sameDay(parseDay(reservation.check_out), today)
+      (reservation) =>
+        stayed.includes(reservation.status) && sameDay(parseDay(reservation.check_out), today)
     ).length;
 
-    const extensions = reservations.filter((reservation) => reservation.extension_status === "EN_ATTENTE").length;
+    const pendingRequests = reservations.filter(
+      (reservation) => reservation.status === "EN_ATTENTE"
+    ).length;
     const refunds = reservations.filter((reservation) => reservation.status === "ANNULEE").length;
-    const awaitingDeposit = reservations.filter((reservation) => reservation.status === "VALIDEE_PAIEMENT_REQUIS").length;
+    const awaitingDeposit = reservations.filter(
+      (reservation) => reservation.status === "VALIDEE_PAIEMENT_REQUIS"
+    ).length;
 
     const recent = [...reservations]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .slice(0, 6);
 
-    return { current, revenueChange, arrivals, departures, extensions, refunds, awaitingDeposit, recent };
+    return {
+      current,
+      revenueChange,
+      arrivals,
+      departures,
+      pendingRequests,
+      refunds,
+      awaitingDeposit,
+      recent
+    };
   }, [reservations]);
 
   const todo = [
-    { count: insights.extensions, label: "prolongation(s) à valider", href: "/admin/reservations" },
+    {
+      count: insights.pendingRequests,
+      label: "demande(s) de réservation à valider",
+      href: "/admin/reservations?type=reservation"
+    },
+    {
+      count: pendingExtensions,
+      label: "prolongation(s) à valider",
+      href: "/admin/reservations?type=extension"
+    },
     { count: insights.refunds, label: "remboursement(s) à confirmer", href: "/admin/reservations" },
-    { count: insights.awaitingDeposit, label: "acompte(s) en attente de paiement", href: "/admin/reservations" }
+    {
+      count: insights.awaitingDeposit,
+      label: "séjour(s) validé(s) en attente de paiement",
+      href: "/admin/reservations"
+    }
   ].filter((item) => item.count > 0);
 
   return (
@@ -153,7 +190,11 @@ export default function AdminDashboardPage() {
         {/* Métriques + CA mensuel */}
         <div className="col-span-12 space-y-4 md:space-y-6 xl:col-span-7">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-6">
-            <MetricCard icon={Users} title="Clients" value={loading ? "…" : String(stats?.total_users ?? 0)} />
+            <MetricCard
+              icon={Users}
+              title="Clients"
+              value={loading ? "…" : String(stats?.total_users ?? 0)}
+            />
             <MetricCard
               icon={CalendarRange}
               title="Réservations"
@@ -200,7 +241,9 @@ export default function AdminDashboardPage() {
 
               {/* Séjours en cours : qui occupe quoi, jusqu'à quand */}
               <div className="mt-6 flex-1">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-cream/45">En ce moment</p>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-cream/45">
+                  En ce moment
+                </p>
                 {occupied.length === 0 ? (
                   <p className="rounded-xl border border-dashed border-gold/20 px-4 py-5 text-center text-sm text-cream/50">
                     Aucun appartement occupé.
@@ -208,13 +251,21 @@ export default function AdminDashboardPage() {
                 ) : (
                   <ul className="divide-y divide-gold/10">
                     {occupied.slice(0, 4).map((reservation) => (
-                      <li key={reservation.id} className="flex items-center justify-between gap-3 py-2.5">
+                      <li
+                        key={reservation.id}
+                        className="flex items-center justify-between gap-3 py-2.5"
+                      >
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-cream">{reservationTitle(reservation)}</p>
-                          <p className="truncate text-xs text-cream/50">{reservation.user?.name || "Client"}</p>
+                          <p className="truncate text-sm font-medium text-cream">
+                            {reservationTitle(reservation)}
+                          </p>
+                          <p className="truncate text-xs text-cream/50">
+                            {reservation.user?.name || "Client"}
+                          </p>
                         </div>
                         <span className="shrink-0 text-xs text-cream/60">
-                          Départ {formatDay(reservation.check_out, { day: "numeric", month: "short" })}
+                          Départ{" "}
+                          {formatDay(reservation.check_out, { day: "numeric", month: "short" })}
                         </span>
                       </li>
                     ))}
@@ -222,7 +273,7 @@ export default function AdminDashboardPage() {
                 )}
                 {occupied.length > 0 && (
                   <Link
-                    href="/admin/reservations#occupation"
+                    href="/admin/rooms"
                     className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-gold-light hover:underline"
                   >
                     Gérer l'occupation <ArrowRight size={14} />
@@ -283,7 +334,10 @@ export default function AdminDashboardPage() {
                                 />
                               </div>
                               <div className="min-w-0 max-w-[160px] 2xl:max-w-[240px]">
-                                <p className="truncate text-sm font-medium text-cream" title={reservationTitle(reservation)}>
+                                <p
+                                  className="truncate text-sm font-medium text-cream"
+                                  title={reservationTitle(reservation)}
+                                >
                                   {reservationTitle(reservation)}
                                 </p>
                               </div>
@@ -343,13 +397,17 @@ function MetricCard({
       <div className="mt-5 flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
         <div className="min-w-0">
           <span className="text-sm text-cream/55">{title}</span>
-          <h4 className="mt-2 whitespace-nowrap font-display text-xl font-bold text-cream 2xl:text-2xl">{value}</h4>
+          <h4 className="mt-2 whitespace-nowrap font-display text-xl font-bold text-cream 2xl:text-2xl">
+            {value}
+          </h4>
         </div>
         {typeof change === "number" && Number.isFinite(change) && (
           <span
             className={cn(
               "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold",
-              change >= 0 ? "bg-olive/15 text-olive-light" : "bg-terracotta/15 text-terracotta-light"
+              change >= 0
+                ? "bg-olive/15 text-olive-light"
+                : "bg-terracotta/15 text-terracotta-light"
             )}
           >
             {change >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
@@ -361,7 +419,15 @@ function MetricCard({
   );
 }
 
-function CardTitle({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {
+function CardTitle({
+  title,
+  subtitle,
+  action
+}: {
+  title: string;
+  subtitle?: string;
+  action?: ReactNode;
+}) {
   return (
     <div className="mb-4 flex items-start justify-between gap-3">
       <div>
@@ -373,7 +439,15 @@ function CardTitle({ title, subtitle, action }: { title: string; subtitle?: stri
   );
 }
 
-function YearSelect({ years, value, onChange }: { years: number[]; value: number; onChange: (year: number) => void }) {
+function YearSelect({
+  years,
+  value,
+  onChange
+}: {
+  years: number[];
+  value: number;
+  onChange: (year: number) => void;
+}) {
   return (
     <select
       value={value}

@@ -42,6 +42,13 @@ return [
     'debug' => (bool) env('APP_DEBUG', false),
 
     /*
+    | HTTPS obligatoire : toute requete en clair est refusee (426). Active par
+    | defaut en production. L'API doit etre derriere un proxy de confiance
+    | (TRUSTED_PROXIES) pour que HTTPS soit detecte correctement.
+    */
+    'force_https' => (bool) env('FORCE_HTTPS', env('APP_ENV') === 'production'),
+
+    /*
     |--------------------------------------------------------------------------
     | Application URL
     |--------------------------------------------------------------------------

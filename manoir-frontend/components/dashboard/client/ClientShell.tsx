@@ -5,13 +5,13 @@ import {
   BedDouble,
   CalendarCheck2,
   ChevronDown,
-  History,
   Home,
   LifeBuoy,
   LogOut,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  Receipt,
   UserRound,
   Wallet,
   X
@@ -23,6 +23,7 @@ import { Suspense, useEffect, useRef, useState, type ComponentType, type ReactNo
 import NotificationBell from "@/components/ui/NotificationBell";
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import { useAuth } from "@/context/AuthContext";
+import { isAdminUser } from "@/lib/roles";
 import { contactMailto, initialsOf } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
@@ -46,19 +47,19 @@ const navItems: NavItem[] = [
     label: "Mes réservations",
     href: "/espace-client/reservations",
     icon: CalendarCheck2,
-    match: (p, tab) => p.startsWith("/espace-client/reservations") && tab !== "historique"
+    match: (p) => p.startsWith("/espace-client/reservations")
   },
   {
-    label: "Paiements & factures",
+    label: "Paiements",
     href: "/espace-client/paiements",
     icon: Wallet,
     match: (p) => p.startsWith("/espace-client/paiements")
   },
   {
-    label: "Historique des séjours",
-    href: "/espace-client/reservations?onglet=historique",
-    icon: History,
-    match: (p, tab) => p.startsWith("/espace-client/reservations") && tab === "historique"
+    label: "Factures",
+    href: "/espace-client/factures",
+    icon: Receipt,
+    match: (p) => p.startsWith("/espace-client/factures")
   },
   {
     label: "Données personnelles",
@@ -67,7 +68,12 @@ const navItems: NavItem[] = [
     match: (p) => p.startsWith("/espace-client/profil")
   },
   { label: "Réserver un séjour", href: "/rooms", icon: BedDouble },
-  { label: "Aide & contact", href: contactMailto("Assistance espace client | Le Manoir"), icon: LifeBuoy, external: true }
+  {
+    label: "Aide & contact",
+    href: contactMailto("Assistance espace client | Le Manoir"),
+    icon: LifeBuoy,
+    external: true
+  }
 ];
 
 const COLLAPSE_KEY = "manoir:client-sidebar-collapsed";
@@ -78,6 +84,7 @@ export default function ClientShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const isAdmin = isAdminUser(user);
 
   // Préférence d'affichage mémorisée par navigateur (confort uniquement).
   useEffect(() => {
@@ -113,12 +120,39 @@ export default function ClientShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Pendant une déconnexion, on part vers l'accueil : surtout pas vers le login.
     if (!loading && !user && !loggingOut) {
-      const target = typeof window !== "undefined" ? window.location.pathname + window.location.search : "/espace-client";
+      const target =
+        typeof window !== "undefined"
+          ? window.location.pathname + window.location.search
+          : "/espace-client";
       router.replace(`/auth/login?redirect=${encodeURIComponent(target)}`);
     }
   }, [loading, user, loggingOut, router]);
 
-  if (loading || !user) {
+  // Un administrateur ne reste jamais dans l'espace client.
+  useEffect(() => {
+    if (loading || !user || loggingOut) return;
+    if (isAdmin) router.replace("/admin");
+  }, [loading, user, loggingOut, isAdmin, router]);
+
+  // Accès à l'espace client : adresse confirmée puis téléphone renseigné
+  // (comptes Google). L'API refuse de toute façon ces sessions incomplètes.
+  const emailUnverified = Boolean(user && user.email_verified_at === null);
+  // Les administrateurs sont dispenses du numero de telephone.
+  const profileIncomplete = Boolean(user && !isAdmin && user.profile_completed === false);
+
+  useEffect(() => {
+    if (loading || !user || loggingOut || isAdmin) return;
+    const here = window.location.pathname + window.location.search;
+    if (emailUnverified) {
+      router.replace(
+        `/auth/confirmer-email?email=${encodeURIComponent(user.email)}&redirect=${encodeURIComponent(here)}`
+      );
+    } else if (profileIncomplete) {
+      router.replace(`/auth/register?etape=telephone&redirect=${encodeURIComponent(here)}`);
+    }
+  }, [loading, user, loggingOut, isAdmin, emailUnverified, profileIncomplete, router]);
+
+  if (loading || !user || isAdmin || emailUnverified || profileIncomplete) {
     return (
       <div className="grid min-h-screen place-items-center">
         <div className="flex flex-col items-center gap-4">
@@ -143,7 +177,11 @@ export default function ClientShell({ children }: { children: ReactNode }) {
           )}
         >
           <Suspense fallback={null}>
-            <SidebarContent collapsed={collapsed} onToggle={toggleCollapsed} onLogout={() => logout()} />
+            <SidebarContent
+              collapsed={collapsed}
+              onToggle={toggleCollapsed}
+              onLogout={() => logout()}
+            />
           </Suspense>
         </aside>
 
@@ -243,13 +281,21 @@ function SidebarContent({
           );
           const content = (
             <>
-              <item.icon size={20} className={cn("shrink-0", !active && "text-gold/80 group-hover:text-gold-light")} />
+              <item.icon
+                size={20}
+                className={cn("shrink-0", !active && "text-gold/80 group-hover:text-gold-light")}
+              />
               {!collapsed && <span className="truncate">{item.label}</span>}
             </>
           );
 
           return item.external ? (
-            <a key={item.label} href={item.href} className={classes} title={collapsed ? item.label : undefined}>
+            <a
+              key={item.label}
+              href={item.href}
+              className={classes}
+              title={collapsed ? item.label : undefined}
+            >
               {content}
             </a>
           ) : (
@@ -317,7 +363,13 @@ function ClientHeader({ onOpenMenu }: { onOpenMenu: () => void }) {
           </button>
           <Link href="/" className="flex items-center gap-3">
             <span className="grid size-10 place-items-center overflow-hidden rounded-full border border-gold/30 bg-cream sm:size-11">
-              <Image src="/assets/logo.jpg" alt="Le Manoir" width={44} height={44} className="size-full object-cover" />
+              <Image
+                src="/assets/logo.jpg"
+                alt="Le Manoir"
+                width={44}
+                height={44}
+                className="size-full object-cover"
+              />
             </span>
             <span className="hidden leading-tight sm:block">
               <span className="block font-display text-[15px] font-semibold uppercase tracking-[0.3em]">
@@ -338,7 +390,10 @@ function ClientHeader({ onOpenMenu }: { onOpenMenu: () => void }) {
             <Link href="/rooms" className="transition hover:text-gold-light">
               Nos appartements
             </Link>
-            <a href={contactMailto("Support | Le Manoir")} className="transition hover:text-gold-light">
+            <a
+              href={contactMailto("Support | Le Manoir")}
+              className="transition hover:text-gold-light"
+            >
               Support
             </a>
           </nav>
@@ -357,7 +412,10 @@ function ClientHeader({ onOpenMenu }: { onOpenMenu: () => void }) {
               <span className="grid size-8 place-items-center rounded-full bg-gradient-to-br from-gold-light to-gold text-xs font-bold text-night">
                 {initialsOf(user?.name)}
               </span>
-              <ChevronDown size={14} className={cn("text-cream/60 transition", menuOpen && "rotate-180")} />
+              <ChevronDown
+                size={14}
+                className={cn("text-cream/60 transition", menuOpen && "rotate-180")}
+              />
             </button>
 
             <AnimatePresence>
@@ -403,7 +461,15 @@ function ClientHeader({ onOpenMenu }: { onOpenMenu: () => void }) {
   );
 }
 
-function MenuLink({ href, children, onClick }: { href: string; children: ReactNode; onClick: () => void }) {
+function MenuLink({
+  href,
+  children,
+  onClick
+}: {
+  href: string;
+  children: ReactNode;
+  onClick: () => void;
+}) {
   return (
     <Link
       href={href}
@@ -432,7 +498,9 @@ export function ClientPageHeader({
         <h1 className="font-display text-[clamp(1.8rem,4vw,2.6rem)] font-semibold leading-[1.05] tracking-[-0.02em] text-cream">
           {title}
         </h1>
-        {description && <p className="mt-2 max-w-2xl text-[15px] leading-6 text-cream/60">{description}</p>}
+        {description && (
+          <p className="mt-2 max-w-2xl text-[15px] leading-6 text-cream/60">{description}</p>
+        )}
       </div>
       {action}
     </div>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
+import { ApiError, api } from "@/lib/api";
 
 interface InvoiceData {
   invoice_number: string;
@@ -51,36 +52,25 @@ export default function InvoicePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const paymentId = searchParams.get("paymentId") || searchParams.get("id") || (Array.isArray(params.paymentId) ? params.paymentId[0] : params.paymentId);
+  const paymentId =
+    searchParams.get("paymentId") ||
+    searchParams.get("id") ||
+    (Array.isArray(params.paymentId) ? params.paymentId[0] : params.paymentId);
 
   const fetchInvoice = useCallback(async () => {
     try {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        router.push("/auth/login");
-        return;
-      }
-
       if (!paymentId) {
         throw new Error("ID de paiement manquant");
       }
 
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/payments/${paymentId}/invoice`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error("Facture non trouvée");
-      }
-
-      const data = await response.json();
-      setInvoice(data.invoice);
+      // Session portée par les cookies HttpOnly : aucun jeton côté JavaScript.
+      const data = await api.getInvoice(String(paymentId));
+      setInvoice(data.invoice as unknown as InvoiceData);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.push("/auth/login");
+        return;
+      }
       setError(err instanceof Error ? err.message : "Erreur lors du chargement");
     } finally {
       setLoading(false);
@@ -111,7 +101,10 @@ export default function InvoicePage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <p className="text-terracotta-light mb-4">{error || "Facture non trouvée"}</p>
-          <Link href="/espace-client/reservations" className="text-gold-light hover:text-gold underline">
+          <Link
+            href="/espace-client/reservations"
+            className="text-gold-light hover:text-gold underline"
+          >
             Retour à mes réservations
           </Link>
         </div>

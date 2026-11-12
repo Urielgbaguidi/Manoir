@@ -32,7 +32,8 @@ export default function Navbar() {
     // Hystérésis : évite que l'état bascule en boucle autour d'un seuil unique
     // (sur mobile, la barre d'adresse qui apparaît/disparaît fait osciller scrollY
     // → le fond de la navbar clignotait). Zone morte 10–56px.
-    const onScroll = () => setScrolled((prev) => (prev ? window.scrollY > 10 : window.scrollY > 56));
+    const onScroll = () =>
+      setScrolled((prev) => (prev ? window.scrollY > 10 : window.scrollY > 56));
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -45,8 +46,11 @@ export default function Navbar() {
   ];
 
   if (user) {
-    if (isAdmin) navLinks.push({ label: "Back-office", href: "/admin" });
-    navLinks.push({ label: "Mon Espace", href: "/espace-client" });
+    navLinks.push(
+      isAdmin
+        ? { label: "Back-office", href: "/admin" }
+        : { label: "Mon Espace", href: "/espace-client" }
+    );
   } else {
     navLinks.push({ label: "Connexion", href: "/auth/login" });
   }

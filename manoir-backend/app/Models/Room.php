@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -89,7 +90,29 @@ class Room extends Model
             $query->where('id', '!=', $excludeReservationId);
         }
 
-        return ! $query->exists();
+        if ($query->exists()) {
+            return false;
+        }
+
+        // Prolongation validee mais pas encore payee : les nuits ajoutees
+        // restent retenues jusqu'a l'echeance de paiement.
+        return ! $this->extensionHolds()
+            ->when($excludeReservationId, fn ($query) => $query->where('stay_extensions.reservation_id', '!=', $excludeReservationId))
+            ->whereDate('stay_extensions.previous_check_out', '<', $checkOut)
+            ->whereDate('stay_extensions.requested_check_out', '>', $checkIn)
+            ->exists();
+    }
+
+    /**
+     * Prolongations de cet appartement qui retiennent des nuits.
+     *
+     * @return Builder<StayExtension>
+     */
+    private function extensionHolds(): Builder
+    {
+        return StayExtension::query()
+            ->holdingNights()
+            ->whereHas('reservation', fn ($query) => $query->where('room_id', $this->id));
     }
 
     /**
@@ -230,7 +253,13 @@ class Room extends Model
             ->map(fn (Reservation $r) => [$r->check_in->copy()->startOfDay(), $r->check_out->copy()->startOfDay()])
             ->all();
 
-        $toutes = array_merge($periodes, $reservations);
+        $prolongations = $this->extensionHolds()
+            ->whereDate('stay_extensions.requested_check_out', '>', $depuis->toDateString())
+            ->get()
+            ->map(fn (StayExtension $e) => [$e->previous_check_out->copy()->startOfDay(), $e->requested_check_out->copy()->startOfDay()])
+            ->all();
+
+        $toutes = array_merge($periodes, $reservations, $prolongations);
         usort($toutes, fn ($a, $b) => $a[0] <=> $b[0]);
 
         return $toutes;

@@ -3,7 +3,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "react-toastify";
-import { ApiError, api, User } from "@/lib/api";
+import { ApiError, LoginResult, api, User } from "@/lib/api";
+import { isAdminUser, roleSafeRedirect } from "@/lib/roles";
 
 interface AuthContextType {
   user: User | null;
@@ -11,8 +12,18 @@ interface AuthContextType {
   loading: boolean;
   /** Vrai entre le clic sur « Déconnexion » et l'arrivée sur la page d'accueil. */
   loggingOut: boolean;
-  login: (email: string, password: string, redirectTo?: string) => Promise<void>;
-  loginWithGoogle: (credential: string, redirectTo?: string) => Promise<void>;
+  /**
+   * Connexion par mot de passe. Renvoie `two_factor` quand un code 2FA est
+   * attendu : la page affiche alors la saisie du code.
+   */
+  login: (email: string, password: string, redirectTo?: string) => Promise<LoginResult>;
+  completeTwoFactor: (
+    challengeToken: string,
+    code: { code?: string; recovery_code?: string },
+    redirectTo?: string
+  ) => Promise<void>;
+  loginWithGoogle: (credential: string, redirectTo?: string) => Promise<LoginResult>;
+  /** Inscription : aucune session n'est ouverte avant la saisie du code reçu. */
   register: (
     name: string,
     email: string,
@@ -21,12 +32,28 @@ interface AuthContextType {
     country: string,
     redirectTo?: string
   ) => Promise<void>;
+  /** Saisie du code reçu par email : ouvre la session. */
+  verifyEmail: (email: string, code: string, redirectTo?: string) => Promise<void>;
   logout: (redirectTo?: string) => void;
   refreshUser: () => Promise<User | null>;
+  setUser: (user: User | null) => void;
   isAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+/** Page de saisie du téléphone obligatoire : la même que l'inscription. */
+export function phoneCompletionPath(redirectTo?: string) {
+  return redirectTo
+    ? `/auth/register?etape=telephone&redirect=${encodeURIComponent(redirectTo)}`
+    : "/auth/register?etape=telephone";
+}
+
+export function emailConfirmationPath(email: string, redirectTo?: string) {
+  const params = new URLSearchParams({ email });
+  if (redirectTo) params.set("redirect", redirectTo);
+  return `/auth/confirmer-email?${params.toString()}`;
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -35,72 +62,105 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  // La session vit dans des cookies HttpOnly : on demande simplement à l'API
+  // qui est connecté (et on récupère le jeton CSRF au passage).
   useEffect(() => {
-    async function loadUser() {
-      const token = api.getToken();
-      if (token) {
-        try {
-          const profile = await api.getCurrentUser();
-          setUser(profile);
-        } catch (error) {
-          if (!(error instanceof ApiError && error.status === 401)) {
-            console.warn("Impossible de charger le profil utilisateur.");
-          }
-          api.clearToken();
-          setUser(null);
-        }
-      }
+    let cancelled = false;
+    api.restoreSession().then((restored) => {
+      if (cancelled) return;
+      setUser(restored);
       setLoading(false);
-    }
-    loadUser();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Les pages qui suivent une connexion sont préchargées dès qu'on connaît le
-  // rôle : la redirection est alors immédiate.
   useEffect(() => {
     router.prefetch("/espace-client");
     router.prefetch("/admin");
   }, [router]);
 
+  // Separation stricte des espaces : un administrateur ne reste jamais dans
+  // l'espace client (ni sur une page d'authentification), et un client ne
+  // reste jamais dans le back-office.
+  useEffect(() => {
+    if (loading || !user || pendingLogout) return;
+
+    const currentPath = pathname || "";
+
+    if (isAdminUser(user)) {
+      if (currentPath.startsWith("/espace-client") || currentPath.startsWith("/auth")) {
+        router.replace("/admin");
+      }
+      return;
+    }
+
+    if (currentPath.startsWith("/admin")) {
+      router.replace("/espace-client");
+    }
+  }, [loading, user, pendingLogout, pathname, router]);
+
   /**
-   * Connexion réussie : le message et la redirection partent au même instant.
-   * (Pas d'état « chargement » global : il faisait afficher un spinner aux
-   * tableaux de bord et retardait l'arrivée.)
+   * Session ouverte : message et redirection au même instant. Un compte sans
+   * téléphone (Google) est d'abord envoyé compléter son profil.
    */
-  const onLoggedIn = (loggedUser: User, redirectTo?: string) => {
-    setUser(loggedUser);
-    toast.success(`Connexion réussie. Bienvenue, ${loggedUser.name.split(" ")[0]} !`, {
-      toastId: "login-success"
-    });
+  const onLoggedIn = useCallback(
+    (loggedUser: User, redirectTo?: string) => {
+      setUser(loggedUser);
 
-    if (loggedUser.is_admin) {
-      router.push("/admin");
-      return;
+      const isAdmin = isAdminUser(loggedUser);
+      // Un admin ne peut atterrir que dans /admin, un client jamais dans /admin.
+      const destination = roleSafeRedirect(loggedUser, redirectTo);
+
+      // Les administrateurs n'ont jamais à renseigner de téléphone.
+      if (!isAdmin && loggedUser.profile_completed === false) {
+        toast.info("Dernière étape : renseignez votre numéro de téléphone.", {
+          toastId: "phone-required"
+        });
+        router.push(phoneCompletionPath(destination));
+        return;
+      }
+
+      toast.success(`Connexion réussie. Bienvenue, ${loggedUser.name.split(" ")[0]} !`, {
+        toastId: "login-success"
+      });
+
+      router.push(destination);
+    },
+    [router]
+  );
+
+  const login = async (email: string, password: string, redirectTo?: string) => {
+    try {
+      const result = await api.login(email, password);
+      if (result.kind === "session") onLoggedIn(result.user, redirectTo);
+      return result;
+    } catch (error) {
+      // Mot de passe correct mais adresse non confirmée : saisie du code.
+      if (error instanceof ApiError && error.reason === "email_not_verified") {
+        toast.info("Confirmez votre adresse : un nouveau code vient de vous être envoyé.", {
+          toastId: "email-unverified"
+        });
+        router.push(emailConfirmationPath(String(error.data.email || email), redirectTo));
+      }
+      throw error;
     }
+  };
 
-    // Un client dont l'adresse n'est pas confirmée ne peut rien réserver :
-    // on l'amène à la saisie du code plutôt que de le laisser buter dessus.
-    if (loggedUser.email_verified_at === null) {
-      router.push(
-        redirectTo
-          ? `/auth/confirmer-email?redirect=${encodeURIComponent(redirectTo)}`
-          : "/auth/confirmer-email"
-      );
-      return;
-    }
-
-    // "/" n'est pas une vraie destination après connexion : l'espace client l'est.
-    router.push(redirectTo && redirectTo !== "/" ? redirectTo : "/espace-client");
+  const completeTwoFactor = async (
+    challengeToken: string,
+    code: { code?: string; recovery_code?: string },
+    redirectTo?: string
+  ) => {
+    const loggedUser = await api.completeTwoFactorLogin(challengeToken, code);
+    onLoggedIn(loggedUser, redirectTo);
   };
 
   const loginWithGoogle = async (credential: string, redirectTo?: string) => {
-    const response = await api.loginWithGoogle(credential);
-    onLoggedIn(response.user, redirectTo);
-  };
-
-  const login = async (email: string, password: string, redirectTo?: string) => {
-    const response = await api.login(email, password);
-    onLoggedIn(response.user, redirectTo);
+    const result = await api.loginWithGoogle(credential);
+    if (result.kind === "session") onLoggedIn(result.user, redirectTo);
+    return result;
   };
 
   const register = async (
@@ -112,23 +172,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     redirectTo?: string
   ) => {
     const response = await api.register({ name, email, phone, password, country });
-    setUser(response.user);
-    toast.success("Compte créé ! Saisissez le code reçu par e-mail.", { toastId: "register-success" });
-    // Le code vient d'être envoyé et le serveur refuse toute réservation tant
-    // qu'il n'est pas saisi : on passe donc TOUJOURS par la confirmation, en
-    // emportant la destination voulue pour y revenir ensuite.
-    router.push(
-      redirectTo
-        ? `/auth/confirmer-email?redirect=${encodeURIComponent(redirectTo)}`
-        : "/auth/confirmer-email"
-    );
+    toast.success("Saisissez le code à 6 chiffres reçu par e-mail.", {
+      toastId: "register-success"
+    });
+    router.push(emailConfirmationPath(response.email || email, redirectTo));
+  };
+
+  const verifyEmail = async (email: string, code: string, redirectTo?: string) => {
+    const verifiedUser = await api.verifyEmailCode(email, code);
+    onLoggedIn(verifiedUser, redirectTo);
   };
 
   /**
    * Déconnexion instantanée : on part vers l'accueil sans attendre le serveur
-   * (la révocation du jeton part en arrière-plan). L'utilisateur n'est vidé
-   * qu'à l'arrivée sur la page, pour que le tableau de bord ne clignote pas
-   * vers un écran de chargement ou de connexion.
+   * (la révocation part en arrière-plan). L'utilisateur n'est vidé qu'à
+   * l'arrivée sur la page, pour que le tableau de bord ne clignote pas.
    */
   const logout = useCallback(
     (redirectTo = "/") => {
@@ -150,7 +208,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setPendingLogout(null);
       return;
     }
-    // Filet de sécurité si la navigation n'aboutit pas.
     const timer = window.setTimeout(() => {
       setUser(null);
       setPendingLogout(null);
@@ -164,7 +221,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return profile;
   };
 
-  const isAdmin = user ? user.is_admin : false;
+  // Le rôle affiché ne sert qu'à l'interface : chaque route admin est
+  // contrôlée par l'API, qui relit le rôle en base à chaque requête.
+  const isAdmin = isAdminUser(user);
 
   return (
     <AuthContext.Provider
@@ -173,10 +232,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         loggingOut: pendingLogout !== null,
         login,
+        completeTwoFactor,
         loginWithGoogle,
         register,
+        verifyEmail,
         logout,
         refreshUser,
+        setUser,
         isAdmin
       }}
     >

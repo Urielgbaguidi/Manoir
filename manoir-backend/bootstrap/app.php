@@ -2,7 +2,12 @@
 
 use App\Http\Middleware\AdminMiddleware;
 use App\Http\Middleware\EnsureEmailIsVerified;
+use App\Http\Middleware\EnsureProfileIsComplete;
+use App\Http\Middleware\EnsureTrustedOrigin;
 use App\Http\Middleware\RefreshCalendarIfStale;
+use App\Http\Middleware\RequireRecentAuthentication;
+use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\VerifyApiCsrfToken;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -18,18 +23,38 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         // Une API ne redirige pas vers une page de connexion : sans cela,
         // Laravel cherche une route nommee `login` qui n'existe pas et renvoie
-        // 500 au lieu de 401. Le frontend ne peut alors pas detecter la session
-        // expiree et affiche une erreur incomprehensible.
+        // 500 au lieu de 401.
         $middleware->redirectGuestsTo(fn () => null);
+
+        // Derriere le proxy TLS de l'hebergeur : sans cela HTTPS n'est pas
+        // detecte (cookies Secure, HSTS, refus du HTTP en clair).
+        $middleware->trustProxies(at: env('TRUSTED_PROXIES', '*'));
+
+        $middleware->api(prepend: [SecurityHeaders::class]);
 
         $middleware->alias([
             'admin' => AdminMiddleware::class,
             'email.verified' => EnsureEmailIsVerified::class,
+            'profile.complete' => EnsureProfileIsComplete::class,
             'calendar.fresh' => RefreshCalendarIfStale::class,
+            'csrf.api' => VerifyApiCsrfToken::class,
+            'trusted.origin' => EnsureTrustedOrigin::class,
+            'reauth' => RequireRecentAuthentication::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*'),
         );
+
+        // Jamais de jeton, mot de passe ou code dans les rapports d'erreur.
+        $exceptions->dontFlash([
+            'password',
+            'password_confirmation',
+            'current_password',
+            'credential',
+            'code',
+            'recovery_code',
+            'challenge_token',
+        ]);
     })->create();
