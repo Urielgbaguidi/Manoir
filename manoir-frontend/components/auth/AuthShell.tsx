@@ -45,7 +45,14 @@ export default function AuthShell({
       <aside className="on-dark relative hidden min-h-[100svh] lg:block">
         <div className="sticky top-0 h-[100svh]">
           <div className="relative h-full w-full overflow-hidden">
-            <Image src={image} alt="Intérieur d'un appartement du Manoir" fill priority sizes="50vw" className="object-cover" />
+            <Image
+              src={image}
+              alt="Intérieur d'un appartement du Manoir"
+              fill
+              priority
+              sizes="50vw"
+              className="object-cover"
+            />
             <div className="absolute inset-0 bg-gradient-to-t from-night via-night/45 to-night/20" />
 
             {/* Pastille d'accueil, comme sur la page d'accueil (sans étoile). */}
@@ -60,7 +67,8 @@ export default function AuthShell({
                 {headline}
               </p>
               <p className="mt-3 max-w-md text-[15px] leading-6 text-cream/75">
-                Que le temps vous y soit doux. Un lieu calme et chaleureux, pensé pour bien vous recevoir.
+                Que le temps vous y soit doux. Un lieu calme et chaleureux, pensé pour bien vous
+                recevoir.
               </p>
 
               <ul className="mt-8 space-y-4">
@@ -76,7 +84,13 @@ export default function AuthShell({
 
               <div className="mt-10 flex items-center gap-4 border-t border-gold/20 pt-6">
                 <span className="grid size-11 place-items-center overflow-hidden rounded-full border border-gold/30 bg-cream">
-                  <Image src="/assets/logo.jpg" alt="" width={44} height={44} className="size-full object-cover" />
+                  <Image
+                    src="/assets/logo.jpg"
+                    alt=""
+                    width={44}
+                    height={44}
+                    className="size-full object-cover"
+                  />
                 </span>
                 <div>
                   <p className="text-sm italic text-cream/80">
@@ -97,7 +111,13 @@ export default function AuthShell({
         <header className="flex items-center justify-between gap-4">
           <Link href="/" className="flex items-center gap-3" aria-label="Retour à l'accueil">
             <span className="grid size-10 place-items-center overflow-hidden rounded-full border border-gold/30 bg-cream">
-              <Image src="/assets/logo.jpg" alt="" width={40} height={40} className="size-full object-cover" />
+              <Image
+                src="/assets/logo.jpg"
+                alt=""
+                width={40}
+                height={40}
+                className="size-full object-cover"
+              />
             </span>
             <span className="font-display text-sm font-semibold uppercase tracking-[0.3em]">
               Le Manoir
@@ -190,7 +210,9 @@ export const AuthField = forwardRef<HTMLInputElement, AuthFieldProps>(function A
           )}
           {...props}
         />
-        {trailing && <div className="absolute inset-y-0 right-0 flex items-center pr-3">{trailing}</div>}
+        {trailing && (
+          <div className="absolute inset-y-0 right-0 flex items-center pr-3">{trailing}</div>
+        )}
       </div>
       {hint && <p className="text-xs leading-5 text-cream/50">{hint}</p>}
     </div>

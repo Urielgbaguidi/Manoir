@@ -11,13 +11,16 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { api, type Reservation } from "@/lib/api";
 import {
-  ACTIVE_STATUSES,
   availableDocuments,
   effectiveStatus,
   formatCurrency,
+  formatDateTime,
   formatDay,
+  isActiveReservation,
   parseDay,
+  reservationHref,
   reservationTitle,
+  stayAmountOf,
   statusLabels,
   statusTone,
   successfulPayments
@@ -32,11 +35,11 @@ export default function EspaceClientAccueil() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Anciens liens « /espace-client?payer=ID » : on renvoie vers la page
-  // des réservations qui ouvre directement le paiement.
+  // Anciens liens « /espace-client?payer=ID » : on renvoie vers le détail
+  // de la réservation, où se trouve le paiement.
   useEffect(() => {
     const payer = new URLSearchParams(window.location.search).get("payer");
-    if (payer) router.replace(`/espace-client/reservations?payer=${encodeURIComponent(payer)}`);
+    if (payer) router.replace(reservationHref(encodeURIComponent(payer)));
   }, [router]);
 
   useEffect(() => {
@@ -54,20 +57,31 @@ export default function EspaceClientAccueil() {
       reservation,
       status: effectiveStatus(reservation, now)
     }));
-    const active = withStatus.filter((item) => ACTIVE_STATUSES.includes(item.status));
+    const active = withStatus.filter((item) => isActiveReservation(item.reservation, now));
     const toPay = active.filter((item) => item.status === "VALIDEE_PAIEMENT_REQUIS");
+    const awaiting = active.filter((item) => item.status === "EN_ATTENTE");
     const totalPaid = reservations.reduce(
       (sum, reservation) =>
-        sum + successfulPayments(reservation).reduce((acc, payment) => acc + Number(payment.amount || 0), 0),
+        sum +
+        successfulPayments(reservation).reduce(
+          (acc, payment) => acc + Number(payment.amount || 0),
+          0
+        ),
       0
     );
-    const paymentsCount = reservations.reduce((sum, reservation) => sum + successfulPayments(reservation).length, 0);
-    // Factures = factures d'acompte + factures de séjour émises (les bons de
-    // réservation, de séjour et d'annulation ne sont pas des factures).
-    const documents = reservations.flatMap((reservation) => availableDocuments(reservation));
-    const depositInvoices = documents.filter((kind) => kind === "deposit").length;
-    const stayInvoices = documents.filter((kind) => kind === "stay").length;
-    const invoices = depositInvoices + stayInvoices;
+    const paymentsCount = reservations.reduce(
+      (sum, reservation) => sum + successfulPayments(reservation).length,
+      0
+    );
+    // Documents de paiement : Bons de Séjour émis + factures de l'ancien
+    // parcours (acompte, séjour).
+    const vouchers = reservations.reduce(
+      (sum, reservation) => sum + (reservation.vouchers?.length ?? 0),
+      0
+    );
+    const legacyInvoices = reservations
+      .flatMap((reservation) => availableDocuments(reservation))
+      .filter((kind) => kind === "deposit" || kind === "stay").length;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -75,17 +89,18 @@ export default function EspaceClientAccueil() {
       .filter((item) => (parseDay(item.reservation.check_out)?.getTime() ?? 0) >= today.getTime())
       .sort(
         (a, b) =>
-          (parseDay(a.reservation.check_in)?.getTime() ?? 0) - (parseDay(b.reservation.check_in)?.getTime() ?? 0)
+          (parseDay(a.reservation.check_in)?.getTime() ?? 0) -
+          (parseDay(b.reservation.check_in)?.getTime() ?? 0)
       )[0];
 
     return {
       active,
       toPay,
+      awaiting,
       totalPaid,
       paymentsCount,
-      invoices,
-      depositInvoices,
-      stayInvoices,
+      vouchers,
+      legacyInvoices,
       bookings: reservations.length,
       next
     };
@@ -111,14 +126,16 @@ export default function EspaceClientAccueil() {
         <StatCard
           icon={FileText}
           tone="gold"
-          label="Factures"
-          value={loading ? "…" : String(summary.invoices)}
+          label="Bons de Séjour"
+          value={loading ? "…" : String(summary.vouchers)}
           detail={
             loading
               ? "Chargement…"
-              : `${summary.depositInvoices} d'acompte · ${summary.stayInvoices} de séjour`
+              : summary.legacyInvoices > 0
+                ? `+ ${summary.legacyInvoices} facture${summary.legacyInvoices > 1 ? "s" : ""} (ancien parcours)`
+                : "Émis après chaque paiement"
           }
-          href="/espace-client/paiements"
+          href="/espace-client/factures"
         />
         <StatCard
           icon={Wallet}
@@ -137,7 +154,11 @@ export default function EspaceClientAccueil() {
           tone="terracotta"
           label="Réservations effectuées"
           value={loading ? "…" : String(summary.bookings)}
-          detail={loading ? "Chargement…" : `${summary.active.length} en cours`}
+          detail={
+            loading
+              ? "Chargement…"
+              : `${summary.active.length} en cours${summary.awaiting.length ? ` · ${summary.awaiting.length} en attente de validation` : ""}`
+          }
           href="/espace-client/reservations"
         />
       </div>
@@ -153,24 +174,21 @@ export default function EspaceClientAccueil() {
           <div className="flex gap-3">
             <AlertCircle className="mt-0.5 shrink-0 text-gold-light" size={22} />
             <div>
-              <p className="font-semibold text-cream">Acompte à régler : {reservationTitle(reservation)}</p>
+              <p className="font-semibold text-cream">
+                Demande validée · paiement à effectuer : {reservationTitle(reservation)}
+              </p>
               <p className="mt-1 text-sm text-cream/65">
                 Séjour du {formatDay(reservation.check_in)} au {formatDay(reservation.check_out)}.
                 {reservation.payment_deadline &&
-                  ` Appartement retenu jusqu'au ${new Date(reservation.payment_deadline).toLocaleString("fr-FR", {
-                    day: "numeric",
-                    month: "short",
-                    hour: "2-digit",
-                    minute: "2-digit"
-                  })}.`}
+                  ` À régler avant le ${formatDateTime(reservation.payment_deadline)}.`}
               </p>
             </div>
           </div>
           <Link
-            href={`/espace-client/reservations?payer=${reservation.id}`}
+            href={reservationHref(reservation.id)}
             className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-gradient-to-br from-gold-light to-gold px-5 py-3 text-sm font-bold text-night transition hover:brightness-105"
           >
-            Payer {formatCurrency(reservation.deposit_amount ?? reservation.total_price)}
+            Payer {formatCurrency(stayAmountOf(reservation))}
             <ArrowRight size={16} />
           </Link>
         </motion.div>
@@ -185,38 +203,46 @@ export default function EspaceClientAccueil() {
                 <span className="inline-block h-4 w-64 animate-pulse rounded bg-white/10" />
               ) : summary.active.length > 0 ? (
                 <>
-                  Vous avez <strong className="text-cream">{summary.active.length} réservation(s) en cours</strong>.
-                  Suivez leur avancement, téléchargez vos bons et gérez vos dates{" "}
-                  <InlineLink href="/espace-client/reservations">ici</InlineLink>.
+                  Vous avez{" "}
+                  <strong className="text-cream">
+                    {summary.active.length} réservation(s) en cours
+                  </strong>
+                  . Suivez leur avancement étape par étape, réglez votre séjour et téléchargez vos
+                  Bons de Séjour <InlineLink href="/espace-client/reservations">ici</InlineLink>.
                 </>
               ) : (
                 <>
-                  Vous n'avez aucune réservation en cours. Découvrez nos appartements et choisissez vos dates{" "}
-                  <InlineLink href="/rooms">ici</InlineLink>.
+                  Vous n'avez aucune réservation en cours. Découvrez nos appartements et choisissez
+                  vos dates <InlineLink href="/rooms">ici</InlineLink>.
                 </>
               )}
             </InfoBlock>
 
             <InfoBlock index={2} title="Paiements">
-              L'acompte se règle en ligne par Mobile Money ou carte bancaire, le solde au plus tard à
-              votre arrivée. Retrouvez tous vos règlements{" "}
+              Votre demande est gratuite. Une fois validée par notre équipe (vous êtes prévenu par
+              e-mail), vous réglez le séjour complet en ligne par Mobile Money ou carte bancaire.
+              Retrouvez tous vos règlements{" "}
               <InlineLink href="/espace-client/paiements">ici</InlineLink>.
             </InfoBlock>
 
             <InfoBlock index={3} title="Documents de séjour">
-              Bons de réservation, bons de séjour et factures sont disponibles en téléchargement dès
-              que chaque étape est franchie, depuis la page{" "}
-              <InlineLink href="/espace-client/paiements">Paiements & factures</InlineLink>.
+              Votre Bon de Séjour est émis dès que le paiement est confirmé, et un nouveau bon pour
+              chaque prolongation payée. Retrouvez-les sur votre réservation ou depuis la page{" "}
+              <InlineLink href="/espace-client/factures">Factures</InlineLink>.
             </InfoBlock>
 
             <InfoBlock index={4} title="Prolongation et annulation">
-              Un séjour confirmé peut être prolongé pendant votre présence, ou annulé jusqu'au jour
-              de l'arrivée. Le montant remboursable est calculé automatiquement avant validation.
+              Pendant un séjour payé, après au moins une nuit sur place, vous pouvez demander une
+              prolongation : elle est validée par notre équipe puis réglée en ligne. Une demande pas
+              encore payée peut être annulée sans frais jusqu'au jour de l'arrivée.
             </InfoBlock>
 
             <InfoBlock index={5} title="Besoin d'aide ?">
               Notre équipe vous répond par e-mail à{" "}
-              <a href={contactMailto("Question | Espace client")} className="font-semibold text-gold-light underline underline-offset-4">
+              <a
+                href={contactMailto("Question | Espace client")}
+                className="font-semibold text-gold-light underline underline-offset-4"
+              >
                 {CONTACT_EMAIL}
               </a>
               .
@@ -264,7 +290,9 @@ function StatCard({
         <Icon size={22} />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[12px] font-semibold uppercase leading-4 tracking-[0.08em] text-cream/60">{label}</p>
+        <p className="text-[12px] font-semibold uppercase leading-4 tracking-[0.08em] text-cream/60">
+          {label}
+        </p>
         <p
           className="mt-1.5 whitespace-nowrap font-display text-[1.75rem] font-bold leading-none text-cream md:text-xl xl:text-[1.75rem]"
           title={value}
@@ -277,7 +305,15 @@ function StatCard({
   );
 }
 
-function InfoBlock({ index, title, children }: { index: number; title: string; children: ReactNode }) {
+function InfoBlock({
+  index,
+  title,
+  children
+}: {
+  index: number;
+  title: string;
+  children: ReactNode;
+}) {
   return (
     <div>
       <h2 className="mb-1.5 text-[17px] font-bold text-cream">
@@ -290,7 +326,10 @@ function InfoBlock({ index, title, children }: { index: number; title: string; c
 
 function InlineLink({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <Link href={href} className="font-semibold text-gold-light underline underline-offset-4 hover:text-gold">
+    <Link
+      href={href}
+      className="font-semibold text-gold-light underline underline-offset-4 hover:text-gold"
+    >
       {children}
     </Link>
   );
@@ -331,27 +370,46 @@ function NextStayCard({
 
   return (
     <Link
-      href="/espace-client/reservations"
+      href={reservationHref(reservation.id)}
       className="on-dark group relative block overflow-hidden rounded-3xl"
     >
       <div className="relative h-64">
-        <Image src={image} alt="" fill sizes="340px" className="object-cover transition duration-700 group-hover:scale-105" />
+        <Image
+          src={image}
+          alt=""
+          fill
+          sizes="340px"
+          className="object-cover transition duration-700 group-hover:scale-105"
+        />
         <div className="absolute inset-0 bg-gradient-to-t from-night via-night/60 to-night/10" />
       </div>
       <div className="absolute inset-x-0 bottom-0 p-5">
         <div className="flex items-center justify-between gap-2">
           <span className="eyebrow">Prochain séjour</span>
-          <span className={cn("rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider", statusTone(status))}>
+          <span
+            className={cn(
+              "rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+              statusTone(status)
+            )}
+          >
             {statusLabels[status]}
           </span>
         </div>
-        <p className="mt-2 font-display text-xl font-semibold leading-tight text-cream">{reservationTitle(reservation)}</p>
+        <p className="mt-2 font-display text-xl font-semibold leading-tight text-cream">
+          {reservationTitle(reservation)}
+        </p>
         <p className="mt-1 text-sm text-cream/75">
           {formatDay(reservation.check_in)} → {formatDay(reservation.check_out)}
         </p>
         {daysLeft !== null && (
           <p className="mt-3 text-sm font-semibold text-gold-light">
-            {daysLeft > 1 ? `Arrivée dans ${daysLeft} jours` : daysLeft === 1 ? "Arrivée demain" : daysLeft === 0 ? "Arrivée aujourd'hui" : "Séjour en cours"}
+            {daysLeft > 1
+              ? `Arrivée dans ${daysLeft} jours`
+              : daysLeft === 1
+                ? "Arrivée demain"
+                : daysLeft === 0
+                  ? "Arrivée aujourd'hui"
+                  : "Séjour en cours"}
           </p>
         )}
       </div>

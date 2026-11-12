@@ -115,4 +115,11 @@ return [
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
+    /*
+    | Destinataire(s) des notifications de nouvelles demandes (reservation ou
+    | prolongation). Plusieurs adresses separees par des virgules. Vide :
+    | tous les comptes administrateurs.
+    */
+    'admin_notification_address' => env('ADMIN_NOTIFICATION_EMAIL'),
+
 ];

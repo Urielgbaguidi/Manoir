@@ -10,7 +10,9 @@ class AdminMiddleware
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if (! $request->user() || ! $request->user()->is_admin) {
+        $user = $request->user();
+
+        if (! $user || ! $user->isAdmin()) {
             return response()->json([
                 'message' => 'Accès non autorisé. Vous devez être administrateur.',
             ], 403);

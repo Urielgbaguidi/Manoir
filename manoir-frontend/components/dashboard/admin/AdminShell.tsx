@@ -7,10 +7,11 @@ import {
   ChevronDown,
   ExternalLink,
   FileDown,
+  History,
   LayoutGrid,
   LogOut,
   Menu,
-  Search,
+  ShieldCheck,
   UserRound,
   Users,
   X
@@ -18,10 +19,11 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type ComponentType, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import NotificationBell from "@/components/ui/NotificationBell";
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import { useAuth } from "@/context/AuthContext";
+import { isAdminUser } from "@/lib/roles";
 import { initialsOf } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
@@ -38,8 +40,10 @@ const menu: { title: string; items: NavItem[] }[] = [
     items: [
       { label: "Tableau de bord", href: "/admin", icon: LayoutGrid, exact: true },
       { label: "Réservations", href: "/admin/reservations", icon: CalendarRange },
+      { label: "Historique des séjours", href: "/admin/sejours", icon: History },
       { label: "Appartements", href: "/admin/rooms", icon: BedDouble },
-      { label: "Utilisateurs", href: "/admin/users", icon: Users }
+      { label: "Utilisateurs", href: "/admin/users", icon: Users },
+      { label: "Sécurité", href: "/admin/securite", icon: ShieldCheck }
     ]
   },
   {
@@ -51,8 +55,9 @@ const menu: { title: string; items: NavItem[] }[] = [
 /**
  * Coquille du back-office, portée du template TailAdmin
  * (free-nextjs-admin-dashboard) : sidebar repliable qui s'ouvre au survol,
- * tiroir mobile, en-tête collant avec recherche ⌘K, thème, notifications et
- * menu utilisateur — habillée aux couleurs du Manoir.
+ * tiroir mobile, en-tête collant avec thème, notifications et menu
+ * utilisateur — habillée aux couleurs du Manoir. La recherche vit dans les
+ * tableaux (utilisateurs, demandes), plus dans l'en-tête.
  */
 export default function AdminShell({ children }: { children: ReactNode }) {
   const { user, loading, loggingOut } = useAuth();
@@ -63,12 +68,13 @@ export default function AdminShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const showLabels = expanded || hovered || mobileOpen;
+  const isAdmin = isAdminUser(user);
 
   useEffect(() => {
     if (loading || loggingOut) return;
     if (!user) router.replace(`/auth/login?redirect=${encodeURIComponent(pathname)}`);
-    else if (!user.is_admin) router.replace("/espace-client");
-  }, [loading, loggingOut, user, router, pathname]);
+    else if (!isAdmin) router.replace("/espace-client");
+  }, [loading, loggingOut, user, isAdmin, router, pathname]);
 
   useEffect(() => setMobileOpen(false), [pathname]);
 
@@ -77,7 +83,7 @@ export default function AdminShell({ children }: { children: ReactNode }) {
     else setMobileOpen((value) => !value);
   };
 
-  if (loading || !user?.is_admin) {
+  if (loading || !isAdmin) {
     return (
       <div className="grid min-h-screen place-items-center">
         <span className="size-10 animate-spin rounded-full border-[3px] border-gold border-t-transparent" />
@@ -111,17 +117,30 @@ export default function AdminShell({ children }: { children: ReactNode }) {
           mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
       >
-        <div className={cn("flex items-center gap-3 py-7", showLabels ? "justify-start" : "justify-center")}>
+        <div
+          className={cn(
+            "flex items-center gap-3 py-7",
+            showLabels ? "justify-start" : "justify-center"
+          )}
+        >
           <Link href="/admin" className="flex items-center gap-3">
             <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full border border-gold/30 bg-cream">
-              <Image src="/assets/logo.jpg" alt="Le Manoir" width={40} height={40} className="size-full object-cover" />
+              <Image
+                src="/assets/logo.jpg"
+                alt="Le Manoir"
+                width={40}
+                height={40}
+                className="size-full object-cover"
+              />
             </span>
             {showLabels && (
               <span className="leading-tight">
                 <span className="block font-display text-base font-semibold uppercase tracking-[0.28em]">
                   Le Manoir
                 </span>
-                <span className="block text-[10px] uppercase tracking-[0.22em] text-cream/50">Back-office</span>
+                <span className="block text-[10px] uppercase tracking-[0.22em] text-cream/50">
+                  Back-office
+                </span>
               </span>
             )}
           </Link>
@@ -140,7 +159,9 @@ export default function AdminShell({ children }: { children: ReactNode }) {
               </h2>
               <ul className="space-y-1">
                 {group.items.map((item) => {
-                  const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+                  const active = item.exact
+                    ? pathname === item.href
+                    : pathname.startsWith(item.href);
                   return (
                     <li key={item.href}>
                       <Link
@@ -157,7 +178,10 @@ export default function AdminShell({ children }: { children: ReactNode }) {
                       >
                         <item.icon
                           size={22}
-                          className={cn("shrink-0", active ? "text-gold-light" : "text-cream/50 group-hover:text-cream")}
+                          className={cn(
+                            "shrink-0",
+                            active ? "text-gold-light" : "text-cream/50 group-hover:text-cream"
+                          )}
                         />
                         {showLabels && <span>{item.label}</span>}
                       </Link>
@@ -193,64 +217,26 @@ export default function AdminShell({ children }: { children: ReactNode }) {
         )}
       >
         <AdminHeader mobileOpen={mobileOpen} onToggle={toggleSidebar} />
-        <main className="mx-auto w-full min-w-0 max-w-screen-2xl overflow-x-clip p-4 md:p-6">{children}</main>
+        <main className="mx-auto w-full min-w-0 max-w-screen-2xl overflow-x-clip p-4 md:p-6">
+          {children}
+        </main>
       </div>
     </div>
   );
 }
 
 function AdminHeader({ mobileOpen, onToggle }: { mobileOpen: boolean; onToggle: () => void }) {
-  const router = useRouter();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [query, setQuery] = useState("");
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        inputRef.current?.focus();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
-
-  const onSearch = (event: FormEvent) => {
-    event.preventDefault();
-    const value = query.trim();
-    router.push(value ? `/admin/reservations?q=${encodeURIComponent(value)}` : "/admin/reservations");
-  };
-
   return (
     <header className="admin-header sticky top-0 z-[90] flex w-full border-b border-gold/15">
       <div className="flex w-full items-center justify-between gap-3 px-3 py-3 sm:px-4 lg:px-6 lg:py-4">
-        <div className="flex flex-1 items-center gap-3">
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-label="Afficher / masquer le menu"
-            className="grid size-10 shrink-0 place-items-center rounded-lg border border-gold/20 text-cream/70 transition hover:text-cream lg:size-11"
-          >
-            {mobileOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
-
-          <form onSubmit={onSearch} className="hidden w-full max-w-[430px] md:block">
-            <label className="relative block">
-              <Search size={18} className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-cream/50" />
-              <input
-                ref={inputRef}
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Rechercher un client, un e-mail, une réservation…"
-                className="glass-input h-11 w-full rounded-lg pl-11 pr-16 text-sm"
-              />
-              <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md border border-gold/20 bg-white/5 px-1.5 py-0.5 text-[11px] text-cream/50">
-                Ctrl K
-              </kbd>
-            </label>
-          </form>
-        </div>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label="Afficher / masquer le menu"
+          className="grid size-10 shrink-0 place-items-center rounded-lg border border-gold/20 text-cream/70 transition hover:text-cream lg:size-11"
+        >
+          {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
 
         <div className="flex items-center gap-2 sm:gap-3">
           <ThemeToggle />
@@ -293,7 +279,9 @@ function UserMenu() {
         <span className="grid size-10 place-items-center rounded-full bg-gradient-to-br from-gold-light to-gold text-sm font-bold text-night">
           {initialsOf(user?.name)}
         </span>
-        <span className="hidden max-w-[140px] truncate text-sm font-medium sm:block">{user?.name?.split(" ")[0]}</span>
+        <span className="hidden max-w-[140px] truncate text-sm font-medium sm:block">
+          {user?.name?.split(" ")[0]}
+        </span>
         <ChevronDown size={16} className={cn("hidden transition sm:block", open && "rotate-180")} />
       </button>
 
@@ -315,10 +303,18 @@ function UserMenu() {
               </p>
             </div>
             <div className="space-y-1 border-y border-gold/10 py-2 text-sm">
-              <Link href="/admin/users" onClick={() => setOpen(false)} className="flex items-center gap-3 rounded-lg px-2 py-2 text-cream/75 hover:bg-white/5 hover:text-cream">
+              <Link
+                href="/admin/users"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3 rounded-lg px-2 py-2 text-cream/75 hover:bg-white/5 hover:text-cream"
+              >
                 <UserRound size={18} /> Utilisateurs
               </Link>
-              <Link href="/" onClick={() => setOpen(false)} className="flex items-center gap-3 rounded-lg px-2 py-2 text-cream/75 hover:bg-white/5 hover:text-cream">
+              <Link
+                href="/"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3 rounded-lg px-2 py-2 text-cream/75 hover:bg-white/5 hover:text-cream"
+              >
                 <ExternalLink size={18} /> Voir le site
               </Link>
             </div>
@@ -362,5 +358,7 @@ export function AdminPageHeader({ title, action }: { title: string; action?: Rea
 
 /** Carte de base du back-office (équivalent ComponentCard de TailAdmin). */
 export function AdminCard({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cn("admin-card rounded-2xl border border-gold/15", className)}>{children}</div>;
+  return (
+    <div className={cn("admin-card rounded-2xl border border-gold/15", className)}>{children}</div>
+  );
 }

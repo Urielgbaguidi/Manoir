@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Reservations\StoreReservationRequest;
 use App\Mail\ReservationCancelled;
 use App\Models\Payment;
 use App\Models\Reservation;
 use App\Models\Room;
 use App\Models\RoomCategory;
 use App\Services\GoogleCalendarWriter;
+use App\Services\Notifications\RequestMailer;
 use App\Services\ReservationNotificationService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -19,18 +21,14 @@ use Illuminate\Support\Facades\Mail;
 
 class ReservationController extends Controller
 {
-    public function store(Request $request): JsonResponse
+    /**
+     * Demande de reservation : gratuite, sans paiement. Elle passe EN_ATTENTE
+     * et l'administration est prevenue par mail ; le paiement ne s'ouvre
+     * qu'apres validation.
+     */
+    public function store(StoreReservationRequest $request, RequestMailer $mailer): JsonResponse
     {
         Reservation::expireOverduePaymentRequests();
-
-        $request->validate([
-            'category_type' => 'required|string|in:'.implode(',', RoomCategory::TYPES),
-            'check_in' => 'required|date|after_or_equal:today',
-            'check_out' => 'required|date|after:check_in',
-            'room_id' => 'nullable|integer|exists:rooms,id',
-            'guests' => 'nullable|integer|min:1',
-            'special_requests' => 'nullable|string|max:1000',
-        ]);
 
         $category = RoomCategory::where('type', $request->category_type)->firstOrFail();
 
@@ -95,65 +93,36 @@ class ReservationController extends Controller
         $pricePerNight = (int) ($room->base_price ?: $category->price_per_night);
         $stayAmount = $nights * $pricePerNight;
 
-        // Acompte : une part du sejour, versee a l'avance et DEDUITE du total.
-        // L'ancienne formule multipliait une caution journaliere par le delai
-        // avant l'arrivee, sans aucun rapport avec le prix du sejour.
-        $rate = (float) config('booking.deposit_rate', 0.30);
-        $depositAmount = (int) round($stayAmount * $rate);
-
-        // Reserver retient l'appartement et ouvre le paiement dans la foulee.
-        // L'attente d'une validation par l'administration a ete supprimee :
-        // elle immobilisait le logement sans qu'aucune somme ne soit engagee,
-        // et laissait le client sans reponse.
-        $echeance = $this->echeanceDePaiement($checkIn);
-
+        // Paiement integral apres validation : pas d'acompte. La demande ne
+        // retient pas l'appartement ; la disponibilite est reverifiee au
+        // moment de la validation par l'administration.
         $reservation = Reservation::create([
             'user_id' => Auth::id(),
             'room_id' => $room->id,
             'category_type' => $category->type,
-            'check_in' => $request->check_in,
-            'check_out' => $request->check_out,
+            'check_in' => $request->validated('check_in'),
+            'check_out' => $request->validated('check_out'),
             'guests' => $guests,
             'total_price' => $stayAmount,
             'deposit_daily_rate' => 0,
-            'deposit_amount' => $depositAmount,
+            'deposit_amount' => 0,
             'stay_amount' => $stayAmount,
-            'status' => 'VALIDEE_PAIEMENT_REQUIS',
-            'approved_at' => now(),
-            'payment_deadline' => $echeance,
-            'special_requests' => $request->special_requests,
+            'status' => 'EN_ATTENTE',
+            'special_requests' => $request->validated('special_requests'),
         ]);
-
-        $montant = number_format($depositAmount, 0, ',', ' ');
-        $limite = $echeance->format('d/m/Y a H:i');
 
         ReservationNotificationService::sendOnce(
             $reservation,
             'reservation_submitted',
-            "Votre réservation #{$reservation->id} est enregistrée. L’appartement vous est réservé jusqu’au {$limite} : réglez l’acompte de {$montant} FCFA avant cette heure, sans quoi il sera remis à la location."
+            "Votre demande de réservation #{$reservation->id} a bien été envoyée. L’équipe du Manoir va l’examiner : vous recevrez un email dès sa validation, et le paiement s’ouvrira dans votre espace client."
         );
 
+        $mailer->newReservationRequest($reservation);
+
         return response()->json([
-            'message' => $room->apartment_number
-                ? "Appartement N°{$room->apartment_number} retenu jusqu'au {$limite}. Réglez l'acompte de {$montant} FCFA avant cette heure pour confirmer votre séjour."
-                : "Appartement retenu jusqu'au {$limite}. Réglez l'acompte de {$montant} FCFA avant cette heure pour confirmer votre séjour.",
-            'payment_deadline' => $echeance->toIso8601String(),
-            'deposit_amount' => $depositAmount,
+            'message' => 'Votre demande a bien ete envoyee. Vous serez prevenu par email des sa validation ; aucun paiement n\'est demande avant.',
             'reservation' => $reservation->load('room'),
         ], 201);
-    }
-
-    /**
-     * Fin du blocage : le client a ce delai pour regler son acompte.
-     *
-     * L'echeance ne depasse jamais le jour d'arrivee, sinon la reservation
-     * expirerait avant l'heure limite et le client paierait dans le vide.
-     */
-    private function echeanceDePaiement(Carbon $arrivee): Carbon
-    {
-        $heures = max(1, (int) config('booking.hold_hours', 12));
-
-        return now()->addHours($heures)->min($arrivee->copy()->endOfDay());
     }
 
     public function myReservations(): JsonResponse
@@ -164,7 +133,7 @@ class ReservationController extends Controller
             // Masquees par le client : elles restent en base et visibles cote
             // administration, mais n'encombrent plus sa liste.
             ->whereNull('client_hidden_at')
-            ->with(['room', 'payments', 'user'])
+            ->with(['room', 'payments', 'user', 'extensions', 'vouchers'])
             ->orderByDesc('created_at')
             ->get();
 
@@ -227,7 +196,7 @@ class ReservationController extends Controller
     public function show(string $id): JsonResponse
     {
         $reservation = Reservation::where('user_id', Auth::id())
-            ->with(['room', 'payments', 'notifications', 'user'])
+            ->with(['room', 'payments', 'notifications', 'user', 'extensions', 'vouchers'])
             ->findOrFail($id);
 
         $reservation->expireIfPaymentDeadlinePassed();
@@ -308,64 +277,6 @@ class ReservationController extends Controller
             'message' => 'Reservation annulee avec succes.',
             'reservation' => $reservation,
             'cancellation' => $calculation,
-        ]);
-    }
-
-    public function requestExtension(Request $request, string $id): JsonResponse
-    {
-        $request->validate([
-            'new_check_out' => 'required|date',
-        ]);
-
-        $reservation = Reservation::where('user_id', Auth::id())
-            ->with(['room', 'payments', 'user'])
-            ->findOrFail($id);
-
-        $reservation->expireIfPaymentDeadlinePassed();
-
-        if (! $reservation->canRequestStayExtension()) {
-            return response()->json([
-                'message' => 'Cette reservation ne peut pas etre prolongee pour le moment.',
-            ], 422);
-        }
-
-        $newCheckOut = Carbon::parse($request->new_check_out)->startOfDay();
-        $currentCheckOut = $reservation->check_out->copy()->startOfDay();
-
-        if ($newCheckOut->lessThanOrEqualTo($currentCheckOut)) {
-            return response()->json([
-                'message' => 'La nouvelle date de depart doit etre apres la date de depart actuelle.',
-            ], 422);
-        }
-
-        if (! $reservation->room->isAvailableForDates(
-            $currentCheckOut->toDateString(),
-            $newCheckOut->toDateString(),
-            $reservation->id
-        )) {
-            return response()->json([
-                'message' => 'Cet appartement n\'est pas disponible jusqu\'a cette nouvelle date de depart.',
-            ], 422);
-        }
-
-        $reservation->update([
-            'extension_status' => 'EN_ATTENTE',
-            'extension_previous_check_out' => $reservation->check_out,
-            'extension_requested_check_out' => $newCheckOut,
-            'extension_requested_at' => now(),
-            'extension_processed_at' => null,
-            'extension_admin_notes' => null,
-        ]);
-
-        ReservationNotificationService::sendOnce(
-            $reservation,
-            'extension_requested',
-            "Votre demande de prolongation pour la réservation #{$reservation->id}, jusqu’au {$newCheckOut->format('d/m/Y')}, a été envoyée à l’administration."
-        );
-
-        return response()->json([
-            'message' => 'Votre demande de prolongation a ete envoyee a l\'administrateur.',
-            'reservation' => $reservation->fresh(['room', 'payments', 'user']),
         ]);
     }
 

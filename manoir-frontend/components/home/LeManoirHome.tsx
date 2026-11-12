@@ -97,26 +97,25 @@ export default function LeManoirHome() {
   };
 
   const accountCards: ActionCard[] = user
-    ? [
-        ...(isAdmin
-          ? [
-              {
-                label: "Back-office",
-                href: "/admin",
-                description: "Accéder au portail administrateur du Manoir.",
-                icon: ShieldCheck,
-                index: "04"
-              }
-            ]
-          : []),
-        {
-          label: "Mon Espace",
-          href: "/espace-client",
-          description: "Vos réservations, paiements et factures au même endroit.",
-          icon: UserRound,
-          index: "03"
-        }
-      ]
+    ? isAdmin
+      ? [
+          {
+            label: "Back-office",
+            href: "/admin",
+            description: "Accéder au portail administrateur du Manoir.",
+            icon: ShieldCheck,
+            index: "04"
+          }
+        ]
+      : [
+          {
+            label: "Mon Espace",
+            href: "/espace-client",
+            description: "Vos réservations, paiements et factures au même endroit.",
+            icon: UserRound,
+            index: "03"
+          }
+        ]
     : [
         {
           label: "Connexion",
@@ -288,8 +287,7 @@ export default function LeManoirHome() {
                       Nos appartements
                     </h3>
                     <p className="mt-3 max-w-md text-sm leading-6 text-cream/75">
-                      VIP, 2 chambres ou 1 chambre : trouvez l&apos;appartement qui vous
-                      ressemble.
+                      VIP, 2 chambres ou 1 chambre : trouvez l&apos;appartement qui vous ressemble.
                     </p>
                     <span className="mt-5 inline-flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.22em] text-gold-light">
                       Explorer les suites{" "}
@@ -309,8 +307,7 @@ export default function LeManoirHome() {
                 card={{
                   label: "Comment réserver ?",
                   href: "/comment-reserver",
-                  description:
-                    "Réserver, payer, arriver : tout est expliqué en 3 étapes simples.",
+                  description: "Réserver, payer, arriver : tout est expliqué en 3 étapes simples.",
                   icon: BookOpenCheck,
                   index: "01"
                 }}

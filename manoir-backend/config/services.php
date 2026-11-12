@@ -28,6 +28,16 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    /*
+    | Connexion avec Google (Google Identity Services). Seul l'identifiant
+    | client est necessaire : le jeton d'identite est verifie localement avec
+    | les cles publiques de Google. Doit etre identique a
+    | NEXT_PUBLIC_GOOGLE_CLIENT_ID cote frontend.
+    */
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

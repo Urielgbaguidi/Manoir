@@ -1,0 +1,13 @@
+
+- Pour le paiement je veux seulement qu’il entre son numero dans le checkout
+- Le paiement n’est pas synchrone ie quand la personne entre ses infos et appuie sur payer la popup est tjrs ouverte alors que mon toast vert s’affiche en arrierre plan
+- Dans historique de paiement je vois un truc qui ne me plait pas du tout c’est le faite de mettre Mobile Money · FeexPay … je veux juste le moyen de paiement est ce que c’est moov ou est ce que c’est mtn  ou quoi d’autres tu recupere ca depuis l’api
+- Paiement doit rester a part et facture doit rester a part de preferences le tableau doit etre un jdata tables ie tu met une autre section Factures dans la sideBar
+- Au niveau de la scetion  Reservations dans l’espace Client  je veux juste un jdataTables qui contient historiques des reservation qu’il a faite et des actions pour  voir une reservation  avec l’icone voir (je ne veux pas de texte simplement l’icone) , annuler une reservation si cela n’a pas encore ete valide par encore ete payee ( avec l’icone X)
+- Au niveau de l’espace client enleve  **Appareil connectes**
+- Concernant historique des sejours  mets ca au niveau de l’admin sous forme de data tables pour lui mettre de connaitres qui sejourne dans tel appartements mais tu n’affiche que cela de ceux qui ont deja payer la reservation
+- concernant le styles des datatables en **general** utilise le style dispo sur le template qui est dans le repertoir Manoir et qui se nomme free-nextjs-admin-dashboard-main
+- Au niveau de l’espace admin au niveau de la liste des utilisateur, je veux juste que tu m’affiche les infos esssentiel : nom , email ,telephone,inscription , enleve le filtre email-verifier ….
+- Concernant  Donnee personne inspire tojpurs de la section profile qui est dans le dossier Components du template free-nextjs-admin-dashboard-main et implente un truc pareil
+- Dans appartements j’ai vu que tu affiche tout en meme temps ce qui n’est pas du tout bien , donc je propose que tu fasse un data Table  en t’inspiraant du template de  data Table qui est ici:free-nextjs-admin-dashboard-main, avec comme action modifier ,supprimer et liberer (si appart est occuper ) pour les actions utilise des icones
+- Au niveau de  Section **Reservation**  au niveau de l’admin  enleve **Appartements occupés,** Toujours dans la section **Demandes de réservation (Tableau) au niveau de client affiche seulement son nom ,**dans le filtre enleve  **client , type de demande ,appartement,**    le tableau doit etre du jdata Table en suivant le data table qui est dans le template :free-nextjs-admin-dashboard-main

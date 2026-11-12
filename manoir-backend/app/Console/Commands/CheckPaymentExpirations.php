@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Mail\PaymentReminder;
 use App\Models\Notification;
 use App\Models\Reservation;
+use App\Models\StayExtension;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -28,8 +29,19 @@ class CheckPaymentExpirations extends Command
                 $query->where('payment_deadline', '<=', $now)
                     ->orWhereDate('check_in', '<', $now->toDateString());
             })
+            // Paiement en cours de validation : on laisse FeexPay conclure.
+            ->whereDoesntHave('payments', fn ($payments) => $payments
+                ->where('status', 'pending')
+                ->where('created_at', '>', now()->subMinutes(30)))
             ->with(['user', 'room'])
             ->get();
+
+        // Prolongations validees mais non payees dans le delai : les nuits
+        // retenues sont liberees.
+        $expiredExtensions = StayExtension::expireOverdue();
+        if ($expiredExtensions > 0) {
+            $this->warn("{$expiredExtensions} prolongation(s) expiree(s).");
+        }
 
         foreach ($expiredReservations as $reservation) {
             $reservation->update(['status' => 'EXPIREE']);
@@ -41,7 +53,7 @@ class CheckPaymentExpirations extends Command
                 'type' => 'reservation_expired',
                 'channel' => 'system',
                 'status' => 'sent',
-                'content' => "La réservation #{$reservation->id} a expiré car l’acompte n’a pas été payé dans le délai prévu. L’appartement a été remis à disposition.",
+                'content' => "La réservation #{$reservation->id} a expiré car le séjour n’a pas été payé dans le délai prévu. L’appartement a été remis à disposition.",
                 'metadata' => ['action_url' => '/reservations'],
                 'sent_at' => now(),
             ]);

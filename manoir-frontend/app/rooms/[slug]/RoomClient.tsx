@@ -8,7 +8,9 @@ import Image from "next/image";
 import {
   AlertCircle,
   ArrowLeft,
+  CheckCircle2,
   Images,
+  Mail,
   Maximize2,
   Pause,
   Play,
@@ -20,9 +22,11 @@ import {
 } from "lucide-react";
 import {
   api,
+  ApiError,
   AvailabilitySuggestion,
   AvailableAlternative,
   OwnFreeWindow,
+  Reservation,
   Room,
   RoomAvailability,
   RoomCategory
@@ -31,6 +35,13 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import ImageLightbox from "@/components/ui/ImageLightbox";
 import WhatsAppButton from "@/components/ui/WhatsAppButton";
+import BookingStepper from "@/components/reservations/BookingStepper";
+import {
+  errorMessage,
+  isRetryableError,
+  useIdempotentIntent
+} from "@/components/reservations/useIdempotentIntent";
+import { reservationHref } from "@/lib/reservationDisplay";
 
 const fallbackCategories: Record<string, RoomCategory> = {
   "appartement-vip": {
@@ -161,20 +172,15 @@ const roomDisplayName = (room: Room) => {
 
 const videoPreviewSrc = (video: string) => (video.includes("#") ? video : `${video}#t=0.1`);
 
-/** Part du sejour demandee a l'avance. Doit rester alignee sur config/booking.php. */
-const DEPOSIT_RATE = 0.3;
-
-// Duree pendant laquelle reserver retient l'appartement, le temps du paiement.
-// Doit rester en accord avec booking.hold_hours cote serveur.
-const HOLD_HOURS = 12;
+/** Délai avant la redirection vers le suivi, une fois la demande envoyée. */
+const REDIRECT_AFTER_SENT_MS = 5000;
 
 /** "2026-08-21" -> "21 août" */
 const formatJour = (iso: string) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
 
 /** Libellé court, pour la pastille posée sur la photo. */
-const libelleCourt = (a: RoomAvailability) =>
-  a.status === "occupied" ? "Occupé" : "Disponible";
+const libelleCourt = (a: RoomAvailability) => (a.status === "occupied" ? "Occupé" : "Disponible");
 
 /** Pastille posée sur la photo : opaque, pour rester lisible sur toute image. */
 function AvailabilityBadge({ availability }: { availability?: RoomAvailability }) {
@@ -250,6 +256,18 @@ export default function RoomCategoryDetailPage() {
   const [videoMuted, setVideoMuted] = useState(false);
   const [videoCurrentTime, setVideoCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
+  // Parcours de demande : 0 = dates, 1 = informations, 2 = demande envoyée.
+  const [formStep, setFormStep] = useState<0 | 1 | 2>(0);
+  const [sentReservation, setSentReservation] = useState<Reservation | null>(null);
+  const { keyFor, reset: resetIntent, run: runOnce } = useIdempotentIntent();
+  const redirectTimer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (redirectTimer.current) window.clearTimeout(redirectTimer.current);
+    },
+    []
+  );
 
   // Chaque appartement est choisi individuellement, quelle que soit sa
   // categorie : il a ses propres photos, videos, description et prix, tous
@@ -311,6 +329,8 @@ export default function RoomCategoryDetailPage() {
       setAvailable(null);
       setAssignedRoom(null);
       setShowForm(false);
+      setFormStep(0);
+      setSentReservation(null);
       setSelectedVideo(null);
 
       try {
@@ -452,6 +472,7 @@ export default function RoomCategoryDetailPage() {
       searchParams.get("reserve") === "1" &&
       user &&
       user.email_verified_at !== null &&
+      user.profile_completed !== false &&
       category &&
       !category.is_blocked &&
       !activeRoomBlocked &&
@@ -477,12 +498,28 @@ export default function RoomCategoryDetailPage() {
   const activeImage = images[activeImageIndex] ?? images[0];
 
   const nights = useMemo(() => dayDiff(checkIn, checkOut), [checkIn, checkOut]);
+  // Estimation : le serveur recalcule le montant et reste seul juge.
   const stayAmount = nights * pricePerNight;
+  const guestCount = Math.max(1, Math.min(guests, maxGuests));
 
-  // Acompte : une part du sejour, versee a l'avance et DEDUITE du total.
-  // Le meme taux est applique cote serveur, qui reste seul juge du montant.
-  const depositAmount = Math.round(stayAmount * DEPOSIT_RATE);
-  const balanceAmount = Math.max(0, stayAmount - depositAmount);
+  /** Adresse de retour : la fiche, le formulaire ouvert et les dates conservées. */
+  const returnPath = () => {
+    if (!category) return "/rooms";
+    const query = new URLSearchParams();
+    if (activeRoom) query.set("unit", activeRoom.slug);
+    if (checkIn) query.set("check_in", checkIn);
+    if (checkOut) query.set("check_out", checkOut);
+    query.set("reserve", "1");
+    return `/rooms/${category.slug}?${query.toString()}`;
+  };
+
+  const goToEmailConfirmation = () =>
+    router.push(
+      `/auth/confirmer-email?email=${encodeURIComponent(user?.email ?? "")}&redirect=${encodeURIComponent(returnPath())}`
+    );
+
+  const goToPhoneStep = () =>
+    router.push(`/auth/register?etape=telephone&redirect=${encodeURIComponent(returnPath())}`);
 
   const beginReservation = () => {
     if (!category) return;
@@ -497,24 +534,28 @@ export default function RoomCategoryDetailPage() {
       return;
     }
 
-    const unitQuery = activeRoom ? `unit=${activeRoom.slug}&` : "";
-    const retour = `/rooms/${category.slug}?${unitQuery}reserve=1`;
-
     if (!user) {
       showToast("Créez votre compte pour finaliser votre réservation.", "info");
-      router.push(`/auth/register?redirect=${encodeURIComponent(retour)}`);
+      router.push(`/auth/register?redirect=${encodeURIComponent(returnPath())}`);
       return;
     }
 
     // Le serveur refuse de toute facon une demande venant d'une adresse non
-    // confirmee : autant amener le client au bon endroit plutot que de le
-    // laisser remplir un formulaire qui sera rejete.
+    // confirmee ou d'un compte sans telephone : autant amener le client au bon
+    // endroit plutot que de le laisser remplir un formulaire qui sera rejete.
     if (user.email_verified_at === null) {
       showToast("Confirmez votre adresse e-mail pour réserver.", "info");
-      router.push(`/auth/confirmer-email?redirect=${encodeURIComponent(retour)}`);
+      goToEmailConfirmation();
       return;
     }
 
+    if (user.profile_completed === false) {
+      showToast("Ajoutez votre numéro de téléphone pour réserver.", "info");
+      goToPhoneStep();
+      return;
+    }
+
+    setFormStep(0);
     setShowForm(true);
     setTimeout(
       () =>
@@ -525,51 +566,89 @@ export default function RoomCategoryDetailPage() {
     );
   };
 
-  const handleReservation = async () => {
-    if (!category) return;
-
+  /** Étape 1 -> 2 : les dates sont libres, on passe aux informations. */
+  const continueToDetails = () => {
     if (!checkIn || !checkOut) {
-      showToast("Choisissez vos dates avant de lancer la demande.", "info");
+      showToast("Choisissez vos dates avant de continuer.", "info");
       return;
     }
-
-    if (new Date(checkOut) <= new Date(checkIn)) {
-      showToast("La date de départ doit être après la date d'arrivée.", "error");
-      return;
-    }
-
-    if (activeRoomBlocked) {
-      showToast("Cet appartement VIP est indisponible pour le moment.", "error");
-      return;
-    }
-
     if (available !== true) {
       showToast("Aucun appartement libre sur ces dates. Essayez d'autres dates.", "error");
       return;
     }
+    setFormStep(1);
+  };
 
-    setReserving(true);
+  const handleReservation = () =>
+    runOnce(async () => {
+      if (!category) return;
 
-    try {
-      const response = await api.createReservation({
+      if (!checkIn || !checkOut) {
+        showToast("Choisissez vos dates avant de lancer la demande.", "info");
+        setFormStep(0);
+        return;
+      }
+
+      if (new Date(checkOut) <= new Date(checkIn)) {
+        showToast("La date de départ doit être après la date d'arrivée.", "error");
+        setFormStep(0);
+        return;
+      }
+
+      if (activeRoomBlocked) {
+        showToast("Cet appartement est indisponible pour le moment.", "error");
+        return;
+      }
+
+      if (available !== true) {
+        showToast("Aucun appartement libre sur ces dates. Essayez d'autres dates.", "error");
+        setFormStep(0);
+        return;
+      }
+
+      const payload = {
         category_type: category.type,
         room_id: activeRoom?.id,
         check_in: checkIn,
         check_out: checkOut,
-        guests,
-        special_requests: specialRequests
-      });
-      showToast(response.message || "Appartement retenu. Reglez l'acompte pour confirmer.", "success");
-      // Le paiement s'ouvre tout seul a l'arrivee : l'appartement n'est retenu
-      // que quelques heures, faire chercher le bouton au client lui ferait
-      // perdre une partie de ce delai.
-      router.push(`/espace-client/reservations?payer=${response.reservation.id}`);
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "Une erreur est survenue.", "error");
-    } finally {
-      setReserving(false);
-    }
-  };
+        guests: guestCount,
+        special_requests: specialRequests.trim() || undefined
+      };
+      // Une clé par demande : un nouvel essai après une coupure réseau
+      // réutilise la même, le serveur ne crée donc pas de doublon.
+      const idempotencyKey = keyFor(JSON.stringify(payload));
+
+      setReserving(true);
+
+      try {
+        const response = await api.createReservation(payload, idempotencyKey);
+        resetIntent();
+        setSentReservation(response.reservation);
+        setFormStep(2);
+        showToast("Demande envoyée. Vous serez prévenu par email dès sa validation.", "success");
+        redirectTimer.current = window.setTimeout(
+          () => router.push(reservationHref(response.reservation.id)),
+          REDIRECT_AFTER_SENT_MS
+        );
+      } catch (error) {
+        if (error instanceof ApiError && error.reason === "email_not_verified") {
+          resetIntent();
+          showToast("Confirmez votre adresse e-mail pour envoyer votre demande.", "info");
+          goToEmailConfirmation();
+          return;
+        }
+        if (error instanceof ApiError && error.reason === "phone_required") {
+          resetIntent();
+          showToast("Ajoutez votre numéro de téléphone pour envoyer votre demande.", "info");
+          goToPhoneStep();
+          return;
+        }
+        if (!isRetryableError(error)) resetIntent();
+        showToast(errorMessage(error, "La demande n'a pas pu être envoyée."), "error");
+      } finally {
+        setReserving(false);
+      }
+    });
 
   if (loading) {
     return (
@@ -774,14 +853,12 @@ export default function RoomCategoryDetailPage() {
                 </div>
                 <div>
                   <span className="block text-[10px] font-bold uppercase tracking-widest text-gold/80">
-                    Acompte
+                    Paiement
                   </span>
-                  <span className="mt-1 block font-display text-2xl font-bold text-cream">
-                    {Math.round(DEPOSIT_RATE * 100)} %
+                  <span className="mt-1 block font-display text-lg font-bold leading-tight text-cream">
+                    Après validation
                   </span>
-                  <span className="mt-0.5 block text-[11px] text-cream/50">
-                    déduit du séjour
-                  </span>
+                  <span className="mt-0.5 block text-[11px] text-cream/50">demande gratuite</span>
                 </div>
                 {/* L'etat d'occupation est la premiere chose que cherche un
                     client sur une fiche : il precede donc l'appel a reserver. */}
@@ -935,8 +1012,8 @@ export default function RoomCategoryDetailPage() {
                 {!showForm ? (
                   <div className="space-y-5">
                     <p className="text-[15px] leading-6 text-cream/70">
-                      Lancez la demande pour choisir vos dates et envoyer vos informations a
-                      l'equipe du Manoir.
+                      Choisissez vos dates et envoyez votre demande à l&apos;équipe du Manoir. Elle
+                      est gratuite : vous ne payez qu&apos;après sa validation.
                     </p>
                     <button
                       type="button"
@@ -949,286 +1026,396 @@ export default function RoomCategoryDetailPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="space-y-4">
-                      <div>
-                        <label
-                          htmlFor="check-in"
-                          className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-gold/80"
-                        >
-                          Date d'arrivee
-                        </label>
-                        <input
-                          id="check-in"
-                          type="date"
-                          value={checkIn}
-                          onChange={(event) => setCheckIn(event.target.value)}
-                          onClick={(event) =>
-                            (event.currentTarget as HTMLInputElement).showPicker?.()
-                          }
-                          min={todayString()}
-                          className="glass-input w-full rounded-xl px-4 py-3.5 text-sm outline-none cursor-pointer"
-                        />
-                      </div>
+                    <BookingStepper current={formStep} compact />
 
-                      <div>
-                        <label
-                          htmlFor="check-out"
-                          className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-gold/80"
-                        >
-                          Date de depart
-                        </label>
-                        <input
-                          id="check-out"
-                          type="date"
-                          value={checkOut}
-                          onChange={(event) => setCheckOut(event.target.value)}
-                          onClick={(event) =>
-                            (event.currentTarget as HTMLInputElement).showPicker?.()
-                          }
-                          min={checkIn || todayString()}
-                          className="glass-input w-full rounded-xl px-4 py-3.5 text-sm outline-none cursor-pointer"
-                        />
-                      </div>
-
-                      <div>
-                        <label
-                          htmlFor="special-requests"
-                          className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-gold/80"
-                        >
-                          Demandes speciales
-                        </label>
-                        <textarea
-                          id="special-requests"
-                          value={specialRequests}
-                          onChange={(event) => setSpecialRequests(event.target.value)}
-                          rows={3}
-                          placeholder="Ex: arrivee tardive, preference..."
-                          className="glass-input w-full resize-none rounded-xl px-4 py-3 text-sm outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    {checkIn && checkOut && (
+                    {formStep === 2 ? (
                       <motion.div
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className={`rounded-2xl border p-5 text-xs leading-relaxed ${
-                          available === true
-                            ? "border-olive/40 bg-olive/15 text-olive-light"
-                            : available === false
-                              ? "border-terracotta/40 bg-terracotta/15 text-terracotta-light"
-                              : "border-gold/15 bg-white/5 text-gold/80"
-                        }`}
+                        className="space-y-5"
                       >
-                        {checking ? (
-                          <div className="flex items-center gap-2">
-                            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                            <span>Verification des disponibilites...</span>
+                        <div className="rounded-2xl border border-olive/40 bg-olive/15 p-5 text-center">
+                          <CheckCircle2 className="mx-auto h-10 w-10 text-olive-light" />
+                          <p className="mt-3 font-display text-xl font-bold text-cream">
+                            Demande envoyée
+                          </p>
+                          <p className="mt-2 text-sm leading-6 text-cream/70">
+                            Elle est maintenant{" "}
+                            <strong className="text-cream">en attente de validation</strong> par
+                            l&apos;équipe du Manoir.
+                          </p>
+                        </div>
+                        <ul className="space-y-3 text-sm leading-6 text-cream/70">
+                          <li className="flex gap-3">
+                            <Mail size={16} className="mt-1 shrink-0 text-gold-light" />
+                            Vous recevrez un email dès que votre demande sera validée.
+                          </li>
+                          <li className="flex gap-3">
+                            <ShieldCheck size={16} className="mt-1 shrink-0 text-gold-light" />
+                            Aucun paiement maintenant : le règlement du séjour s&apos;ouvrira dans
+                            votre espace client après validation.
+                          </li>
+                        </ul>
+                        {sentReservation && (
+                          <Link
+                            href={reservationHref(sentReservation.id)}
+                            className="flex w-full items-center justify-center rounded-full bg-gradient-to-br from-gold-light to-gold py-4 text-xs font-bold uppercase tracking-[0.2em] text-night transition hover:brightness-105"
+                          >
+                            Suivre ma demande
+                          </Link>
+                        )}
+                        <p className="text-center text-[11px] text-cream/45">
+                          Redirection automatique vers votre espace client…
+                        </p>
+                      </motion.div>
+                    ) : formStep === 1 ? (
+                      <div className="space-y-5">
+                        <div className="space-y-2 rounded-2xl border border-gold/15 bg-white/5 p-4 text-sm text-cream/75">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[10px] uppercase tracking-wider text-cream/45">
+                              Appartement
+                            </span>
+                            <span className="text-right font-semibold text-cream">
+                              {assignedRoom?.apartment_number
+                                ? `N°${assignedRoom.apartment_number}`
+                                : detailTitle}
+                            </span>
                           </div>
-                        ) : available === true ? (
-                          <div className="space-y-3">
-                            <p className="font-bold">
-                              Disponible pour {nights} nuit{nights > 1 ? "s" : ""}
-                            </p>
-                            {assignedRoom?.apartment_number && (
-                              <p className="rounded-xl border border-olive/25 bg-white/10 p-3 text-cream">
-                                Appartement N°{assignedRoom.apartment_number} réservé pour votre
-                                séjour.
-                              </p>
-                            )}
-                            <div className="space-y-2 border-t border-olive/10 pt-3 text-cream">
-                              <div className="flex items-center justify-between gap-4">
-                                <span className="text-[10px] uppercase tracking-wider text-cream/45">
-                                  Sejour ({nights} nuit{nights > 1 ? "s" : ""})
-                                </span>
-                                <span className="font-display text-lg font-bold">
-                                  {formatCurrency(stayAmount)}
-                                </span>
-                              </div>
-                              <div className="flex items-center justify-between gap-4 rounded-lg bg-white/10 px-3 py-2">
-                                <span className="text-[10px] uppercase tracking-wider text-gold-light">
-                                  Acompte a verser ({Math.round(DEPOSIT_RATE * 100)} %)
-                                </span>
-                                <span className="font-display text-lg font-bold text-gold-light">
-                                  {formatCurrency(depositAmount)}
-                                </span>
-                              </div>
-                              <div className="flex items-center justify-between gap-4">
-                                <span className="text-[10px] uppercase tracking-wider text-cream/45">
-                                  Solde a l'arrivee
-                                </span>
-                                <span className="font-display text-lg font-bold">
-                                  {formatCurrency(balanceAmount)}
-                                </span>
-                              </div>
-                              <p className="pt-1 text-[11px] leading-4 text-cream/50">
-                                L&apos;acompte est deduit du sejour : acompte + solde ={" "}
-                                {formatCurrency(stayAmount)}.
-                              </p>
-                            </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[10px] uppercase tracking-wider text-cream/45">
+                              Dates
+                            </span>
+                            <span className="text-right">
+                              {formatJour(checkIn)} → {formatJour(checkOut)}
+                            </span>
                           </div>
-                        ) : available === false ? (
-                          <div className="space-y-3">
-                            <p className="font-semibold">
-                              {alternatives.length > 0
-                                ? "Cet appartement n'est pas libre sur ces dates."
-                                : suggestions.length > 0
-                                  ? `Aucun appartement n'est libre sur ces ${nights} nuit${nights > 1 ? "s" : ""} d'affilee. Voici ce qui est possible :`
-                                  : "Aucun appartement disponible pour ces dates. Veuillez choisir d'autres dates."}
-                            </p>
+                          <div className="flex items-center justify-between gap-3 border-t border-gold/10 pt-2">
+                            <span className="text-[10px] uppercase tracking-wider text-cream/45">
+                              Séjour ({nights} nuit{nights > 1 ? "s" : ""})
+                            </span>
+                            <span className="font-display text-lg font-bold text-cream">
+                              {formatCurrency(stayAmount)}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setFormStep(0)}
+                            disabled={reserving}
+                            className="text-[11px] font-semibold text-gold-light underline underline-offset-4 disabled:opacity-50"
+                          >
+                            Modifier les dates
+                          </button>
+                        </div>
 
-                            {/* Le creneau de l'appartement que le client
+                        <div>
+                          <label
+                            htmlFor="guests"
+                            className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-gold/80"
+                          >
+                            Nombre de voyageurs
+                          </label>
+                          <select
+                            id="guests"
+                            value={guestCount}
+                            onChange={(event) => setGuests(Number(event.target.value))}
+                            className="glass-input w-full cursor-pointer rounded-xl px-4 py-3.5 text-sm outline-none"
+                          >
+                            {Array.from({ length: maxGuests }, (_, index) => index + 1).map(
+                              (count) => (
+                                <option key={count} value={count}>
+                                  {count} voyageur{count > 1 ? "s" : ""}
+                                </option>
+                              )
+                            )}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label
+                            htmlFor="special-requests"
+                            className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-gold/80"
+                          >
+                            Demandes spéciales (facultatif)
+                          </label>
+                          <textarea
+                            id="special-requests"
+                            value={specialRequests}
+                            onChange={(event) => setSpecialRequests(event.target.value)}
+                            rows={3}
+                            maxLength={1000}
+                            placeholder="Ex : arrivée tardive, lit bébé..."
+                            className="glass-input w-full resize-none rounded-xl px-4 py-3 text-sm outline-none"
+                          />
+                        </div>
+
+                        <p className="rounded-2xl border border-gold/20 bg-white/5 p-4 text-[12px] leading-5 text-cream/75">
+                          <strong className="text-cream">Rien à payer maintenant.</strong>{" "}
+                          L&apos;équipe du Manoir étudie votre demande et vous prévient par email.
+                          Vous réglerez ensuite le séjour en ligne (Mobile Money ou carte) depuis
+                          votre espace client.
+                        </p>
+
+                        <div className="flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setFormStep(0)}
+                            disabled={reserving}
+                            className="rounded-full border border-gold/25 px-5 py-4 text-xs font-bold uppercase tracking-[0.18em] text-cream/80 transition hover:bg-white/5 disabled:opacity-50"
+                          >
+                            Retour
+                          </button>
+                          <button
+                            type="button"
+                            disabled={reserving || checking || available !== true}
+                            onClick={handleReservation}
+                            className="flex flex-1 items-center justify-center gap-2 rounded-full bg-gradient-to-br from-gold-light to-gold py-4 text-xs font-bold uppercase tracking-[0.2em] text-night transition duration-300 hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {reserving ? (
+                              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-night border-t-transparent" />
+                            ) : (
+                              "Envoyer la demande"
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="space-y-4">
+                          <div>
+                            <label
+                              htmlFor="check-in"
+                              className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-gold/80"
+                            >
+                              Date d'arrivee
+                            </label>
+                            <input
+                              id="check-in"
+                              type="date"
+                              value={checkIn}
+                              onChange={(event) => setCheckIn(event.target.value)}
+                              onClick={(event) =>
+                                (event.currentTarget as HTMLInputElement).showPicker?.()
+                              }
+                              min={todayString()}
+                              className="glass-input w-full rounded-xl px-4 py-3.5 text-sm outline-none cursor-pointer"
+                            />
+                          </div>
+
+                          <div>
+                            <label
+                              htmlFor="check-out"
+                              className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-gold/80"
+                            >
+                              Date de depart
+                            </label>
+                            <input
+                              id="check-out"
+                              type="date"
+                              value={checkOut}
+                              onChange={(event) => setCheckOut(event.target.value)}
+                              onClick={(event) =>
+                                (event.currentTarget as HTMLInputElement).showPicker?.()
+                              }
+                              min={checkIn || todayString()}
+                              className="glass-input w-full rounded-xl px-4 py-3.5 text-sm outline-none cursor-pointer"
+                            />
+                          </div>
+                        </div>
+
+                        {checkIn && checkOut && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className={`rounded-2xl border p-5 text-xs leading-relaxed ${
+                              available === true
+                                ? "border-olive/40 bg-olive/15 text-olive-light"
+                                : available === false
+                                  ? "border-terracotta/40 bg-terracotta/15 text-terracotta-light"
+                                  : "border-gold/15 bg-white/5 text-gold/80"
+                            }`}
+                          >
+                            {checking ? (
+                              <div className="flex items-center gap-2">
+                                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                <span>Verification des disponibilites...</span>
+                              </div>
+                            ) : available === true ? (
+                              <div className="space-y-3">
+                                <p className="font-bold">
+                                  Disponible pour {nights} nuit{nights > 1 ? "s" : ""}
+                                </p>
+                                {assignedRoom?.apartment_number && (
+                                  <p className="rounded-xl border border-olive/25 bg-white/10 p-3 text-cream">
+                                    Appartement N°{assignedRoom.apartment_number} proposé pour votre
+                                    séjour.
+                                  </p>
+                                )}
+                                <div className="space-y-2 border-t border-olive/10 pt-3 text-cream">
+                                  <div className="flex items-center justify-between gap-4">
+                                    <span className="text-[10px] uppercase tracking-wider text-cream/45">
+                                      Sejour ({nights} nuit{nights > 1 ? "s" : ""})
+                                    </span>
+                                    <span className="font-display text-lg font-bold">
+                                      {formatCurrency(stayAmount)}
+                                    </span>
+                                  </div>
+                                  <p className="pt-1 text-[11px] leading-4 text-cream/50">
+                                    Rien à payer aujourd&apos;hui : le séjour se règle en ligne une
+                                    fois votre demande validée.
+                                  </p>
+                                </div>
+                              </div>
+                            ) : available === false ? (
+                              <div className="space-y-3">
+                                <p className="font-semibold">
+                                  {alternatives.length > 0
+                                    ? "Cet appartement n'est pas libre sur ces dates."
+                                    : suggestions.length > 0
+                                      ? `Aucun appartement n'est libre sur ces ${nights} nuit${nights > 1 ? "s" : ""} d'affilee. Voici ce qui est possible :`
+                                      : "Aucun appartement disponible pour ces dates. Veuillez choisir d'autres dates."}
+                                </p>
+
+                                {/* Le creneau de l'appartement que le client
                                 consulte. Affiche meme quand d'autres
                                 appartements sont libres sur ces dates : sans
                                 cela, il n'aurait d'autre choix que d'en
                                 changer, alors qu'il tient peut-etre a
                                 celui-ci. */}
-                            {ownWindow && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setCheckIn(ownWindow.starts_on);
-                                  setCheckOut(ownWindow.ends_on);
-                                }}
-                                className="flex w-full items-center justify-between gap-3 rounded-xl border border-olive/40 bg-olive/15 px-4 py-3 text-left transition hover:bg-olive/25"
-                              >
-                                <span className="text-cream">
-                                  <span className="font-semibold">
-                                    Cet appartement est libre du {formatJour(ownWindow.starts_on)}{" "}
-                                    au {formatJour(ownWindow.ends_on)}
-                                  </span>
-                                  <span className="mt-0.5 block text-xs text-cream/60">
-                                    Cliquez pour appliquer ces dates
-                                  </span>
-                                </span>
-                                <span className="shrink-0 text-xs font-semibold text-olive-light">
-                                  {ownWindow.nights} nuit{ownWindow.nights > 1 ? "s" : ""}
-                                </span>
-                              </button>
-                            )}
+                                {ownWindow && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setCheckIn(ownWindow.starts_on);
+                                      setCheckOut(ownWindow.ends_on);
+                                    }}
+                                    className="flex w-full items-center justify-between gap-3 rounded-xl border border-olive/40 bg-olive/15 px-4 py-3 text-left transition hover:bg-olive/25"
+                                  >
+                                    <span className="text-cream">
+                                      <span className="font-semibold">
+                                        Cet appartement est libre du{" "}
+                                        {formatJour(ownWindow.starts_on)} au{" "}
+                                        {formatJour(ownWindow.ends_on)}
+                                      </span>
+                                      <span className="mt-0.5 block text-xs text-cream/60">
+                                        Cliquez pour appliquer ces dates
+                                      </span>
+                                    </span>
+                                    <span className="shrink-0 text-xs font-semibold text-olive-light">
+                                      {ownWindow.nights} nuit{ownWindow.nights > 1 ? "s" : ""}
+                                    </span>
+                                  </button>
+                                )}
 
-                            {alternatives.length === 0 &&
-                              suggestions.filter((creneau) => creneau.id !== activeRoom?.id).length >
-                                0 && (
-                                <div className="space-y-2">
-                                  <p className="text-[11px] uppercase tracking-wider text-cream/60">
-                                    Autres appartements sur cette periode
-                                  </p>
-                                  <ul className="space-y-2">
-                                    {suggestions
-                                      .filter((creneau) => creneau.id !== activeRoom?.id)
-                                      .map((creneau) => (
-                                        <li key={creneau.id}>
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              // Les dates partent dans l'URL : sans
-                                              // elles, le changement de page les
-                                              // effacerait et le client devrait
-                                              // tout ressaisir.
-                                              router.push(
-                                                `/rooms/${creneau.category_slug}?unit=${creneau.slug}` +
-                                                  `&check_in=${creneau.starts_on}&check_out=${creneau.ends_on}&reserve=1`
-                                              );
-                                            }}
-                                            className="flex w-full items-center justify-between gap-3 rounded-xl border border-gold/25 bg-white/10 px-4 py-3 text-left transition hover:border-gold/50 hover:bg-white/15"
+                                {alternatives.length === 0 &&
+                                  suggestions.filter((creneau) => creneau.id !== activeRoom?.id)
+                                    .length > 0 && (
+                                    <div className="space-y-2">
+                                      <p className="text-[11px] uppercase tracking-wider text-cream/60">
+                                        Autres appartements sur cette periode
+                                      </p>
+                                      <ul className="space-y-2">
+                                        {suggestions
+                                          .filter((creneau) => creneau.id !== activeRoom?.id)
+                                          .map((creneau) => (
+                                            <li key={creneau.id}>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  // Les dates partent dans l'URL : sans
+                                                  // elles, le changement de page les
+                                                  // effacerait et le client devrait
+                                                  // tout ressaisir.
+                                                  router.push(
+                                                    `/rooms/${creneau.category_slug}?unit=${creneau.slug}` +
+                                                      `&check_in=${creneau.starts_on}&check_out=${creneau.ends_on}&reserve=1`
+                                                  );
+                                                }}
+                                                className="flex w-full items-center justify-between gap-3 rounded-xl border border-gold/25 bg-white/10 px-4 py-3 text-left transition hover:border-gold/50 hover:bg-white/15"
+                                              >
+                                                <span className="text-cream">
+                                                  <span className="font-semibold">
+                                                    Appartement N°{creneau.apartment_number}
+                                                  </span>
+                                                  <span className="ml-2 text-xs text-cream/60">
+                                                    {creneau.category_label}
+                                                  </span>
+                                                  <span className="mt-0.5 block text-xs text-cream/70">
+                                                    Libre du {formatJour(creneau.starts_on)} au{" "}
+                                                    {formatJour(creneau.ends_on)}
+                                                  </span>
+                                                  <span className="mt-0.5 block text-[11px] text-cream/45">
+                                                    Cliquez pour appliquer ces dates
+                                                  </span>
+                                                </span>
+                                                <span className="shrink-0 text-right">
+                                                  <span className="block text-xs font-semibold text-gold-light">
+                                                    {creneau.nights} nuit
+                                                    {creneau.nights > 1 ? "s" : ""}
+                                                  </span>
+                                                  <span className="block text-[11px] text-cream/50">
+                                                    {formatCurrency(creneau.price_per_night)} / nuit
+                                                  </span>
+                                                </span>
+                                              </button>
+                                            </li>
+                                          ))}
+                                      </ul>
+                                    </div>
+                                  )}
+
+                                {alternatives.length > 0 && (
+                                  <div className="space-y-2">
+                                    <p className="text-[11px] uppercase tracking-wider text-cream/60">
+                                      Disponible{alternatives.length > 1 ? "s" : ""} sur ces mêmes
+                                      dates
+                                    </p>
+                                    <ul className="space-y-2">
+                                      {alternatives.map((autre) => (
+                                        <li key={autre.id}>
+                                          <Link
+                                            href={`/rooms/${autre.category_slug}?unit=${autre.slug}`}
+                                            className="flex items-center justify-between gap-3 rounded-xl border border-gold/25 bg-white/10 px-4 py-3 transition hover:border-gold/50 hover:bg-white/15"
                                           >
                                             <span className="text-cream">
                                               <span className="font-semibold">
-                                                Appartement N°{creneau.apartment_number}
+                                                Appartement N°{autre.apartment_number}
                                               </span>
                                               <span className="ml-2 text-xs text-cream/60">
-                                                {creneau.category_label}
-                                              </span>
-                                              <span className="mt-0.5 block text-xs text-cream/70">
-                                                Libre du {formatJour(creneau.starts_on)} au{" "}
-                                                {formatJour(creneau.ends_on)}
-                                              </span>
-                                              <span className="mt-0.5 block text-[11px] text-cream/45">
-                                                Cliquez pour appliquer ces dates
+                                                {autre.category_label}
                                               </span>
                                             </span>
-                                            <span className="shrink-0 text-right">
-                                              <span className="block text-xs font-semibold text-gold-light">
-                                                {creneau.nights} nuit{creneau.nights > 1 ? "s" : ""}
-                                              </span>
-                                              <span className="block text-[11px] text-cream/50">
-                                                {formatCurrency(creneau.price_per_night)} / nuit
-                                              </span>
+                                            <span className="shrink-0 text-xs font-semibold text-gold-light">
+                                              {formatCurrency(autre.price_per_night)} / nuit
                                             </span>
-                                          </button>
+                                          </Link>
                                         </li>
                                       ))}
-                                  </ul>
-                                </div>
-                              )}
-
-                            {alternatives.length > 0 && (
-                              <div className="space-y-2">
-                                <p className="text-[11px] uppercase tracking-wider text-cream/60">
-                                  Disponible{alternatives.length > 1 ? "s" : ""} sur ces mêmes dates
-                                </p>
-                                <ul className="space-y-2">
-                                  {alternatives.map((autre) => (
-                                    <li key={autre.id}>
-                                      <Link
-                                        href={`/rooms/${autre.category_slug}?unit=${autre.slug}`}
-                                        className="flex items-center justify-between gap-3 rounded-xl border border-gold/25 bg-white/10 px-4 py-3 transition hover:border-gold/50 hover:bg-white/15"
-                                      >
-                                        <span className="text-cream">
-                                          <span className="font-semibold">
-                                            Appartement N°{autre.apartment_number}
-                                          </span>
-                                          <span className="ml-2 text-xs text-cream/60">
-                                            {autre.category_label}
-                                          </span>
-                                        </span>
-                                        <span className="shrink-0 text-xs font-semibold text-gold-light">
-                                          {formatCurrency(autre.price_per_night)} / nuit
-                                        </span>
-                                      </Link>
-                                    </li>
-                                  ))}
-                                </ul>
+                                    </ul>
+                                  </div>
+                                )}
                               </div>
+                            ) : (
+                              <p>Calcul des disponibilites...</p>
                             )}
-                          </div>
-                        ) : (
-                          <p>Calcul des disponibilites...</p>
+                          </motion.div>
                         )}
-                      </motion.div>
-                    )}
 
-                    {/* Le client doit connaitre la regle AVANT de reserver :
-                        l'appartement est mis de cote, pas garanti. */}
-                    {available === true && (
-                      <p className="rounded-2xl border border-gold/20 bg-white/5 p-4 text-[11px] leading-4 text-cream/75">
-                        En réservant, l&apos;appartement vous est retenu pendant{" "}
-                        <strong className="text-cream">{HOLD_HOURS} heures</strong>. Réglez
-                        l&apos;acompte avant la fin de ce délai : passé cette heure, le logement
-                        repart à la location et un autre client peut le prendre. Vous serez conduit
-                        au paiement dès la réservation enregistrée.
-                      </p>
+                        <button
+                          type="button"
+                          disabled={checking || available !== true}
+                          onClick={continueToDetails}
+                          className="flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-br from-gold-light to-gold py-4 text-xs font-bold uppercase tracking-[0.25em] text-night transition duration-300 hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Continuer
+                        </button>
+                      </>
                     )}
-
-                    <button
-                      type="button"
-                      disabled={reserving || checking || available !== true}
-                      onClick={handleReservation}
-                      className="flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-br from-gold-light to-gold py-4 text-xs font-bold uppercase tracking-[0.25em] text-night transition duration-300 hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {reserving ? (
-                        <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-night border-t-transparent" />
-                      ) : (
-                        "Reserver et payer"
-                      )}
-                    </button>
                   </>
                 )}
 
-                <div className="flex items-center justify-center gap-2 border-t border-gold/15 pt-2 text-[10px] uppercase tracking-wider text-cream/40">
-                  <ShieldCheck size={14} />
-                  Appartement retenu {HOLD_HOURS} h le temps du paiement
+                <div className="flex items-center justify-center gap-2 border-t border-gold/15 pt-2 text-center text-[10px] uppercase tracking-wider text-cream/40">
+                  <ShieldCheck size={14} className="shrink-0" />
+                  Demande gratuite · paiement après validation
                 </div>
               </div>
             </aside>

@@ -1,34 +1,101 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
-import { useAuth } from "@/context/AuthContext";
-import { useToast } from "@/context/ToastContext";
-import { useRouter, useSearchParams } from "next/navigation";
-import { api, Reservation } from "@/lib/api";
-import { motion, AnimatePresence } from "framer-motion";
+import { Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   BedDouble,
+  CalendarPlus,
   Check,
-  DoorOpen,
   Download,
+  Eye,
   Mail,
   Phone,
   RefreshCcw,
-  Search,
-  X
+  X,
+  type LucideIcon
 } from "lucide-react";
+import { useToast } from "@/context/ToastContext";
+import {
+  api,
+  type AdminTableQuery,
+  type Paginated,
+  type Reservation,
+  type Room,
+  type StayExtension,
+  type User
+} from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { AdminPageHeader } from "@/components/dashboard/admin/AdminShell";
+import DataTable, {
+  FilterField,
+  IconAction,
+  TableBadge,
+  filterInputClass,
+  type BadgeTone,
+  type DataTableColumn,
+  type SortDirection
+} from "@/components/dashboard/admin/DataTable";
 
-const statusLabels: Record<string, string> = {
+/* ---------------------------------------------------------------------------
+ * Libelles et constantes
+ * ------------------------------------------------------------------------- */
+
+type RequestType = "reservation" | "extension";
+
+const reservationStatusLabels: Record<string, string> = {
   EN_ATTENTE: "En attente",
-  VALIDEE_PAIEMENT_REQUIS: "Acompte requis",
-  CONFIRMEE: "Confirmee",
-  REFUSEE: "Refusee",
-  EXPIREE: "Expiree",
-  SEJOUR_PAYE: "Sejour paye",
-  ANNULEE: "Annulee",
-  REMBOURSEE: "Remboursee",
-  LIBEREE: "Appartement libere"
+  VALIDEE_PAIEMENT_REQUIS: "Validée – paiement attendu",
+  CONFIRMEE: "Confirmée",
+  SEJOUR_PAYE: "Séjour payé",
+  REFUSEE: "Refusée",
+  EXPIREE: "Expirée",
+  ANNULEE: "Annulée",
+  REMBOURSEE: "Remboursée",
+  LIBEREE: "Appartement libéré"
+};
+
+const extensionStatusLabels: Record<string, string> = {
+  EN_ATTENTE: "En attente",
+  VALIDEE_PAIEMENT_REQUIS: "Validée – paiement attendu",
+  PAYEE: "Payée",
+  REFUSEE: "Refusée",
+  EXPIREE: "Expirée"
+};
+
+/** Options du filtre « Statut » : une option peut regrouper plusieurs statuts. */
+const statusOptions: Record<RequestType, { key: string; label: string; statuses: string[] }[]> = {
+  reservation: [
+    { key: "EN_ATTENTE", label: "En attente", statuses: ["EN_ATTENTE"] },
+    {
+      key: "VALIDEE_PAIEMENT_REQUIS",
+      label: "Validée – paiement attendu",
+      statuses: ["VALIDEE_PAIEMENT_REQUIS"]
+    },
+    { key: "PAYEE", label: "Payée", statuses: ["SEJOUR_PAYE", "CONFIRMEE"] },
+    { key: "REFUSEE", label: "Refusée", statuses: ["REFUSEE"] },
+    { key: "EXPIREE", label: "Expirée", statuses: ["EXPIREE"] },
+    { key: "ANNULEE", label: "Annulée", statuses: ["ANNULEE"] },
+    { key: "REMBOURSEE", label: "Remboursée", statuses: ["REMBOURSEE"] },
+    { key: "LIBEREE", label: "Appartement libéré", statuses: ["LIBEREE"] }
+  ],
+  extension: [
+    { key: "EN_ATTENTE", label: "En attente", statuses: ["EN_ATTENTE"] },
+    {
+      key: "VALIDEE_PAIEMENT_REQUIS",
+      label: "Validée – paiement attendu",
+      statuses: ["VALIDEE_PAIEMENT_REQUIS"]
+    },
+    { key: "PAYEE", label: "Payée", statuses: ["PAYEE"] },
+    { key: "REFUSEE", label: "Refusée", statuses: ["REFUSEE"] },
+    { key: "EXPIREE", label: "Expirée", statuses: ["EXPIREE"] }
+  ]
+};
+
+/** Cles de tri acceptees par l'API, par type de demande. */
+const sortKeys: Record<RequestType, string[]> = {
+  reservation: ["id", "created_at", "check_in", "check_out", "status", "amount"],
+  extension: ["id", "created_at", "requested_check_out", "status", "amount"]
 };
 
 const categoryLabels: Record<string, string> = {
@@ -37,84 +104,116 @@ const categoryLabels: Record<string, string> = {
   une_chambre: "Appartement 1 Chambre"
 };
 
-const statusClasses = (status: string) => {
-  if (status === "EN_ATTENTE") return "bg-gold/10 text-gold-light border-gold/25";
-  if (status === "VALIDEE_PAIEMENT_REQUIS") return "bg-sky-500/10 text-sky-300 border-sky-500/30";
-  if (status === "CONFIRMEE" || status === "SEJOUR_PAYE")
-    return "bg-olive/15 text-olive-light border-olive/40";
-  if (status === "REFUSEE") return "bg-terracotta/15 text-terracotta-light border-terracotta/40";
-  if (status === "ANNULEE") return "bg-orange-500/10 text-orange-300 border-orange-500/30";
-  if (status === "REMBOURSEE") return "bg-purple-500/10 text-purple-300 border-purple-500/30";
-  if (status === "LIBEREE") return "bg-sky-500/10 text-sky-300 border-sky-500/30";
-  return "bg-white/10 text-cream/60 border-white/15";
+const DEFAULT_SORT = "created_at";
+const DEFAULT_DIRECTION: SortDirection = "desc";
+const DEFAULT_PER_PAGE = 10;
+
+const statusTones: Record<string, BadgeTone> = {
+  EN_ATTENTE: "warning",
+  VALIDEE_PAIEMENT_REQUIS: "info",
+  CONFIRMEE: "success",
+  SEJOUR_PAYE: "success",
+  PAYEE: "success",
+  REFUSEE: "error",
+  ANNULEE: "error",
+  LIBEREE: "info"
 };
 
-const reservationApartmentLabel = (reservation: Reservation) => {
-  const room = reservation.room;
+function StatusBadge({ status, labels }: { status: string; labels: Record<string, string> }) {
+  return (
+    <TableBadge tone={statusTones[status] ?? "neutral"}>{labels[status] || status}</TableBadge>
+  );
+}
 
-  if (room?.apartment_number) {
-    const label =
-      reservation.category_type === "vip"
-        ? room.name
-        : reservation.category_type === "deux_chambres"
-          ? "2 Chambres"
-          : reservation.category_type === "une_chambre"
-            ? "1 Chambre"
-            : room.name;
+/* ---------------------------------------------------------------------------
+ * Utilitaires d'affichage
+ * ------------------------------------------------------------------------- */
 
-    return `Appartement N°${room.apartment_number} · ${label}`;
-  }
-
-  return categoryLabels[reservation.category_type || ""] || room?.name || "Appartement";
-};
-
-const parseAdminDate = (value?: string) => {
+const parseDate = (value?: string | null) => {
   if (!value) return null;
-
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
-const formatAdminDate = (value?: string) =>
-  parseAdminDate(value)?.toLocaleDateString("fr-FR") || "Non renseigne";
+const formatDate = (value?: string | null) => parseDate(value)?.toLocaleDateString("fr-FR") || "—";
 
-const formatAdminDateTime = (value?: string) =>
-  parseAdminDate(value)?.toLocaleString("fr-FR", {
+const formatDateTime = (value?: string | null) =>
+  parseDate(value)?.toLocaleString("fr-FR", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit"
-  }) || "Non renseigne";
+  }) || "—";
 
-// Partie "YYYY-MM-DD" d'une date ISO, pour comparer aux valeurs des champs <input type="date">.
-const isoDatePart = (value?: string) => (value ? value.slice(0, 10) : "");
+const formatAmount = (value?: number | null) => `${(value ?? 0).toLocaleString("fr-FR")} FCFA`;
 
-const countStayDays = (reservation: Reservation) => {
-  const start = parseAdminDate(reservation.check_in);
-  const end = parseAdminDate(reservation.check_out);
-
-  if (!start || !end) return 0;
-
-  return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+const countNights = (start?: string | null, end?: string | null) => {
+  const from = parseDate(start);
+  const to = parseDate(end);
+  if (!from || !to) return 0;
+  return Math.max(1, Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)));
 };
 
-const occupiedSinceDays = (reservation: Reservation) => {
-  const start = parseAdminDate(reservation.check_in);
-  if (!start) return 0;
+const reservationAmount = (reservation: Reservation) =>
+  reservation.stay_amount ?? reservation.total_price;
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  start.setHours(0, 0, 0, 0);
-
-  return Math.max(1, Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+const apartmentLabel = (room?: Room, categoryType?: string) => {
+  if (room?.apartment_number) {
+    const label =
+      categoryType === "vip"
+        ? room.name
+        : categoryType === "deux_chambres"
+          ? "2 Chambres"
+          : categoryType === "une_chambre"
+            ? "1 Chambre"
+            : room.name;
+    return `Appartement N°${room.apartment_number} · ${label}`;
+  }
+  return categoryLabels[categoryType || ""] || room?.name || "Appartement";
 };
+
+const extensionClient = (extension: StayExtension) => extension.reservation?.user ?? extension.user;
+
+const emptyPage = <T,>(): Paginated<T> => ({
+  data: [],
+  current_page: 1,
+  last_page: 1,
+  per_page: DEFAULT_PER_PAGE,
+  total: 0,
+  from: null,
+  to: null
+});
+
+type TableState =
+  | { type: "reservation"; data: Paginated<Reservation> }
+  | { type: "extension"; data: Paginated<StayExtension> };
+
+type PendingAction =
+  | { kind: "reservation"; action: "approve" | "reject"; item: Reservation }
+  | { kind: "extension"; action: "approve" | "reject"; item: StayExtension };
+
+type DetailsTarget =
+  { kind: "reservation"; item: Reservation } | { kind: "extension"; item: StayExtension };
+
+/** Action disponible sur une demande : icône dans le tableau, bouton libellé dans la fiche. */
+type RowCommand = {
+  label: string;
+  icon: LucideIcon;
+  tone: "success" | "danger";
+  disabled?: boolean;
+  run: () => void;
+};
+
+/* ---------------------------------------------------------------------------
+ * Page
+ * ------------------------------------------------------------------------- */
 
 export default function AdminReservationsPage() {
-  // useSearchParams (recherche venue de l'en-tête) impose une frontière Suspense.
+  // useSearchParams (liens des e-mails admin) impose une frontiere Suspense en export statique.
   return (
     <Suspense fallback={<AdminLoader />}>
-      <AdminReservations />
+      <AdminRequests />
     </Suspense>
   );
 }
@@ -127,270 +226,247 @@ function AdminLoader() {
   );
 }
 
-function AdminReservations() {
-  const { user, loading: authLoading } = useAuth();
+function AdminRequests() {
   const { showToast } = useToast();
   const router = useRouter();
+  const pathname = usePathname() || "/admin/reservations";
   const searchParams = useSearchParams();
-  const initialQuery = searchParams.get("q") || "";
 
-  const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [occupiedRooms, setOccupiedRooms] = useState<Reservation[]>([]);
-  const [loading, setLoading] = useState(true);
-  // Plus d'onglet « En attente » : le filtre par defaut doit exister, sinon
-  // l'administrateur arrive sur une liste vide sans onglet actif.
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [selectedRes, setSelectedRes] = useState<Reservation | null>(null);
-  const [actionType, setActionType] = useState<
-    "approve" | "reject" | "extension-approve" | "extension-reject" | null
-  >(null);
-  const [releaseTarget, setReleaseTarget] = useState<Reservation | null>(null);
-  const [releaseNotes, setReleaseNotes] = useState("");
-  const [adminNotes, setAdminNotes] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
-  const [searchQuery, setSearchQuery] = useState(initialQuery);
+  // Lien profond : /admin/reservations?type=extension&id=45
+  const linkType: RequestType =
+    searchParams.get("type") === "extension" ? "extension" : "reservation";
+  const rawLinkId = Number(searchParams.get("id"));
+  const linkId = Number.isInteger(rawLinkId) && rawLinkId > 0 ? rawLinkId : null;
+  const legacyQuery = searchParams.get("q") || "";
+  const initialSearch = linkId ? `#${linkId}` : legacyQuery.trim();
 
-  // Nouvelle recherche lancée depuis l'en-tête alors que la page est ouverte.
-  useEffect(() => {
-    setSearchQuery(initialQuery);
-  }, [initialQuery]);
+  /* ---- Filtres (tous appliques cote serveur) ---- */
+  const [type, setType] = useState<RequestType>(linkType);
+  const [focusId, setFocusId] = useState<number | null>(linkId);
+  const [search, setSearch] = useState(initialSearch);
+  const [statusKey, setStatusKey] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [dateField, setDateField] = useState<"stay" | "created">("stay");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(DEFAULT_PER_PAGE);
+  const [sort, setSort] = useState(DEFAULT_SORT);
+  const [direction, setDirection] = useState<SortDirection>(DEFAULT_DIRECTION);
+
+  /* ---- Donnees ---- */
+  const [table, setTable] = useState<TableState>({
+    type: linkType,
+    data: emptyPage()
+  } as TableState);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const requestId = useRef(0);
+  const autoOpened = useRef<string | null>(null);
+
+  /* ---- Actions ---- */
+  const [pending, setPending] = useState<PendingAction | null>(null);
+  const [details, setDetails] = useState<DetailsTarget | null>(null);
+  const [adminNotes, setAdminNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [actionError, setActionError] = useState("");
   const [exportingReport, setExportingReport] = useState(false);
 
+  // Nouveau lien profond alors que la page est deja ouverte (clic dans un autre e-mail).
   useEffect(() => {
-    if (!authLoading) {
-      if (!user) {
-        router.push("/auth/login");
-      } else if (!user.is_admin) {
-        router.push("/");
+    setType(linkType);
+    setFocusId(linkId);
+    if (linkId || legacyQuery) {
+      setSearch(linkId ? `#${linkId}` : legacyQuery.trim());
+      setStatusKey("");
+      setDateFrom("");
+      setDateTo("");
+      setPage(1);
+    }
+  }, [linkType, linkId, legacyQuery]);
+
+  const loadRequests = useCallback(async () => {
+    const statuses = statusOptions[type].find((option) => option.key === statusKey)?.statuses;
+    const query: AdminTableQuery = {
+      page,
+      per_page: perPage,
+      search: search || undefined,
+      status: statuses,
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
+      date_field: dateFrom || dateTo ? dateField : undefined,
+      sort,
+      direction
+    };
+
+    const current = ++requestId.current;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const next: TableState =
+        type === "reservation"
+          ? { type, data: await api.getAdminReservations(query) }
+          : { type, data: await api.getAdminExtensions(query) };
+      if (current !== requestId.current) return;
+      if (
+        next.data.data.length === 0 &&
+        next.data.current_page > 1 &&
+        next.data.last_page < next.data.current_page
+      ) {
+        setPage(Math.max(1, next.data.last_page));
+        return;
+      }
+      setTable(next);
+    } catch (err) {
+      if (current !== requestId.current) return;
+      setTable({ type, data: emptyPage() } as TableState);
+      setLoadError(err instanceof Error ? err.message : "Impossible de charger les demandes.");
+    } finally {
+      if (current === requestId.current) setLoading(false);
+    }
+  }, [type, statusKey, page, perPage, search, dateFrom, dateTo, dateField, sort, direction]);
+
+  useEffect(() => {
+    loadRequests();
+  }, [loadRequests]);
+
+  // Lien profond : ouvre la fiche de la demande ciblee une fois chargee.
+  useEffect(() => {
+    if (!focusId || loading || table.type !== type) return;
+    const marker = `${type}-${focusId}`;
+    if (autoOpened.current === marker) return;
+    if (table.type === "reservation") {
+      const item = table.data.data.find((row) => row.id === focusId);
+      if (item) {
+        autoOpened.current = marker;
+        setDetails({ kind: "reservation", item });
+      }
+    } else {
+      const item = table.data.data.find((row) => row.id === focusId);
+      if (item) {
+        autoOpened.current = marker;
+        setDetails({ kind: "extension", item });
       }
     }
-  }, [user, authLoading, router]);
+  }, [focusId, loading, table, type]);
 
-  const loadDashboardData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [resData, occupiedData] = await Promise.all([
-        api.getAdminReservations({ per_page: 500 }),
-        api.getOccupiedRooms()
-      ]);
-      setReservations(resData.data);
-      setOccupiedRooms(occupiedData.data);
-    } catch (error) {
-      console.error("Erreur lors du chargement du back-office:", error);
-      showToast("Impossible de charger les donnees administrateur.", "error");
-    } finally {
-      setLoading(false);
+  /* ---- Changements de filtres ---- */
+
+  const changeType = (next: RequestType) => {
+    if (next === type) return;
+    setType(next);
+    setStatusKey("");
+    setFocusId(null);
+    if (!sortKeys[next].includes(sort)) {
+      setSort(DEFAULT_SORT);
+      setDirection(DEFAULT_DIRECTION);
     }
-  }, [showToast]);
-
-  useEffect(() => {
-    if (user && user.is_admin) {
-      loadDashboardData();
-    }
-  }, [user, loadDashboardData]);
-
-  const handleOpenAction = (
-    reservation: Reservation,
-    type: "approve" | "reject" | "extension-approve" | "extension-reject"
-  ) => {
-    setSelectedRes(reservation);
-    setActionType(type);
-    setAdminNotes("");
-    setError("");
+    setPage(1);
   };
 
-  const handleSubmitAction = async () => {
-    if (!selectedRes || !actionType) return;
-    const isRejectAction = actionType === "reject" || actionType === "extension-reject";
+  const isFiltered =
+    search !== "" ||
+    statusKey !== "" ||
+    dateFrom !== "" ||
+    dateTo !== "" ||
+    dateField !== "stay" ||
+    sort !== DEFAULT_SORT ||
+    direction !== DEFAULT_DIRECTION ||
+    perPage !== DEFAULT_PER_PAGE;
 
-    if (isRejectAction && !adminNotes.trim()) {
-      setError("Un motif est obligatoire pour refuser une demande.");
+  const resetFilters = () => {
+    setSearch("");
+    setStatusKey("");
+    setDateFrom("");
+    setDateTo("");
+    setDateField("stay");
+    setSort(DEFAULT_SORT);
+    setDirection(DEFAULT_DIRECTION);
+    setPerPage(DEFAULT_PER_PAGE);
+    setPage(1);
+    setFocusId(null);
+    // Retire ?id= / ?q= de l'adresse pour qu'un rechargement ne reapplique pas le lien.
+    if (searchParams.get("id") || searchParams.get("q")) {
+      router.replace(`${pathname}?type=${type}`);
+    }
+  };
+
+  /* ---- Actions administrateur ---- */
+
+  const openAction = (next: PendingAction) => {
+    setPending(next);
+    setAdminNotes("");
+    setActionError("");
+  };
+
+  const submitAction = async () => {
+    if (!pending) return;
+    if (pending.action === "reject" && !adminNotes.trim()) {
+      setActionError("Un motif est obligatoire pour refuser une demande.");
       return;
     }
 
     setSubmitting(true);
-    setError("");
-
+    setActionError("");
     try {
-      if (actionType === "approve") {
-        await api.approveReservation(selectedRes.id, { admin_notes: adminNotes });
-        showToast("Demande confirmee. Le client peut payer la acompte de réservation.", "success");
-      } else if (actionType === "reject") {
-        await api.rejectReservation(selectedRes.id, { admin_notes: adminNotes });
-        showToast("Demande refusee. Le client sera notifie.", "success");
-      } else if (actionType === "extension-approve") {
-        await api.approveReservationExtension(selectedRes.id, { admin_notes: adminNotes });
-        showToast("Prolongation acceptee. Le bon du sejour est mis a jour.", "success");
+      const notes = adminNotes.trim();
+      let message: string;
+      if (pending.kind === "reservation") {
+        message =
+          pending.action === "approve"
+            ? (await api.approveReservation(pending.item.id, { admin_notes: notes || undefined }))
+                .message
+            : (await api.rejectReservation(pending.item.id, { admin_notes: notes })).message;
       } else {
-        await api.rejectReservationExtension(selectedRes.id, { admin_notes: adminNotes });
-        showToast("Prolongation refusee avec motif.", "success");
+        message =
+          pending.action === "approve"
+            ? (await api.approveExtension(pending.item.id, { admin_notes: notes || undefined }))
+                .message
+            : (await api.rejectExtension(pending.item.id, { admin_notes: notes })).message;
       }
-      setSelectedRes(null);
-      setActionType(null);
-      loadDashboardData();
+      showToast(message, "success");
+      setPending(null);
+      setDetails(null);
+      loadRequests();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "L'action a echoue.";
-      setError(message);
+      const message = err instanceof Error ? err.message : "L'action a échoué.";
+      setActionError(message);
       showToast(message, "error");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleMarkRefunded = async (reservation: Reservation) => {
+  const markRefunded = async (reservation: Reservation) => {
+    if (!confirm(`Confirmer le remboursement de la réservation #${reservation.id} ?`)) return;
     setSubmitting(true);
-    setError("");
-
     try {
-      await api.markReservationRefunded(reservation.id);
-      showToast("Remboursement marque comme effectue. Le client sera notifie.", "success");
-      loadDashboardData();
+      const response = await api.markReservationRefunded(reservation.id);
+      showToast(response.message || "Remboursement marqué comme effectué.", "success");
+      setDetails(null);
+      loadRequests();
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Le remboursement n'a pas pu etre confirme.";
-      setError(message);
-      showToast(message, "error");
+      showToast(
+        err instanceof Error ? err.message : "Le remboursement n'a pas pu être confirmé.",
+        "error"
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleOpenRelease = (reservation: Reservation) => {
-    setReleaseTarget(reservation);
-    setReleaseNotes("");
-    setError("");
-  };
-
-  const handleReleaseRoom = async () => {
-    if (!releaseTarget) return;
-
-    setSubmitting(true);
-    setError("");
-
-    try {
-      await api.releaseOccupiedRoom(releaseTarget.id, { release_notes: releaseNotes });
-      showToast("Appartement libere. Il est de nouveau disponible.", "success");
-      setReleaseTarget(null);
-      setReleaseNotes("");
-      loadDashboardData();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "L'appartement n'a pas pu etre libere.";
-      setError(message);
-      showToast(message, "error");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const filtersList = [
-    {
-      key: "all",
-      label: "Toutes",
-      description: "Voir toutes les demandes, tous statuts confondus."
-    },
-    {
-      key: "VALIDEE_PAIEMENT_REQUIS",
-      label: "Acompte requis",
-      description:
-        "Voir les demandes acceptees par l'administration, en attente du paiement de l'acompte de reservation."
-    },
-    {
-      key: "CONFIRMEE",
-      label: "Confirmees",
-      description: "Voir les reservations dont l'acompte de reservation a ete paye avec succes."
-    },
-    {
-      key: "EXTENSION_EN_ATTENTE",
-      label: "Prolongations",
-      description:
-        "Voir les demandes de prolongation de sejour qui attendent une reponse administrateur."
-    },
-    {
-      key: "REFUSEE",
-      label: "Refusees",
-      description: "Voir les demandes rejetees avec le motif indique au client."
-    },
-    {
-      key: "EXPIREE",
-      label: "Expirees",
-      description: "Voir les demandes dont le delai de paiement de l'acompte a depasse 24h."
-    },
-    {
-      key: "SEJOUR_PAYE",
-      label: "Sejours payes",
-      description: "Voir les reservations dont les frais de sejour ont ete regles."
-    },
-    {
-      key: "ANNULEE",
-      label: "Annulees",
-      description: "Voir les reservations annulees par les clients avant le debut de leur sejour."
-    },
-    {
-      key: "REMBOURSEE",
-      label: "Remboursees",
-      description:
-        "Voir les annulations pour lesquelles l'administration a confirme le remboursement."
-    },
-    {
-      key: "LIBEREE",
-      label: "Liberees",
-      description: "Voir les occupations terminees manuellement par l'administration."
-    }
-  ];
-
-  const normalizedSearch = searchQuery.trim().toLowerCase();
-
-  const filteredReservations = reservations.filter((reservation) => {
-    // Filtre par statut (onglets existants)
-    if (statusFilter === "EXTENSION_EN_ATTENTE") {
-      if (reservation.extension_status !== "EN_ATTENTE") return false;
-    } else if (statusFilter !== "all" && reservation.status !== statusFilter) {
-      return false;
-    }
-
-    // Recherche texte : nom, email, telephone ou n de reservation
-    if (normalizedSearch) {
-      const haystack = [
-        reservation.user?.name,
-        reservation.user?.email,
-        reservation.user?.phone,
-        String(reservation.id),
-        `#${reservation.id}`,
-        reservation.deposit_invoice_number,
-        reservation.stay_invoice_number
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      if (!haystack.includes(normalizedSearch)) return false;
-    }
-
-    // Filtre plage de dates sur check_in
-    const checkInDay = isoDatePart(reservation.check_in);
-    if (dateFrom && checkInDay < dateFrom) return false;
-    if (dateTo && checkInDay > dateTo) return false;
-
-    return true;
-  });
-
-  const handleExportPdf = async () => {
-    if (filteredReservations.length === 0 || exportingReport) return;
-
+  const exportPdf = async () => {
+    if (table.type !== "reservation" || table.data.data.length === 0 || exportingReport) return;
     setExportingReport(true);
     try {
-      const activeFilter = filtersList.find((filter) => filter.key === statusFilter);
+      const statusLabel =
+        statusOptions.reservation.find((option) => option.key === statusKey)?.label || "Toutes";
       const { blob, filename } = await api.downloadAdminReservationsReport({
-        reservation_ids: filteredReservations.map((reservation) => reservation.id),
-        filter_label: activeFilter?.label || "Toutes",
-        search: searchQuery.trim() || undefined,
+        reservation_ids: table.data.data.map((reservation) => reservation.id),
+        filter_label: statusLabel,
+        search: search || undefined,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined
       });
-
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -400,629 +476,837 @@ function AdminReservations() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       showToast("Le rapport PDF a été généré avec succès.", "success");
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "Impossible de générer le rapport PDF.", "error");
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Impossible de générer le rapport PDF.",
+        "error"
+      );
     } finally {
       setExportingReport(false);
     }
   };
 
-  if (authLoading || loading) {
-    return <AdminLoader />;
-  }
+  /* ---- Colonnes ---- */
+
+  const clientCell = (person?: User) => (
+    <span className="font-medium text-cream">{person?.name || "Client inconnu"}</span>
+  );
+
+  /** Actions possibles selon le statut (communes au tableau et à la fiche détaillée). */
+  const reservationCommands = (reservation: Reservation): RowCommand[] => [
+    ...(reservation.status === "EN_ATTENTE"
+      ? [
+          {
+            label: "Valider",
+            icon: Check,
+            tone: "success" as const,
+            run: () => openAction({ kind: "reservation", action: "approve", item: reservation })
+          }
+        ]
+      : []),
+    ...(reservation.status === "EN_ATTENTE" || reservation.status === "VALIDEE_PAIEMENT_REQUIS"
+      ? [
+          {
+            label: "Refuser",
+            icon: X,
+            tone: "danger" as const,
+            run: () => openAction({ kind: "reservation", action: "reject", item: reservation })
+          }
+        ]
+      : []),
+    ...(reservation.status === "ANNULEE"
+      ? [
+          {
+            label: "Marquer comme remboursée",
+            icon: RefreshCcw,
+            tone: "success" as const,
+            disabled: submitting,
+            run: () => markRefunded(reservation)
+          }
+        ]
+      : [])
+  ];
+
+  const extensionCommands = (extension: StayExtension): RowCommand[] => [
+    ...(extension.status === "EN_ATTENTE"
+      ? [
+          {
+            label: "Valider",
+            icon: Check,
+            tone: "success" as const,
+            run: () => openAction({ kind: "extension", action: "approve", item: extension })
+          }
+        ]
+      : []),
+    ...(extension.status === "EN_ATTENTE" || extension.status === "VALIDEE_PAIEMENT_REQUIS"
+      ? [
+          {
+            label: "Refuser",
+            icon: X,
+            tone: "danger" as const,
+            run: () => openAction({ kind: "extension", action: "reject", item: extension })
+          }
+        ]
+      : [])
+  ];
+
+  const rowActions = (onView: () => void, commands: RowCommand[]) => (
+    <div className="inline-flex items-center gap-2">
+      <IconAction label="Voir le détail" icon={Eye} onClick={onView} />
+      {commands.map((command) => (
+        <IconAction
+          key={command.label}
+          label={command.label}
+          icon={command.icon}
+          tone={command.tone}
+          disabled={command.disabled}
+          onClick={command.run}
+        />
+      ))}
+    </div>
+  );
+
+  const reservationColumns: DataTableColumn<Reservation>[] = [
+    {
+      key: "id",
+      header: "N°",
+      sortKey: "id",
+      className: "font-semibold text-cream",
+      render: (r) => `#${r.id}`
+    },
+    { key: "client", header: "Client", render: (r) => clientCell(r.user) },
+    {
+      key: "room",
+      header: "Appartement",
+      className: "min-w-[180px]",
+      render: (r) => apartmentLabel(r.room, r.category_type)
+    },
+    {
+      key: "check_in",
+      header: "Arrivée",
+      sortKey: "check_in",
+      className: "whitespace-nowrap",
+      render: (r) => formatDate(r.check_in)
+    },
+    {
+      key: "check_out",
+      header: "Départ",
+      sortKey: "check_out",
+      className: "whitespace-nowrap",
+      render: (r) => (
+        <>
+          {formatDate(r.check_out)}
+          <span className="block text-xs text-cream/45">
+            {countNights(r.check_in, r.check_out)} nuit(s)
+          </span>
+        </>
+      )
+    },
+    {
+      key: "amount",
+      header: "Montant séjour",
+      sortKey: "amount",
+      className: "whitespace-nowrap font-semibold text-cream",
+      render: (r) => (
+        <>
+          {formatAmount(reservationAmount(r))}
+          {(r.status === "ANNULEE" || r.status === "REMBOURSEE") && (
+            <span className="block text-xs font-normal text-orange-300">
+              À rembourser : {formatAmount(r.cancellation_refund_amount)}
+            </span>
+          )}
+        </>
+      )
+    },
+    {
+      key: "status",
+      header: "Statut",
+      sortKey: "status",
+      render: (r) => (
+        <>
+          <StatusBadge status={r.status} labels={reservationStatusLabels} />
+          {r.status === "VALIDEE_PAIEMENT_REQUIS" && r.payment_deadline && (
+            <span className="mt-1 block whitespace-nowrap text-xs text-cream/45">
+              Avant le {formatDateTime(r.payment_deadline)}
+            </span>
+          )}
+        </>
+      )
+    },
+    {
+      key: "created_at",
+      header: "Demandée le",
+      sortKey: "created_at",
+      className: "whitespace-nowrap text-cream/65",
+      render: (r) => formatDateTime(r.created_at)
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      align: "right",
+      render: (r) =>
+        rowActions(() => setDetails({ kind: "reservation", item: r }), reservationCommands(r))
+    }
+  ];
+
+  const extensionColumns: DataTableColumn<StayExtension>[] = [
+    {
+      key: "id",
+      header: "N°",
+      sortKey: "id",
+      className: "font-semibold text-cream",
+      render: (e) => `#${e.id}`
+    },
+    {
+      key: "reservation",
+      header: "Réservation",
+      className: "whitespace-nowrap",
+      render: (e) => `#${e.reservation_id}`
+    },
+    { key: "client", header: "Client", render: (e) => clientCell(extensionClient(e)) },
+    {
+      key: "room",
+      header: "Appartement",
+      className: "min-w-[180px]",
+      render: (e) => apartmentLabel(e.reservation?.room, e.reservation?.category_type)
+    },
+    {
+      key: "requested_check_out",
+      header: "Départ actuel → demandé",
+      sortKey: "requested_check_out",
+      className: "whitespace-nowrap",
+      render: (e) => (
+        <>
+          {formatDate(e.previous_check_out)} →{" "}
+          <strong className="text-cream">{formatDate(e.requested_check_out)}</strong>
+          <span className="block text-xs text-cream/45">+{e.nights} nuit(s)</span>
+        </>
+      )
+    },
+    {
+      key: "amount",
+      header: "Montant",
+      sortKey: "amount",
+      className: "whitespace-nowrap font-semibold text-cream",
+      render: (e) => formatAmount(e.amount)
+    },
+    {
+      key: "status",
+      header: "Statut",
+      sortKey: "status",
+      render: (e) => <StatusBadge status={e.status} labels={extensionStatusLabels} />
+    },
+    {
+      key: "payment_deadline",
+      header: "Échéance paiement",
+      className: "whitespace-nowrap text-cream/65",
+      render: (e) => (e.payment_deadline ? formatDateTime(e.payment_deadline) : "—")
+    },
+    {
+      key: "created_at",
+      header: "Demandée le",
+      sortKey: "created_at",
+      className: "whitespace-nowrap text-cream/65",
+      render: (e) => formatDateTime(e.created_at)
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      align: "right",
+      render: (e) =>
+        rowActions(() => setDetails({ kind: "extension", item: e }), extensionCommands(e))
+    }
+  ];
+
+  /* ---- Props communes du tableau ---- */
+
+  const highlight = (id: number) =>
+    focusId === id ? "bg-gold/10 ring-1 ring-inset ring-gold/50" : undefined;
+
+  const activeData = table.type === type ? table.data : emptyPage<never>();
+
+  const tableProps = {
+    loading: loading || table.type !== type,
+    error: loadError,
+    emptyMessage: "Aucune demande ne correspond à ces filtres.",
+    minWidth: "1150px",
+    search,
+    onSearchChange: (value: string) => {
+      setSearch(value);
+      setFocusId(null);
+      setPage(1);
+    },
+    searchPlaceholder: "N° (#123), client, e-mail, téléphone, appartement…",
+    sort,
+    direction,
+    onSortChange: (nextSort: string, nextDirection: SortDirection) => {
+      setSort(nextSort);
+      setDirection(nextDirection);
+      setPage(1);
+    },
+    page: activeData.current_page,
+    lastPage: activeData.last_page,
+    total: activeData.total,
+    from: activeData.from,
+    to: activeData.to,
+    perPage,
+    onPageChange: setPage,
+    onPerPageChange: (value: number) => {
+      setPerPage(value);
+      setPage(1);
+    },
+    onReset: resetFilters,
+    resetLabel: "Réinitialiser les filtres",
+    canReset: isFiltered,
+    actions:
+      type === "reservation" ? (
+        <button
+          type="button"
+          onClick={exportPdf}
+          disabled={
+            loading ||
+            table.type !== "reservation" ||
+            table.data.data.length === 0 ||
+            exportingReport
+          }
+          title="Exporte les demandes affichées sur cette page"
+          className="inline-flex h-10 items-center gap-2 rounded-lg bg-gradient-to-br from-gold-light to-gold px-4 text-xs font-bold uppercase tracking-wider text-night transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Download size={14} className={exportingReport ? "animate-bounce" : ""} />
+          {exportingReport ? "Création du PDF…" : "Export PDF"}
+        </button>
+      ) : null,
+    filters: (
+      <>
+        <FilterField label="Statut">
+          <select
+            value={statusKey}
+            onChange={(event) => {
+              setStatusKey(event.target.value);
+              setPage(1);
+            }}
+            className={filterInputClass}
+          >
+            <option value="" className="text-night">
+              Tous les statuts
+            </option>
+            {statusOptions[type].map((option) => (
+              <option key={option.key} value={option.key} className="text-night">
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </FilterField>
+
+        <FilterField label="Période appliquée à">
+          <select
+            value={dateField}
+            onChange={(event) => {
+              setDateField(event.target.value as "stay" | "created");
+              setPage(1);
+            }}
+            className={filterInputClass}
+          >
+            <option value="stay" className="text-night">
+              {type === "reservation" ? "Dates du séjour" : "Nuits demandées"}
+            </option>
+            <option value="created" className="text-night">
+              Date de la demande
+            </option>
+          </select>
+        </FilterField>
+
+        <FilterField label="Du">
+          <input
+            type="date"
+            value={dateFrom}
+            max={dateTo || undefined}
+            onChange={(event) => {
+              setDateFrom(event.target.value);
+              setPage(1);
+            }}
+            className={filterInputClass}
+          />
+        </FilterField>
+
+        <FilterField label="Au">
+          <input
+            type="date"
+            value={dateTo}
+            min={dateFrom || undefined}
+            onChange={(event) => {
+              setDateTo(event.target.value);
+              setPage(1);
+            }}
+            className={filterInputClass}
+          />
+        </FilterField>
+      </>
+    )
+  };
 
   return (
     <div className="relative text-cream">
-      <div>
-        <AdminPageHeader title="Réservations" />
+      <AdminPageHeader title="Demandes" />
 
-        <section id="occupation" className="admin-card mb-8 rounded-2xl border border-gold/15 p-5 md:p-8">
-          <div className="mb-6 flex flex-col justify-between gap-4 border-b border-gold/15 pb-6 md:flex-row md:items-end">
-            <div>
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-gold/20 bg-white/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-gold-light">
-                <BedDouble size={14} />
-                Occupation actuelle
-              </div>
-              <h2 className="font-display text-2xl font-bold uppercase tracking-wider text-cream">
-                Appartements occupes
-              </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-cream/60">
-                Cette liste concerne uniquement les sejours en cours : de la date d'arrivee jusqu'a
-                la date de depart. La periode entre la demande et l'arrivee reste une reservation,
-                pas une occupation.
-              </p>
-            </div>
-            <div className="glass-warm glass-edge rounded-2xl px-5 py-4 text-center">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gold/70">
-                Occupes
-              </p>
-              <p className="font-display text-4xl font-bold text-cream">{occupiedRooms.length}</p>
-            </div>
-          </div>
-
-          {occupiedRooms.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-gold/20 bg-white/5 py-12 text-center">
-              <DoorOpen className="mx-auto mb-4 h-10 w-10 text-gold/40" />
-              <p className="font-semibold text-cream">
-                Aucun appartement n'est occupe actuellement.
-              </p>
-              <p className="mt-1 text-sm text-cream/50">
-                Les sejours actifs apparaitront ici automatiquement.
-              </p>
-            </div>
-          ) : (
-            <div className="grid gap-5 lg:grid-cols-2">
-              {occupiedRooms.map((reservation) => (
-                <article key={reservation.id} className="glass-warm glass-edge rounded-2xl p-5">
-                  <div className="mb-4 flex flex-col justify-between gap-3 border-b border-gold/15 pb-4 sm:flex-row sm:items-start">
-                    <div>
-                      <p className="font-display text-xl font-bold uppercase text-cream">
-                        {reservationApartmentLabel(reservation)}
-                      </p>
-                    </div>
-                    <span className="w-fit rounded-full border border-olive/40 bg-olive/15 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-olive-light">
-                      Occupe
-                    </span>
-                  </div>
-
-                  <div className="grid gap-4 text-sm md:grid-cols-2">
-                    <div className="rounded-xl border border-gold/15 bg-white/5 p-4">
-                      <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-gold/70">
-                        Client occupant
-                      </p>
-                      <p className="font-semibold text-cream">
-                        {reservation.user?.name || "Client non renseigne"}
-                      </p>
-                      <p className="mt-2 flex items-center gap-2 text-cream/65">
-                        <Mail size={13} />
-                        {reservation.user?.email || "Email non renseigne"}
-                      </p>
-                      <p className="mt-1 flex items-center gap-2 text-cream/65">
-                        <Phone size={13} />
-                        {reservation.user?.phone || "Telephone non renseigne"}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-gold/15 bg-white/5 p-4">
-                      <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-gold/70">
-                        Occupation
-                      </p>
-                      <p className="text-cream/70">
-                        Demande :{" "}
-                        <strong className="text-cream">
-                          {formatAdminDateTime(reservation.created_at)}
-                        </strong>
-                      </p>
-                      <p className="mt-1 text-cream/70">
-                        Arrivee :{" "}
-                        <strong className="text-cream">
-                          {formatAdminDate(reservation.check_in)}
-                        </strong>
-                      </p>
-                      <p className="mt-1 text-cream/70">
-                        Depart prevu :{" "}
-                        <strong className="text-cream">
-                          {formatAdminDate(reservation.check_out)}
-                        </strong>
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 grid gap-3 text-xs sm:grid-cols-3">
-                    <div className="rounded-xl bg-white/5 p-3">
-                      <span className="block text-[9px] font-bold uppercase tracking-widest text-cream/45">
-                        Duree totale
-                      </span>
-                      <strong className="mt-1 block text-cream">
-                        {countStayDays(reservation)} nuit(s)
-                      </strong>
-                    </div>
-                    <div className="rounded-xl bg-white/5 p-3">
-                      <span className="block text-[9px] font-bold uppercase tracking-widest text-cream/45">
-                        Jour actuel
-                      </span>
-                      <strong className="mt-1 block text-cream">
-                        {occupiedSinceDays(reservation)}e jour
-                      </strong>
-                    </div>
-                    <div className="rounded-xl bg-white/5 p-3">
-                      <span className="block text-[9px] font-bold uppercase tracking-widest text-cream/45">
-                        Statut
-                      </span>
-                      <strong className="mt-1 block text-cream">
-                        {statusLabels[reservation.status] || reservation.status}
-                      </strong>
-                    </div>
-                  </div>
-
-                  {reservation.special_requests && (
-                    <div className="mt-4 rounded-xl border border-gold/15 bg-white/5 p-3 text-xs leading-relaxed text-cream/65">
-                      <span className="mb-1 block text-[9px] font-bold uppercase tracking-widest text-gold/70">
-                        Demande speciale
-                      </span>
-                      {reservation.special_requests}
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => handleOpenRelease(reservation)}
-                    className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-gold-light to-gold px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-night transition hover:brightness-105"
-                  >
-                    <DoorOpen size={14} />
-                    Liberer l'appartement
-                  </button>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <div className="space-y-6">
-          <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
             <h2 className="font-display text-2xl font-bold uppercase tracking-wider text-cream">
-              Demandes de sejour
+              {type === "reservation" ? "Demandes de réservation" : "Demandes de prolongation"}
             </h2>
-          </div>
-
-          <div className="glass-warm glass-edge rounded-3xl p-5 md:p-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div className="flex flex-1 flex-col gap-4 sm:flex-row sm:items-end">
-                <label className="block sm:flex-1">
-                  <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-gold/80">
-                    Recherche
-                  </span>
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute left-4 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-cream/50" />
-                    <input
-                      type="search"
-                      value={searchQuery}
-                      onChange={(event) => setSearchQuery(event.target.value)}
-                      placeholder="Nom, email, telephone, n de reservation..."
-                      className="glass-input w-full rounded-xl py-3 pl-11 pr-4 text-sm outline-none"
-                    />
-                  </div>
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-gold/80">
-                    Arrivee du
-                  </span>
-                  <input
-                    type="date"
-                    value={dateFrom}
-                    max={dateTo || undefined}
-                    onChange={(event) => setDateFrom(event.target.value)}
-                    className="glass-input w-full rounded-xl px-4 py-3 text-sm outline-none"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-gold/80">
-                    Arrivee au
-                  </span>
-                  <input
-                    type="date"
-                    value={dateTo}
-                    min={dateFrom || undefined}
-                    onChange={(event) => setDateTo(event.target.value)}
-                    className="glass-input w-full rounded-xl px-4 py-3 text-sm outline-none"
-                  />
-                </label>
-              </div>
-
-              <div className="flex items-center gap-3">
-                {(searchQuery || dateFrom || dateTo) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchQuery("");
-                      setDateFrom("");
-                      setDateTo("");
-                    }}
-                    className="rounded-full border border-gold/15 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-cream/60 transition hover:border-gold/40 hover:text-gold-light"
-                  >
-                    Reinitialiser
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={handleExportPdf}
-                  disabled={filteredReservations.length === 0 || exportingReport}
-                  className="flex items-center gap-2 rounded-full bg-gradient-to-br from-gold-light to-gold px-5 py-3 text-[10px] font-black uppercase tracking-widest text-night transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Download size={14} className={exportingReport ? "animate-bounce" : ""} />
-                  {exportingReport ? "Création du PDF..." : "Export PDF"}
-                </button>
-              </div>
-            </div>
-
-            <p className="mt-4 text-[11px] uppercase tracking-widest text-cream/45">
-              {filteredReservations.length} resultat(s) affiche(s)
+            <p className="mt-1 text-sm text-cream/55">
+              {type === "reservation"
+                ? "Après validation, le client dispose d'un délai pour régler la totalité de son séjour."
+                : "Après validation, le client règle les nuits supplémentaires depuis son espace."}
             </p>
           </div>
-
-          <div className="flex flex-wrap gap-2 border-b border-gold/10 pb-7 text-xs font-semibold uppercase tracking-wider">
-            {filtersList.map((filter) => (
-              <div key={filter.key} className="group relative">
-                <button
-                  type="button"
-                  onClick={() => setStatusFilter(filter.key)}
-                  aria-describedby={`admin-filter-help-${filter.key}`}
-                  className={`rounded-full border px-4 py-2 transition ${
-                    statusFilter === filter.key
-                      ? "border-gold bg-gradient-to-br from-gold-light to-gold text-night"
-                      : "border-gold/15 bg-transparent text-cream/60 hover:border-gold/40 hover:text-gold-light"
-                  }`}
-                >
-                  {filter.label}
-                </button>
-                <div
-                  id={`admin-filter-help-${filter.key}`}
-                  role="tooltip"
-                  className="admin-filter-tooltip pointer-events-none absolute hidden lg:block left-1/2 top-[calc(100%+0.5rem)] z-40 w-72 -translate-x-1/2 rounded-2xl border border-gold/20 bg-night-700 px-4 py-3 text-left text-[11px] font-semibold normal-case leading-relaxed tracking-normal opacity-0 shadow-2xl shadow-black/50 transition-opacity duration-150 delay-0 group-hover:delay-1000 group-hover:opacity-100 group-focus-within:delay-1000 group-focus-within:opacity-100"
-                >
-                  <span className="absolute -top-1.5 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 border-l border-t border-gold/20 bg-night-700" />
-                  {filter.description}
-                </div>
-              </div>
+          <div
+            className="inline-flex rounded-lg border border-gold/15 p-1"
+            role="tablist"
+            aria-label="Type de demande"
+          >
+            {(["reservation", "extension"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={type === value}
+                onClick={() => changeType(value)}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-md px-4 py-2 text-xs font-semibold uppercase tracking-wider transition",
+                  type === value
+                    ? "bg-gradient-to-br from-gold-light to-gold text-night"
+                    : "text-cream/60 hover:text-gold-light"
+                )}
+              >
+                {value === "reservation" ? <BedDouble size={14} /> : <CalendarPlus size={14} />}
+                {value === "reservation" ? "Réservations" : "Prolongations"}
+              </button>
             ))}
           </div>
-
-          {filteredReservations.length === 0 ? (
-            <div className="glass-dark glass-edge rounded-3xl py-20 text-center">
-              <p className="text-sm text-cream/45">Aucune demande ne correspond a ce filtre.</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {filteredReservations.map((reservation) => (
-                <div
-                  key={reservation.id}
-                  className="glass-dark glass-edge flex flex-col justify-between gap-6 rounded-3xl p-6 transition-all duration-300 hover:border-gold/30 md:p-8 lg:flex-row"
-                >
-                  <div className="flex-1 space-y-4">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <span className="font-display text-lg font-bold uppercase text-cream">
-                        {reservationApartmentLabel(reservation)}
-                      </span>
-                      <span
-                        className={`rounded border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${statusClasses(reservation.status)}`}
-                      >
-                        {statusLabels[reservation.status] || reservation.status}
-                      </span>
-                    </div>
-
-                    <div className="grid gap-6 border-t border-gold/10 pt-2 text-xs text-cream/60 sm:grid-cols-3">
-                      <div>
-                        <span className="mb-1 block text-[9px] uppercase tracking-widest text-cream/40">
-                          Client
-                        </span>
-                        <p className="font-semibold text-cream">{reservation.user?.name}</p>
-                        <p className="text-cream/55">{reservation.user?.email}</p>
-                      </div>
-                      <div>
-                        <span className="mb-1 block text-[9px] uppercase tracking-widest text-cream/40">
-                          Dates
-                        </span>
-                        <p className="font-semibold text-cream">
-                          Du {new Date(reservation.check_in).toLocaleDateString("fr-FR")} au{" "}
-                          {new Date(reservation.check_out).toLocaleDateString("fr-FR")}
-                        </p>
-                        <p className="text-cream/55">
-                          {reservation.room?.type || reservation.category_type}
-                        </p>
-                      </div>
-                      <div>
-                        <span className="mb-1 block text-[9px] uppercase tracking-widest text-cream/40">
-                          Acompte / sejour
-                        </span>
-                        <p className="text-sm font-bold text-cream">
-                          {(reservation.deposit_amount ?? reservation.total_price).toLocaleString(
-                            "fr-FR"
-                          )}{" "}
-                          FCFA
-                        </p>
-                        <p className="text-cream/55">
-                          {(reservation.stay_amount ?? 0).toLocaleString("fr-FR")} FCFA sejour
-                        </p>
-                        {(reservation.status === "ANNULEE" ||
-                          reservation.status === "REMBOURSEE") && (
-                          <p className="mt-1 font-semibold text-orange-300">
-                            A rembourser :{" "}
-                            {(reservation.cancellation_refund_amount ?? 0).toLocaleString("fr-FR")}{" "}
-                            FCFA
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {reservation.special_requests && (
-                      <div className="rounded-xl border border-gold/10 bg-white/5 p-3 text-xs text-cream/60">
-                        <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-gold/70">
-                          Demande client
-                        </span>
-                        {reservation.special_requests}
-                      </div>
-                    )}
-
-                    {reservation.extension_status && (
-                      <div className="rounded-xl border border-gold/15 bg-white/5 p-3 text-xs leading-relaxed text-cream/70">
-                        <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-gold/80">
-                          Prolongation du séjour
-                        </span>
-                        <p>
-                          Statut :{" "}
-                          <strong>
-                            {reservation.extension_status === "EN_ATTENTE"
-                              ? "En attente"
-                              : reservation.extension_status === "APPROUVEE"
-                                ? "Acceptée"
-                                : "Refusée"}
-                          </strong>
-                        </p>
-                        {reservation.extension_previous_check_out && (
-                          <p>
-                            Départ initial :{" "}
-                            {new Date(reservation.extension_previous_check_out).toLocaleDateString(
-                              "fr-FR"
-                            )}
-                          </p>
-                        )}
-                        {reservation.extension_requested_check_out && (
-                          <p>
-                            Nouveau départ demandé :{" "}
-                            {new Date(reservation.extension_requested_check_out).toLocaleDateString(
-                              "fr-FR"
-                            )}
-                          </p>
-                        )}
-                        {reservation.extension_admin_notes && (
-                          <p>Note admin : {reservation.extension_admin_notes}</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex min-w-[180px] flex-row items-center justify-end gap-3 border-gold/10 lg:flex-col lg:border-l lg:pl-6">
-                    {/* Plus de Confirmer / Rejeter : reserver ouvre directement
-                        le paiement, plus aucune demande n'attend une decision. */}
-                    {reservation.extension_status === "EN_ATTENTE" ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenAction(reservation, "extension-approve")}
-                          className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-gold-light to-gold py-3 text-[10px] font-black uppercase tracking-widest text-night transition hover:brightness-105"
-                        >
-                          <Check size={14} />
-                          Accepter prolongation
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenAction(reservation, "extension-reject")}
-                          className="flex w-full items-center justify-center gap-2 rounded-xl border border-terracotta/40 py-3 text-[10px] font-black uppercase tracking-widest text-terracotta-light transition hover:bg-terracotta/15"
-                        >
-                          <X size={14} />
-                          Rejeter prolongation
-                        </button>
-                      </>
-                    ) : reservation.status === "ANNULEE" ? (
-                      <button
-                        type="button"
-                        disabled={submitting}
-                        onClick={() => handleMarkRefunded(reservation)}
-                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-gold-light to-gold py-3 text-[10px] font-black uppercase tracking-widest text-night transition hover:brightness-105 disabled:opacity-50"
-                      >
-                        <RefreshCcw size={14} />
-                        Remboursement effectue
-                      </button>
-                    ) : (
-                      <div className="py-4 text-xs italic text-cream/35">Traitee</div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
-      </div>
 
-      <AnimatePresence>
-        {selectedRes && actionType && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => !submitting && setSelectedRes(null)}
-              className="absolute inset-0 bg-night/80 backdrop-blur-md"
-            />
-
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="glass-dark glass-edge relative w-full max-w-lg rounded-3xl p-8 shadow-2xl text-cream"
-            >
-              <div className="space-y-6">
-                <div>
-                  <h3 className="font-display text-2xl font-bold uppercase tracking-wide text-cream">
-                    {actionType === "approve"
-                      ? "Confirmer la demande"
-                      : actionType === "reject"
-                        ? "Rejeter la demande"
-                        : actionType === "extension-approve"
-                          ? "Accepter la prolongation"
-                          : "Rejeter la prolongation"}
-                  </h3>
-                  <p className="mt-1 text-[10px] uppercase tracking-widest text-cream/50">
-                    {selectedRes.user?.name || "Client"}
-                  </p>
-                </div>
-
-                <div className="space-y-2 rounded-2xl border border-gold/10 bg-white/5 p-4 text-xs text-cream/70">
-                  <p>
-                    <strong>Appartement :</strong> {reservationApartmentLabel(selectedRes)}
-                  </p>
-                  <p>
-                    <strong>Dates :</strong> du {formatAdminDate(selectedRes.check_in)} au{" "}
-                    {formatAdminDate(selectedRes.check_out)}
-                  </p>
-                  {(actionType === "extension-approve" || actionType === "extension-reject") &&
-                    selectedRes.extension_requested_check_out && (
-                      <p>
-                        <strong>Nouveau départ demandé :</strong>{" "}
-                        {formatAdminDate(selectedRes.extension_requested_check_out)}
-                      </p>
-                    )}
-                  <p>
-                    <strong>Acompte :</strong>{" "}
-                    {(selectedRes.deposit_amount ?? selectedRes.total_price).toLocaleString(
-                      "fr-FR"
-                    )}{" "}
-                    FCFA
-                  </p>
-                </div>
-
-                <label className="block">
-                  <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-gold/80">
-                    {actionType === "approve" || actionType === "extension-approve"
-                      ? "Notes facultatives"
-                      : "Motif du rejet obligatoire"}
-                  </span>
-                  <textarea
-                    rows={4}
-                    value={adminNotes}
-                    onChange={(event) => setAdminNotes(event.target.value)}
-                    className="glass-input w-full resize-none rounded-xl p-4 text-sm outline-none"
-                  />
-                </label>
-
-                {error && <p className="text-xs font-semibold text-red-400">{error}</p>}
-
-                <div className="flex gap-3 border-t border-gold/10 pt-4">
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={() => setSelectedRes(null)}
-                    className="flex-1 rounded-xl border border-gold/15 py-4 text-xs font-bold uppercase tracking-wider text-cream/70 transition hover:bg-white/5 disabled:opacity-50"
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={handleSubmitAction}
-                    className={`flex-1 rounded-xl py-4 text-xs font-black uppercase tracking-[0.2em] transition disabled:opacity-50 ${
-                      actionType === "approve" || actionType === "extension-approve"
-                        ? "bg-gradient-to-br from-gold-light to-gold text-night hover:brightness-105"
-                        : "bg-terracotta text-cream hover:brightness-110"
-                    }`}
-                  >
-                    {submitting ? "Envoi..." : "Confirmer"}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
+        {type === "reservation" ? (
+          <DataTable<Reservation>
+            {...tableProps}
+            columns={reservationColumns}
+            rows={table.type === "reservation" ? table.data.data : []}
+            rowKey={(r) => r.id}
+            rowClassName={(r) => highlight(r.id)}
+          />
+        ) : (
+          <DataTable<StayExtension>
+            {...tableProps}
+            columns={extensionColumns}
+            rows={table.type === "extension" ? table.data.data : []}
+            rowKey={(e) => e.id}
+            rowClassName={(e) => highlight(e.id)}
+          />
         )}
-      </AnimatePresence>
+      </section>
 
-      <AnimatePresence>
-        {releaseTarget && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => !submitting && setReleaseTarget(null)}
-              className="absolute inset-0 bg-night/80 backdrop-blur-md"
-            />
+      {/* Fiche detaillee */}
+      <Modal
+        open={!!details}
+        onClose={() => !submitting && !pending && setDetails(null)}
+        maxWidth="max-w-2xl"
+      >
+        {details?.kind === "reservation" && (
+          <ReservationDetails
+            reservation={details.item}
+            actions={<DetailsActions commands={reservationCommands(details.item)} />}
+          />
+        )}
+        {details?.kind === "extension" && (
+          <ExtensionDetails
+            extension={details.item}
+            actions={<DetailsActions commands={extensionCommands(details.item)} />}
+          />
+        )}
+      </Modal>
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="glass-dark glass-edge relative w-full max-w-xl rounded-3xl p-8 text-cream shadow-2xl"
-            >
+      {/* Validation / refus */}
+      <Modal open={!!pending} onClose={() => !submitting && setPending(null)} zIndex="z-[120]">
+        {pending && (
+          <div className="space-y-6">
+            <div>
+              <h3 className="font-display text-2xl font-bold uppercase tracking-wide text-cream">
+                {pending.action === "approve"
+                  ? pending.kind === "reservation"
+                    ? "Valider la demande"
+                    : "Valider la prolongation"
+                  : pending.kind === "reservation"
+                    ? "Refuser la demande"
+                    : "Refuser la prolongation"}
+              </h3>
+              <p className="mt-1 text-[10px] uppercase tracking-widest text-cream/50">
+                {pending.kind === "reservation"
+                  ? `Réservation #${pending.item.id} · ${pending.item.user?.name || "Client"}`
+                  : `Prolongation #${pending.item.id} · ${extensionClient(pending.item)?.name || "Client"}`}
+              </p>
+            </div>
+
+            <div className="space-y-2 rounded-2xl border border-gold/10 bg-white/5 p-4 text-xs text-cream/70">
+              {pending.kind === "reservation" ? (
+                <>
+                  <p>
+                    <strong>Appartement :</strong>{" "}
+                    {apartmentLabel(pending.item.room, pending.item.category_type)}
+                  </p>
+                  <p>
+                    <strong>Dates :</strong> du {formatDate(pending.item.check_in)} au{" "}
+                    {formatDate(pending.item.check_out)} (
+                    {countNights(pending.item.check_in, pending.item.check_out)} nuit(s))
+                  </p>
+                  <p>
+                    <strong>Montant du séjour :</strong>{" "}
+                    {formatAmount(reservationAmount(pending.item))}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>
+                    <strong>Appartement :</strong>{" "}
+                    {apartmentLabel(
+                      pending.item.reservation?.room,
+                      pending.item.reservation?.category_type
+                    )}
+                  </p>
+                  <p>
+                    <strong>Départ :</strong> {formatDate(pending.item.previous_check_out)} →{" "}
+                    {formatDate(pending.item.requested_check_out)} (+{pending.item.nights} nuit(s))
+                  </p>
+                  <p>
+                    <strong>Montant de la prolongation :</strong>{" "}
+                    {formatAmount(pending.item.amount)}
+                  </p>
+                </>
+              )}
+              {pending.action === "approve" && (
+                <p className="pt-1 text-cream/55">
+                  {pending.kind === "reservation"
+                    ? "Le client sera prévenu par e-mail et pourra régler la totalité de son séjour."
+                    : "Le client sera prévenu par e-mail et pourra régler les nuits supplémentaires."}
+                </p>
+              )}
+            </div>
+
+            <label className="block">
+              <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-gold/80">
+                {pending.action === "approve" ? "Note facultative" : "Motif du refus (obligatoire)"}
+              </span>
+              <textarea
+                rows={4}
+                value={adminNotes}
+                onChange={(event) => setAdminNotes(event.target.value)}
+                maxLength={1000}
+                className="glass-input w-full resize-none rounded-xl p-4 text-sm outline-none"
+              />
+            </label>
+
+            {actionError && <p className="text-xs font-semibold text-red-400">{actionError}</p>}
+
+            <div className="flex gap-3 border-t border-gold/10 pt-4">
               <button
                 type="button"
                 disabled={submitting}
-                onClick={() => setReleaseTarget(null)}
-                className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full border border-gold/20 bg-white/5 text-cream transition hover:border-gold hover:text-gold-light disabled:opacity-50"
-                aria-label="Fermer"
+                onClick={() => setPending(null)}
+                className="flex-1 rounded-xl border border-gold/15 py-4 text-xs font-bold uppercase tracking-wider text-cream/70 transition hover:bg-white/5 disabled:opacity-50"
               >
-                <X size={16} />
+                Annuler
               </button>
-
-              <div className="space-y-6">
-                <div className="pr-12">
-                  <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-gold/20 bg-white/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-gold-light">
-                    <DoorOpen size={14} />
-                    Liberation manuelle
-                  </div>
-                  <h3 className="font-display text-2xl font-bold uppercase tracking-wide text-cream">
-                    Liberer l'appartement
-                  </h3>
-                  <p className="mt-2 text-sm leading-relaxed text-cream/60">
-                    Cette action marque l'occupation comme terminee et rend l'appartement disponible
-                    pour d'autres clients. L'historique de la reservation reste conserve.
-                  </p>
-                </div>
-
-                <div className="space-y-2 rounded-2xl border border-gold/15 bg-white/5 p-4 text-sm text-cream/70">
-                  <p>
-                    <strong>Appartement :</strong> {reservationApartmentLabel(releaseTarget)}
-                  </p>
-                  <p>
-                    <strong>Client :</strong> {releaseTarget.user?.name || "Client non renseigne"}
-                  </p>
-                  <p>
-                    <strong>Demande :</strong> {formatAdminDateTime(releaseTarget.created_at)}
-                  </p>
-                  <p>
-                    <strong>Occupation :</strong> du {formatAdminDate(releaseTarget.check_in)} au{" "}
-                    {formatAdminDate(releaseTarget.check_out)}
-                  </p>
-                </div>
-
-                <label className="block">
-                  <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-gold/80">
-                    Note interne facultative
-                  </span>
-                  <textarea
-                    rows={4}
-                    value={releaseNotes}
-                    onChange={(event) => setReleaseNotes(event.target.value)}
-                    placeholder="Ex: depart anticipe, chambre remise a disposition..."
-                    className="glass-input w-full resize-none rounded-xl p-4 text-sm outline-none"
-                  />
-                </label>
-
-                {error && <p className="text-xs font-semibold text-red-400">{error}</p>}
-
-                <div className="flex flex-col gap-3 border-t border-gold/15 pt-4 sm:flex-row">
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={() => setReleaseTarget(null)}
-                    className="flex-1 rounded-xl border border-gold/15 py-4 text-xs font-bold uppercase tracking-wider text-cream/70 transition hover:bg-white/5 disabled:opacity-50"
-                  >
-                    Retour
-                  </button>
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={handleReleaseRoom}
-                    className="flex-1 rounded-xl bg-gradient-to-br from-gold-light to-gold py-4 text-xs font-black uppercase tracking-[0.2em] text-night transition hover:brightness-105 disabled:opacity-50"
-                  >
-                    {submitting ? "Liberation..." : "Liberer l'appartement"}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={submitAction}
+                className={cn(
+                  "flex-1 rounded-xl py-4 text-xs font-black uppercase tracking-[0.2em] transition disabled:opacity-50",
+                  pending.action === "approve"
+                    ? "bg-gradient-to-br from-gold-light to-gold text-night hover:brightness-105"
+                    : "bg-terracotta text-cream hover:brightness-110"
+                )}
+              >
+                {submitting ? "Envoi…" : pending.action === "approve" ? "Valider" : "Refuser"}
+              </button>
+            </div>
           </div>
         )}
-      </AnimatePresence>
+      </Modal>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Sous-composants
+ * ------------------------------------------------------------------------- */
+
+/** Boutons libellés de la fiche détaillée (le tableau affiche les mêmes actions en icônes). */
+function DetailsActions({ commands }: { commands: RowCommand[] }) {
+  if (commands.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {commands.map(({ label, icon: Icon, tone, disabled, run }) => (
+        <button
+          key={label}
+          type="button"
+          disabled={disabled}
+          onClick={run}
+          className={cn(
+            "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wider transition disabled:opacity-50",
+            tone === "danger"
+              ? "border border-terracotta/40 text-terracotta-light hover:bg-terracotta/15"
+              : "bg-gradient-to-br from-gold-light to-gold text-night hover:brightness-105"
+          )}
+        >
+          <Icon size={13} /> {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Modal({
+  open,
+  onClose,
+  children,
+  zIndex = "z-[100]",
+  maxWidth = "max-w-lg"
+}: {
+  open: boolean;
+  onClose: () => void;
+  children: ReactNode;
+  zIndex?: string;
+  maxWidth?: string;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <div className={cn("fixed inset-0 flex items-center justify-center p-4", zIndex)}>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="absolute inset-0 bg-night/80 backdrop-blur-md"
+          />
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            className={cn(
+              "glass-dark glass-edge relative max-h-[90vh] w-full overflow-y-auto rounded-3xl p-6 text-cream shadow-2xl sm:p-8",
+              maxWidth
+            )}
+          >
+            <button
+              type="button"
+              onClick={onClose}
+              className="absolute right-5 top-5 flex h-9 w-9 items-center justify-center rounded-full border border-gold/20 bg-white/5 text-cream transition hover:border-gold hover:text-gold-light"
+              aria-label="Fermer"
+            >
+              <X size={15} />
+            </button>
+            {children}
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function DetailRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="rounded-xl bg-white/5 p-3">
+      <span className="block text-[9px] font-bold uppercase tracking-widest text-cream/45">
+        {label}
+      </span>
+      <div className="mt-1 text-sm text-cream">{children}</div>
+    </div>
+  );
+}
+
+function ClientBlock({ person }: { person?: User }) {
+  return (
+    <div className="rounded-xl border border-gold/15 bg-white/5 p-4 text-sm">
+      <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-gold/70">Client</p>
+      <p className="font-semibold text-cream">{person?.name || "Client non renseigné"}</p>
+      <p className="mt-1 flex items-center gap-2 text-cream/65">
+        <Mail size={13} /> {person?.email || "E-mail non renseigné"}
+      </p>
+      <p className="mt-1 flex items-center gap-2 text-cream/65">
+        <Phone size={13} /> {person?.phone || "Téléphone non renseigné"}
+      </p>
+    </div>
+  );
+}
+
+function ReservationDetails({
+  reservation,
+  actions
+}: {
+  reservation: Reservation;
+  actions: ReactNode;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="pr-10">
+        <p className="text-[10px] uppercase tracking-widest text-cream/50">
+          Réservation #{reservation.id}
+        </p>
+        <h3 className="mt-1 font-display text-2xl font-bold uppercase tracking-wide text-cream">
+          {apartmentLabel(reservation.room, reservation.category_type)}
+        </h3>
+        <div className="mt-2">
+          <StatusBadge status={reservation.status} labels={reservationStatusLabels} />
+        </div>
+      </div>
+
+      <ClientBlock person={reservation.user} />
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <DetailRow label="Séjour">
+          Du {formatDate(reservation.check_in)} au {formatDate(reservation.check_out)} (
+          {countNights(reservation.check_in, reservation.check_out)} nuit(s))
+        </DetailRow>
+        <DetailRow label="Voyageurs">{reservation.guests}</DetailRow>
+        <DetailRow label="Montant du séjour">
+          {formatAmount(reservationAmount(reservation))}
+        </DetailRow>
+        <DetailRow label="Demandée le">{formatDateTime(reservation.created_at)}</DetailRow>
+        {reservation.approved_at && (
+          <DetailRow label="Validée le">{formatDateTime(reservation.approved_at)}</DetailRow>
+        )}
+        {reservation.payment_deadline && reservation.status === "VALIDEE_PAIEMENT_REQUIS" && (
+          <DetailRow label="Paiement attendu avant le">
+            {formatDateTime(reservation.payment_deadline)}
+          </DetailRow>
+        )}
+        {(reservation.stay_paid_at || reservation.paid_at) && (
+          <DetailRow label="Séjour payé le">
+            {formatDateTime(reservation.stay_paid_at || reservation.paid_at)}
+          </DetailRow>
+        )}
+        {(reservation.status === "ANNULEE" || reservation.status === "REMBOURSEE") && (
+          <DetailRow label="À rembourser">
+            {formatAmount(reservation.cancellation_refund_amount)}
+          </DetailRow>
+        )}
+        {reservation.released_at && (
+          <DetailRow label="Libéré le">{formatDateTime(reservation.released_at)}</DetailRow>
+        )}
+      </div>
+
+      {reservation.special_requests && (
+        <div className="rounded-xl border border-gold/10 bg-white/5 p-3 text-xs leading-relaxed text-cream/65">
+          <span className="mb-1 block text-[9px] font-bold uppercase tracking-widest text-gold/70">
+            Demande du client
+          </span>
+          {reservation.special_requests}
+        </div>
+      )}
+
+      {reservation.admin_notes && (
+        <div className="rounded-xl border border-gold/10 bg-white/5 p-3 text-xs leading-relaxed text-cream/65">
+          <span className="mb-1 block text-[9px] font-bold uppercase tracking-widest text-gold/70">
+            Note de l&apos;administration
+          </span>
+          {reservation.admin_notes}
+        </div>
+      )}
+
+      {!!reservation.extensions?.length && (
+        <div className="rounded-xl border border-gold/10 bg-white/5 p-3 text-xs text-cream/70">
+          <span className="mb-2 block text-[9px] font-bold uppercase tracking-widest text-gold/70">
+            Prolongations
+          </span>
+          <ul className="space-y-1.5">
+            {reservation.extensions.map((extension) => (
+              <li key={extension.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  #{extension.id} · jusqu&apos;au {formatDate(extension.requested_check_out)} ·{" "}
+                  {formatAmount(extension.amount)}
+                </span>
+                <StatusBadge status={extension.status} labels={extensionStatusLabels} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="border-t border-gold/10 pt-4">{actions}</div>
+    </div>
+  );
+}
+
+function ExtensionDetails({
+  extension,
+  actions
+}: {
+  extension: StayExtension;
+  actions: ReactNode;
+}) {
+  const reservation = extension.reservation;
+  return (
+    <div className="space-y-5">
+      <div className="pr-10">
+        <p className="text-[10px] uppercase tracking-widest text-cream/50">
+          Prolongation #{extension.id} · Réservation #{extension.reservation_id}
+        </p>
+        <h3 className="mt-1 font-display text-2xl font-bold uppercase tracking-wide text-cream">
+          {apartmentLabel(reservation?.room, reservation?.category_type)}
+        </h3>
+        <div className="mt-2">
+          <StatusBadge status={extension.status} labels={extensionStatusLabels} />
+        </div>
+      </div>
+
+      <ClientBlock person={extensionClient(extension)} />
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {reservation && (
+          <DetailRow label="Séjour initial">
+            Du {formatDate(reservation.check_in)} au {formatDate(extension.previous_check_out)}
+          </DetailRow>
+        )}
+        <DetailRow label="Nouveau départ demandé">
+          {formatDate(extension.requested_check_out)} (+{extension.nights} nuit(s))
+        </DetailRow>
+        <DetailRow label="Prix par nuit">{formatAmount(extension.price_per_night)}</DetailRow>
+        <DetailRow label="Montant">{formatAmount(extension.amount)}</DetailRow>
+        <DetailRow label="Demandée le">{formatDateTime(extension.created_at)}</DetailRow>
+        {extension.payment_deadline && (
+          <DetailRow label="Échéance de paiement">
+            {formatDateTime(extension.payment_deadline)}
+          </DetailRow>
+        )}
+        {extension.paid_at && (
+          <DetailRow label="Payée le">{formatDateTime(extension.paid_at)}</DetailRow>
+        )}
+        {extension.voucher?.number && (
+          <DetailRow label="Bon de séjour">{extension.voucher.number}</DetailRow>
+        )}
+      </div>
+
+      {extension.admin_notes && (
+        <div className="rounded-xl border border-gold/10 bg-white/5 p-3 text-xs leading-relaxed text-cream/65">
+          <span className="mb-1 block text-[9px] font-bold uppercase tracking-widest text-gold/70">
+            Note de l&apos;administration
+          </span>
+          {extension.admin_notes}
+        </div>
+      )}
+
+      <div className="border-t border-gold/10 pt-4">{actions}</div>
     </div>
   );
 }

@@ -99,6 +99,40 @@ class Reservation extends Model
         return $this->hasMany(Notification::class);
     }
 
+    public function extensions(): HasMany
+    {
+        return $this->hasMany(StayExtension::class)->latest();
+    }
+
+    public function vouchers(): HasMany
+    {
+        return $this->hasMany(StayVoucher::class)->orderBy('issued_at');
+    }
+
+    /**
+     * Montant restant a payer pour le sejour initial (hors prolongations).
+     *
+     * Paiement integral apres validation : tout le sejour, moins ce qui a pu
+     * etre deja encaisse (acompte d'une ancienne reservation).
+     */
+    public function amountDue(): int
+    {
+        $alreadyPaid = (int) $this->payments()
+            ->where('status', Payment::STATUS_SUCCESS)
+            ->whereNull('stay_extension_id')
+            ->sum('amount');
+
+        return max(0, (int) $this->stay_amount - $alreadyPaid);
+    }
+
+    /**
+     * La demande a ete validee par l'administration et le paiement est ouvert.
+     */
+    public function isAwaitingPayment(): bool
+    {
+        return $this->status === 'VALIDEE_PAIEMENT_REQUIS' && ! $this->isExpired();
+    }
+
     public function isExpired(): bool
     {
         if ($this->status !== 'VALIDEE_PAIEMENT_REQUIS') {
@@ -121,6 +155,15 @@ class Reservation extends Model
             return false;
         }
 
+        $hasPaymentInProgress = $this->payments()
+            ->where('status', Payment::STATUS_PENDING)
+            ->where('created_at', '>', now()->subMinutes(30))
+            ->exists();
+
+        if ($hasPaymentInProgress) {
+            return false;
+        }
+
         return $this->update(['status' => 'EXPIREE']);
     }
 
@@ -131,7 +174,12 @@ class Reservation extends Model
             ->where(function ($query) {
                 $query->where('payment_deadline', '<=', now())
                     ->orWhereDate('check_in', '<', now()->toDateString());
-            });
+            })
+            // Un paiement lance juste avant l'echeance (validation Mobile
+            // Money en cours) ne doit pas voir sa reservation expirer sous lui.
+            ->whereDoesntHave('payments', fn ($payments) => $payments
+                ->where('status', Payment::STATUS_PENDING)
+                ->where('created_at', '>', now()->subMinutes(30)));
 
         if ($userId) {
             $query->where('user_id', $userId);
@@ -204,14 +252,48 @@ class Reservation extends Model
         return max(1, $this->check_in->diffInDays($this->check_out));
     }
 
+    /**
+     * Raison pour laquelle une prolongation est impossible, ou null si elle
+     * est permise. Regles :
+     *  1. le client occupe deja l'appartement (sejour paye, arrivee passee) ;
+     *  2. au moins une journee du sejour est deja passee ;
+     *  3. le sejour n'est pas termine ;
+     *  4. aucune autre prolongation n'est en cours de traitement.
+     */
+    public function stayExtensionRefusal(): ?string
+    {
+        if (! in_array($this->status, ['CONFIRMEE', 'SEJOUR_PAYE'], true) || ! $this->room_id) {
+            return 'Seul un sejour paye peut etre prolonge.';
+        }
+
+        $today = now()->startOfDay();
+
+        if ($today->lessThan($this->check_in->copy()->addDay()->startOfDay())) {
+            return 'Une prolongation n\'est possible qu\'apres au moins une journee passee dans l\'appartement.';
+        }
+
+        if ($today->greaterThan($this->check_out->copy()->startOfDay())) {
+            return 'Ce sejour est termine : il ne peut plus etre prolonge.';
+        }
+
+        $hasOpenExtension = $this->extensions()
+            ->whereIn('status', StayExtension::OPEN_STATUSES)
+            ->where(function ($query) {
+                $query->where('status', StayExtension::STATUS_PENDING)
+                    ->orWhereNull('payment_deadline')
+                    ->orWhere('payment_deadline', '>', now());
+            })
+            ->exists();
+
+        if ($hasOpenExtension) {
+            return 'Une demande de prolongation est deja en cours pour ce sejour.';
+        }
+
+        return null;
+    }
+
     public function canRequestStayExtension(): bool
     {
-        return $this->status === 'CONFIRMEE'
-            && $this->room_id
-            && ! $this->stay_paid_at
-            && ! $this->stay_invoice_number
-            && $this->extension_status !== 'EN_ATTENTE'
-            && now()->startOfDay()->greaterThanOrEqualTo($this->check_in->copy()->addDay()->startOfDay())
-            && now()->startOfDay()->lessThan($this->check_out->copy()->startOfDay());
+        return $this->stayExtensionRefusal() === null;
     }
 }

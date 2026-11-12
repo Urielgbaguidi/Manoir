@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Interdit les actions engageantes tant que l'adresse email n'est pas confirmee.
+ * Bloque l'acces tant que l'adresse email n'est pas confirmee.
  *
  * Version API du middleware `verified` de Laravel, qui lui redirige vers une
  * page web inexistante ici. On repond en JSON, avec un code que le frontend
@@ -25,7 +25,7 @@ class EnsureEmailIsVerified
 
         if (! $user->hasVerifiedEmail()) {
             return response()->json([
-                'message' => 'Confirmez votre adresse email avant de reserver. Un code a 6 chiffres vous a ete envoye.',
+                'message' => 'Confirmez votre adresse email pour acceder a votre espace. Un code a 6 chiffres vous a ete envoye.',
                 'reason' => 'email_not_verified',
             ], 403);
         }

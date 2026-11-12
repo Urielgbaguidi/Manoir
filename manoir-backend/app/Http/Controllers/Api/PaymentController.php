@@ -3,197 +3,189 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Reservations\InitiatePaymentRequest;
 use App\Models\Payment;
 use App\Models\Reservation;
-use App\Services\GoogleCalendarWriter;
-use App\Services\ReservationNotificationService;
+use App\Models\StayExtension;
+use App\Services\Payments\PaymentException;
+use App\Services\Payments\PaymentService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
+/**
+ * Paiements FeexPay cote client.
+ *
+ * Le paiement se deroule dans le checkout officiel FeexPay (navigateur). Le
+ * serveur prepare la tentative, puis, quand le checkout se referme, le
+ * frontend appelle `verify` : le serveur interroge FeexPay et ne marque le
+ * paiement reussi que si FeexPay le confirme. MODE SANDBOX : pas de webhook.
+ */
 class PaymentController extends Controller
 {
-    public function initiate(Request $request, string $reservationId): JsonResponse
+    public function __construct(private readonly PaymentService $payments) {}
+
+    /**
+     * Disponibilite du paiement en ligne (cle FeexPay renseignee ou non).
+     */
+    public function channels(): JsonResponse
     {
-        $request->validate([
-            'payment_method' => 'required|in:mobile_money,card',
-            'provider' => 'required|in:fedapay,kkiapay',
-            'payment_type' => 'sometimes|in:deposit,stay',
-            'phone_number' => 'required_if:payment_method,mobile_money|nullable|string',
+        return response()->json([
+            'mode' => config('feexpay.mode'),
+            'available' => filled(config('feexpay.api_key')) && filled(config('feexpay.shop_id')),
+            'channels' => [],
+        ]);
+    }
+
+    /**
+     * Prepare (ou repropose) la tentative et renvoie la configuration du
+     * checkout FeexPay.
+     */
+    public function initiateForReservation(Request $request, string $id): JsonResponse
+    {
+        $reservation = Reservation::where('user_id', $request->user()->id)->findOrFail($id);
+
+        return $this->respond(fn () => $this->payments->initiateForReservation($reservation, $request->user()), 201, true);
+    }
+
+    public function initiateForExtension(Request $request, string $id): JsonResponse
+    {
+        $extension = StayExtension::where('user_id', $request->user()->id)->with('reservation')->findOrFail($id);
+
+        return $this->respond(fn () => $this->payments->initiateForExtension($extension, $request->user()), 201, true);
+    }
+
+    /**
+     * Verification cote serveur aupres de FeexPay. `reference` (renvoyee par
+     * le checkout) n'est qu'un indice, controle aupres de FeexPay.
+     */
+    public function verify(InitiatePaymentRequest $request, string $paymentId): JsonResponse
+    {
+        $payment = $this->ownedPayment($request, fn ($query) => $query->whereKey($paymentId));
+
+        return $this->respond(
+            fn () => $this->payments->refresh(
+                $payment,
+                $request->validated('reference'),
+                $request->validated('network'),
+            ),
+            200
+        );
+    }
+
+    /**
+     * Confirmation d'un paiement simule par le SDK FeexPay en SANDBOX.
+     *
+     * Route de developpement : le service refuse si
+     * `feexpay.sandbox_trust_sdk` n'est pas explicitement active.
+     */
+    public function confirmSandbox(Request $request, string $paymentId): JsonResponse
+    {
+        $payment = $this->ownedPayment($request, fn ($query) => $query->whereKey($paymentId));
+
+        $data = $request->validate([
+            'description' => ['required', 'string', 'max:100'],
+            'callback_info' => ['required', 'array'],
+            'callback_info.payment_id' => ['required', 'integer'],
+            'reseau' => ['nullable', 'string', 'max:40'],
         ]);
 
-        $reservation = Reservation::where('user_id', $request->user()->id)
-            ->where('id', $reservationId)
-            ->firstOrFail();
+        return $this->respond(
+            fn () => $this->payments->confirmSandboxCheckout($payment, $data),
+            200
+        );
+    }
 
-        $reservation->expireIfPaymentDeadlinePassed();
+    /**
+     * Retour de la page de paiement par carte : FeexPay ajoute `ref` a l'URL.
+     * La reference doit appartenir a un paiement du client connecte.
+     */
+    public function verifyByReference(Request $request): JsonResponse
+    {
+        $data = $request->validate(['reference' => ['required', 'string', 'max:100']]);
 
-        $paymentType = $request->input('payment_type', 'deposit');
+        $payment = $this->ownedPayment($request, fn ($query) => $query->where('provider_reference', $data['reference']));
 
-        if ($paymentType === 'deposit') {
-            if ($reservation->status !== 'VALIDEE_PAIEMENT_REQUIS') {
-                return response()->json([
-                    'message' => "Cette reservation n'est pas en attente de paiement de l'acompte.",
-                ], 422);
-            }
+        return $this->respond(fn () => $this->payments->refresh($payment), 200);
+    }
 
-            if ($reservation->isExpired()) {
-                $reservation->update(['status' => 'EXPIREE']);
+    public function status(Request $request, string $paymentId): JsonResponse
+    {
+        $payment = $this->ownedPayment($request, fn ($query) => $query->whereKey($paymentId));
 
-                return response()->json([
-                    'message' => "Le delai de paiement de l'acompte a expire.",
-                ], 422);
-            }
+        return response()->json($this->present($payment));
+    }
 
-            // L'appartement n'est plus retenu avant paiement : quelqu'un a pu
-            // le prendre entre-temps. Mieux vaut le dire ici que d'encaisser
-            // l'acompte d'un logement qui n'est plus libre.
-            $reservation->loadMissing('room');
+    /**
+     * @param  callable(Builder<Payment>): mixed  $constraint
+     */
+    private function ownedPayment(Request $request, callable $constraint): Payment
+    {
+        $query = Payment::query()->whereHas('reservation', fn ($q) => $q->where('user_id', $request->user()->id));
+        $constraint($query);
 
-            if ($reservation->room && ! $reservation->room->isAvailableForDates(
-                $reservation->check_in->toDateString(),
-                $reservation->check_out->toDateString(),
-                $reservation->id
-            )) {
-                return response()->json([
-                    'message' => "Cet appartement vient d'etre reserve par un autre client sur ces dates. Aucun paiement n'a ete engage.",
-                ], 422);
-            }
+        return $query->firstOrFail();
+    }
 
-            $amount = (int) $reservation->deposit_amount;
-        } else {
-            if ($reservation->status !== 'CONFIRMEE') {
-                return response()->json([
-                    'message' => "Le sejour ne peut etre paye qu'apres confirmation de l'acompte.",
-                ], 422);
-            }
+    /**
+     * @param  callable(): Payment  $action
+     */
+    private function respond(callable $action, int $successStatus = 201, bool $withCheckout = false): JsonResponse
+    {
+        try {
+            $payment = $action();
+        } catch (PaymentException $exception) {
+            // Meme forme que les reponses normales : le paiement deja en cours
+            // (409) est directement dans `payment`.
+            $body = $exception->payment ? $this->present($exception->payment) : [];
+            $body['message'] = $exception->getMessage();
 
-            // L'acompte est deduit : le client ne regle ici que le solde.
-            // Lui refacturer le sejour entier reviendrait a encaisser 130 %.
-            $amount = $reservation->balanceAmount();
-
-            if ($amount <= 0) {
-                return response()->json([
-                    'message' => 'Votre sejour est deja integralement regle.',
-                ], 422);
-            }
+            return response()->json($body, $exception->status);
         }
 
-        $payment = Payment::create([
-            'reservation_id' => $reservation->id,
-            'payment_method' => $request->payment_method,
-            'provider' => $request->provider,
-            'transaction_id' => uniqid(strtoupper($paymentType).'_'),
-            'payment_type' => $paymentType,
-            'status' => 'pending',
-            'amount' => $amount,
-            'metadata' => [
-                'phone_number' => $request->phone_number,
-                'initiated_at' => now()->toIso8601String(),
+        return response()->json($this->present($payment, $withCheckout), $successStatus);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function present(Payment $payment, bool $withCheckout = false): array
+    {
+        $payment->loadMissing(['reservation', 'stayExtension', 'voucher']);
+
+        $message = match ($payment->status) {
+            Payment::STATUS_SUCCESS => 'Paiement confirme. Votre Bon de Sejour est disponible.',
+            Payment::STATUS_FAILED => $payment->failure_reason ?: 'Le paiement a echoue.',
+            default => 'Finalisez le paiement dans la fenetre securisee FeexPay.',
+        };
+
+        return [
+            // Configuration du checkout FeexPay, remise uniquement a la
+            // preparation d'un paiement encore ouvert.
+            'checkout' => $withCheckout && $payment->status === Payment::STATUS_PENDING && $payment->payment_method === 'checkout'
+                ? $this->payments->checkoutConfig($payment)
+                : null,
+            'message' => $message,
+            'payment' => [
+                'id' => $payment->id,
+                'reservation_id' => $payment->reservation_id,
+                'stay_extension_id' => $payment->stay_extension_id,
+                'status' => $payment->status,
+                'provider_status' => $payment->provider_status,
+                'payment_method' => $payment->payment_method,
+                'channel' => $payment->channel,
+                'payment_type' => $payment->payment_type,
+                'amount' => $payment->amount,
+                'reference' => $payment->provider_reference,
+                'failure_reason' => $payment->failure_reason,
+                'paid_at' => $payment->paid_at?->toIso8601String(),
             ],
-        ]);
-
-        return response()->json([
-            'message' => 'Paiement initie avec succes.',
-            'payment' => $payment,
-            'payment_url' => "https://payment.manoir.com/pay/{$payment->transaction_id}",
-        ]);
-    }
-
-    public function webhook(Request $request, string $paymentId): JsonResponse
-    {
-        $payment = Payment::findOrFail($paymentId);
-        $status = $request->input('status');
-
-        if ($status === 'success') {
-            DB::transaction(function () use ($payment, $request) {
-                $invoiceNumber = $this->generateInvoiceNumber($payment);
-
-                $payment->update([
-                    'status' => 'success',
-                    'invoice_number' => $invoiceNumber,
-                    'paid_at' => now(),
-                    'metadata' => array_merge($payment->metadata ?? [], $request->all()),
-                ]);
-
-                $reservation = $payment->reservation;
-
-                if ($payment->payment_type === 'stay') {
-                    $reservation->update([
-                        'status' => 'SEJOUR_PAYE',
-                        'stay_paid_at' => now(),
-                        'stay_invoice_number' => $invoiceNumber,
-                    ]);
-                } else {
-                    $reservation->update([
-                        'status' => 'CONFIRMEE',
-                        'paid_at' => now(),
-                        'deposit_invoice_number' => $invoiceNumber,
-                    ]);
-                }
-            });
-
-            $confirmedPayment = $payment->fresh(['reservation']);
-            $confirmedReservation = $confirmedPayment->reservation;
-
-            // L'acompte paye rend le sejour ferme : il doit apparaitre dans
-            // l'agenda de l'appartement, sinon l'equipe pourrait relouer la
-            // meme periode au telephone. Une panne de Google n'annule pas le
-            // paiement pour autant : le service journalise et rend la main.
-            if ($confirmedPayment->payment_type !== 'stay') {
-                app(GoogleCalendarWriter::class)->publier(
-                    $confirmedReservation->loadMissing(['room', 'user'])
-                );
-            }
-
-            $amount = number_format((int) $confirmedPayment->amount, 0, ',', ' ');
-            ReservationNotificationService::sendOnce(
-                $confirmedReservation,
-                $confirmedPayment->payment_type === 'stay' ? 'stay_paid' : 'deposit_paid',
-                $confirmedPayment->payment_type === 'stay'
-                    ? "Le paiement de {$amount} FCFA pour votre séjour #{$confirmedReservation->id} est confirmé. Votre facture de séjour est disponible."
-                    : "Votre acompte de {$amount} FCFA pour la réservation #{$confirmedReservation->id} est payé. Votre réservation est maintenant confirmée et la facture est disponible."
-            );
-
-            return response()->json(['status' => 'success']);
-        }
-
-        $payment->update([
-            'status' => 'failed',
-            'metadata' => array_merge($payment->metadata ?? [], $request->all()),
-        ]);
-
-        return response()->json(['status' => 'failed']);
-    }
-
-    public function checkStatus(Request $request, string $paymentId): JsonResponse
-    {
-        $payment = Payment::with('reservation')->findOrFail($paymentId);
-
-        // Empeche l'acces au statut/montant du paiement d'un autre utilisateur (IDOR).
-        $user = $request->user();
-        if (! $user || (! $user->is_admin && $payment->reservation->user_id !== $user->id)) {
-            return response()->json(['message' => 'Acces non autorise.'], 403);
-        }
-
-        return response()->json([
-            'status' => $payment->status,
-            'reservation_status' => $payment->reservation->status,
-            'amount' => $payment->amount,
-            'payment_type' => $payment->payment_type,
-            'invoice_number' => $payment->invoice_number,
-        ]);
-    }
-
-    private function generateInvoiceNumber(Payment $payment): string
-    {
-        $year = now()->format('Y');
-        $sequence = str_pad((string) $payment->id, 5, '0', STR_PAD_LEFT);
-
-        if ($payment->payment_type === 'stay') {
-            return "FAC-SEJ-{$year}-{$sequence}";
-        }
-
-        return "FAC-{$year}-{$sequence}";
+            'reservation_status' => $payment->reservation?->status,
+            'extension_status' => $payment->stayExtension?->status,
+            'voucher' => $payment->voucher ? [
+                'id' => $payment->voucher->id,
+                'number' => $payment->voucher->number,
+            ] : null,
+        ];
     }
 }
