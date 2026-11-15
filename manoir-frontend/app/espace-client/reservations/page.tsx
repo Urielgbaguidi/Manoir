@@ -1,6 +1,5 @@
 "use client";
 
-import { AnimatePresence } from "framer-motion";
 import { Eye, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -9,7 +8,6 @@ import DataTable, {
   IconAction,
   TableBadge,
   useLocalTable,
-  type BadgeTone,
   type DataTableColumn
 } from "@/components/dashboard/admin/DataTable";
 import { ClientPageHeader } from "@/components/dashboard/client/ClientShell";
@@ -27,23 +25,14 @@ import {
   reservationRef,
   reservationTitle,
   statusLabels,
-  todayIso
+  todayIso,
+  reservationStatusColor
 } from "@/lib/reservationDisplay";
 
 /** Le client peut annuler tant que sa demande n'est ni validée ni payée. */
 const CANCELLABLE: ReservationStatus[] = ["EN_ATTENTE", "VALIDEE_PAIEMENT_REQUIS"];
 
-const statusBadge: Record<ReservationStatus, BadgeTone> = {
-  EN_ATTENTE: "warning",
-  VALIDEE_PAIEMENT_REQUIS: "info",
-  CONFIRMEE: "success",
-  SEJOUR_PAYE: "success",
-  LIBEREE: "neutral",
-  REFUSEE: "error",
-  EXPIREE: "neutral",
-  ANNULEE: "error",
-  REMBOURSEE: "neutral"
-};
+const statusBadge = reservationStatusColor;
 
 export default function ReservationsPage() {
   // useSearchParams impose une frontière Suspense avec l'export statique.
@@ -242,16 +231,12 @@ function ReservationsContent() {
   }
 
   const cancelModal = (
-    <AnimatePresence>
-      {cancellingReservation && (
-        <CancelReservationModal
-          reservation={cancellingReservation}
-          cancelling={cancelling}
-          onClose={() => setCancellingReservation(null)}
-          onConfirm={handleConfirmCancellation}
-        />
-      )}
-    </AnimatePresence>
+    <CancelReservationModal
+      reservation={cancellingReservation}
+      cancelling={cancelling}
+      onClose={() => setCancellingReservation(null)}
+      onConfirm={handleConfirmCancellation}
+    />
   );
 
   /* --------------------------------- Détail --------------------------------- */
@@ -292,10 +277,8 @@ function ReservationsContent() {
           canCancel={canCancel(selected)}
           onRefresh={() => refreshOne(selected.id)}
           onCancel={() => setCancellingReservation(selected)}
-          onPaid={() => {
-            showToast("Paiement confirmé. Votre Bon de Séjour est disponible.", "success");
-            refreshOne(selected.id);
-          }}
+          // La confirmation est annoncée par le panneau de paiement lui-même.
+          onPaid={() => void refreshOne(selected.id)}
         />
         {cancelModal}
       </div>

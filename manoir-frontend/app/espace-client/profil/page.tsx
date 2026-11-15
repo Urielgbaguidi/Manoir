@@ -1,13 +1,13 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
-import { Check, Pencil, X, XCircle } from "lucide-react";
+import { Check, KeyRound, Pencil, UserRound, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState, type ReactNode } from "react";
+import { FormEvent, useEffect, useState, type ComponentType, type ReactNode } from "react";
 import type { CountryCode } from "libphonenumber-js/min";
 import { TwoFactorSettings, useReauthentication } from "@/components/account/SecurityPanel";
 import { ClientPageHeader } from "@/components/dashboard/client/ClientShell";
 import CountryCodeSelect from "@/components/ui/CountryCodeSelect";
+import Modal, { ModalActions, ModalButton } from "@/components/ui/Modal";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { api, type User } from "@/lib/api";
@@ -129,12 +129,10 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      <AnimatePresence>
-        {editingInfo && <EditInfoDialog user={user} onClose={() => setEditingInfo(false)} />}
-        {changingPassword && (
-          <ChangePasswordDialog user={user} onClose={() => setChangingPassword(false)} />
-        )}
-      </AnimatePresence>
+      {editingInfo && <EditInfoDialog user={user} onClose={() => setEditingInfo(false)} />}
+      {changingPassword && (
+        <ChangePasswordDialog user={user} onClose={() => setChangingPassword(false)} />
+      )}
     </div>
   );
 }
@@ -189,61 +187,26 @@ function OutlineButton({ onClick, children }: { onClick: () => void; children: R
   );
 }
 
+/** Fenêtre de modification (fenêtre commune du site). */
 function Dialog({
   title,
   description,
+  icon,
   onClose,
   busy,
   children
 }: {
   title: string;
   description: string;
+  icon: ComponentType<{ size?: number; className?: string }>;
   onClose: () => void;
   busy?: boolean;
   children: ReactNode;
 }) {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onClose]);
-
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[90] flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-    >
-      <div
-        className="absolute inset-0 bg-night/80 backdrop-blur-sm"
-        onClick={() => !busy && onClose()}
-      />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 16 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 16 }}
-        className="glass-dark glass-edge relative w-full max-w-lg rounded-3xl p-6 text-cream sm:p-8"
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={busy}
-          aria-label="Fermer"
-          className="absolute right-5 top-5 inline-flex size-9 items-center justify-center rounded-full text-cream/50 transition hover:bg-white/5 hover:text-cream"
-        >
-          <X size={18} />
-        </button>
-        <h3 className="pr-10 text-xl font-semibold text-cream">{title}</h3>
-        <p className="mt-1 text-sm text-cream/50">{description}</p>
-        <div className="mt-6">{children}</div>
-      </motion.div>
-    </motion.div>
+    <Modal open onClose={onClose} busy={busy} title={title} description={description} icon={icon}>
+      {children}
+    </Modal>
   );
 }
 
@@ -275,23 +238,14 @@ function DialogActions({
   onCancel: () => void;
 }) {
   return (
-    <div className="mt-6 flex items-center justify-end gap-3">
-      <button
-        type="button"
-        onClick={onCancel}
-        disabled={busy}
-        className="h-11 rounded-lg border border-gold/20 px-5 text-sm font-medium text-cream/70 transition hover:border-gold/40 hover:text-cream disabled:opacity-50"
-      >
+    <ModalActions>
+      <ModalButton variant="secondary" onClick={onCancel} disabled={busy}>
         Annuler
-      </button>
-      <button
-        type="submit"
-        disabled={busy}
-        className="h-11 rounded-lg bg-gradient-to-br from-gold-light to-gold px-5 text-sm font-semibold text-night transition hover:brightness-105 disabled:opacity-50"
-      >
+      </ModalButton>
+      <ModalButton type="submit" variant="primary" disabled={busy}>
         {busy ? busyLabel : label}
-      </button>
-    </div>
+      </ModalButton>
+    </ModalActions>
   );
 }
 
@@ -349,6 +303,7 @@ function EditInfoDialog({ user, onClose }: { user: User; onClose: () => void }) 
     <Dialog
       title="Modifier mes informations"
       description="Ces informations figurent sur vos Bons de Séjour et nous permettent de vous joindre."
+      icon={UserRound}
       onClose={onClose}
       busy={saving}
     >
@@ -366,13 +321,6 @@ function EditInfoDialog({ user, onClose }: { user: User; onClose: () => void }) 
               autoFocus
             />
           </label>
-
-          <div>
-            <span className={fieldLabel}>Adresse e-mail</span>
-            <p className="glass-input flex h-11 w-full items-center rounded-lg px-4 text-sm text-cream/50">
-              {user.email}
-            </p>
-          </div>
 
           {!isAdmin && (
             <div>
@@ -476,6 +424,7 @@ function ChangePasswordDialog({ user, onClose }: { user: User; onClose: () => vo
           ? "Confirmez votre mot de passe actuel avant de définir le nouveau."
           : "Vous pourrez ensuite vous connecter avec votre e-mail et ce mot de passe."
       }
+      icon={KeyRound}
       onClose={onClose}
       busy={saving}
     >

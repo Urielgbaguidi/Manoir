@@ -26,7 +26,7 @@ class AdminReservationController extends Controller
      */
     public function index(AdminTableRequest $request): JsonResponse
     {
-        Reservation::expireOverduePaymentRequests();
+        Reservation::refreshTimeBasedStatuses();
 
         $query = Reservation::query()
             ->with(['user', 'room', 'payments', 'releasedByAdmin', 'extensions', 'vouchers'])
@@ -93,7 +93,7 @@ class AdminReservationController extends Controller
 
     public function occupiedRooms(): JsonResponse
     {
-        Reservation::expireOverduePaymentRequests();
+        Reservation::refreshTimeBasedStatuses();
 
         $today = now()->toDateString();
 
@@ -109,51 +109,6 @@ class AdminReservationController extends Controller
         ]);
     }
 
-    public function releaseRoom(Request $request, string $id): JsonResponse
-    {
-        $request->validate([
-            'release_notes' => 'nullable|string|max:1000',
-        ]);
-
-        $reservation = Reservation::with(['room', 'user', 'payments'])->findOrFail($id);
-
-        if (! in_array($reservation->status, ['CONFIRMEE', 'SEJOUR_PAYE'], true)) {
-            return response()->json([
-                'message' => 'Seule une reservation confirmee ou un sejour paye peut liberer un appartement.',
-            ], 422);
-        }
-
-        if (now()->toDateString() < $reservation->check_in->toDateString()) {
-            return response()->json([
-                'message' => 'Ce sejour n\'a pas encore commence. Il ne peut pas etre libere depuis la liste des appartements occupes.',
-            ], 422);
-        }
-
-        if (now()->toDateString() >= $reservation->check_out->toDateString()) {
-            return response()->json([
-                'message' => 'Ce sejour est deja termine. L\'appartement n\'est plus considere comme occupe.',
-            ], 422);
-        }
-
-        $reservation->update([
-            'status' => 'LIBEREE',
-            'released_at' => now(),
-            'released_by_admin_id' => $request->user()?->id,
-            'release_notes' => $request->release_notes,
-        ]);
-
-        ReservationNotificationService::sendOnce(
-            $reservation,
-            'stay_released',
-            "Votre séjour lié à la réservation #{$reservation->id} est terminé. Merci d’avoir choisi Le Manoir."
-        );
-
-        return response()->json([
-            'message' => 'Appartement libere. Il est de nouveau disponible pour les prochaines demandes.',
-            'reservation' => $reservation->fresh(['room', 'user', 'payments', 'releasedByAdmin']),
-        ]);
-    }
-
     public function approve(Request $request, string $id, RequestMailer $mailer): JsonResponse
     {
         $request->validate([
@@ -161,7 +116,7 @@ class AdminReservationController extends Controller
         ]);
 
         $reservation = Reservation::with(['room', 'user'])->findOrFail($id);
-        Reservation::expireOverduePaymentRequests();
+        Reservation::refreshTimeBasedStatuses();
 
         if ($reservation->status !== 'EN_ATTENTE') {
             return response()->json([

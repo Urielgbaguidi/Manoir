@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
-use App\Notifications\VerifyEmailCodeNotification;
+use App\Notifications\VerifyEmailLinkNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Notification;
@@ -38,7 +38,7 @@ class LoginTest extends TestCase
         $compteInconnu->assertStatus(401)->assertJsonPath('message', $mauvaisMotDePasse->json('message'));
     }
 
-    public function test_un_compte_non_verifie_est_renvoye_vers_la_saisie_du_code(): void
+    public function test_un_compte_non_verifie_recoit_un_nouveau_lien_de_confirmation(): void
     {
         Notification::fake();
         $user = User::factory()->unverified()->create(['email' => 'client@manoir.test']);
@@ -48,7 +48,7 @@ class LoginTest extends TestCase
             ->assertJsonPath('reason', 'email_not_verified')
             ->assertCookieMissing((string) config('jwt.cookies.access'));
 
-        Notification::assertSentTo($user, VerifyEmailCodeNotification::class);
+        Notification::assertSentTo($user, VerifyEmailLinkNotification::class);
         $this->assertDatabaseCount('auth_sessions', 0);
     }
 

@@ -159,7 +159,12 @@ export default function FacturesPage() {
             variant="icon"
           />
         ) : (
-          <IconAction label={`Télécharger ${row.label}`} icon={Download} href={row.href} />
+          <IconAction
+            label={`Télécharger ${row.label}`}
+            icon={Download}
+            tone="success"
+            href={row.href}
+          />
         )
     }
   ];

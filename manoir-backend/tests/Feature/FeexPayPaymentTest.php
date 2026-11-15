@@ -203,7 +203,7 @@ class FeexPayPaymentTest extends TestCase
         $service->handleProviderNotification('ref-123', 'SUCCESSFUL', ['amount' => 60000]);
 
         $this->assertSame(1, StayVoucher::count());
-        Mail::assertQueuedCount(1);
+        Mail::assertSentCount(1);
     }
 
     public function test_un_bon_ne_peut_pas_etre_emis_deux_fois_pour_la_meme_reference(): void
@@ -303,6 +303,45 @@ class FeexPayPaymentTest extends TestCase
 
         $this->verifier($paymentId, 'ref-ok')->assertOk()->assertJsonPath('payment.status', 'success');
         $this->assertSame('ref-ok', StayVoucher::sole()->transaction_reference);
+    }
+
+    public function test_le_retour_d_un_paiement_par_carte_est_rattache_au_paiement_et_marque_carte(): void
+    {
+        $preparation = $this->preparer();
+        $paymentId = $preparation->json('payment.id');
+        $this->assertStringEndsWith(
+            '/espace-client/paiement/retour?payment='.$paymentId,
+            $preparation->json('checkout.callback_url')
+        );
+
+        Http::fake(function (HttpRequest $request) {
+            if (str_contains($request->url(), 'by=description')) {
+                return Http::response(['message' => 'Not found'], 404);
+            }
+
+            return Http::response(['reference' => 'ref-carte', 'status' => 'SUCCESSFUL', 'amount' => 61500, 'description' => 'Paiement par carte bancaire VISA']);
+        });
+
+        $this->verifier($paymentId, 'ref-carte')
+            ->assertOk()
+            ->assertJsonPath('payment.status', 'success')
+            ->assertJsonPath('payment.channel', 'card');
+    }
+
+    public function test_un_paiement_par_carte_d_un_montant_inferieur_n_est_pas_rattache(): void
+    {
+        $paymentId = $this->preparer()->json('payment.id');
+
+        Http::fake(function (HttpRequest $request) {
+            if (str_contains($request->url(), 'by=description')) {
+                return Http::response(['message' => 'Not found'], 404);
+            }
+
+            return Http::response(['reference' => 'ref-carte', 'status' => 'SUCCESSFUL', 'amount' => 1000, 'description' => 'Paiement par carte bancaire VISA']);
+        });
+
+        $this->verifier($paymentId, 'ref-carte')->assertOk()->assertJsonPath('payment.status', 'pending');
+        $this->assertSame(0, StayVoucher::count());
     }
 
     public function test_une_reference_deja_utilisee_ne_peut_pas_regler_un_second_paiement(): void

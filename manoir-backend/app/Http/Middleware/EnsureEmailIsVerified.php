@@ -25,7 +25,7 @@ class EnsureEmailIsVerified
 
         if (! $user->hasVerifiedEmail()) {
             return response()->json([
-                'message' => 'Confirmez votre adresse email pour acceder a votre espace. Un code a 6 chiffres vous a ete envoye.',
+                'message' => 'Confirmez votre adresse email pour acceder a votre espace. Un lien de confirmation vous a ete envoye par e-mail.',
                 'reason' => 'email_not_verified',
             ], 403);
         }

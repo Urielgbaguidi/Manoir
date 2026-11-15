@@ -3,6 +3,12 @@
 import { CheckCircle2, Lock, RefreshCw, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api, type FeexPayCheckoutConfig, type PaymentResult } from "@/lib/api";
+import { useToast } from "@/context/ToastContext";
+import {
+  PAYMENT_SUCCESS_MESSAGE,
+  claimPaymentAnnouncement,
+  savePaymentHandoff
+} from "@/lib/paymentHandoff";
 import { formatCurrency } from "@/lib/reservationDisplay";
 import { cn } from "@/lib/utils";
 import VoucherButton from "./VoucherButton";
@@ -169,6 +175,7 @@ export default function PaymentPanel({
   const [voucher, setVoucher] = useState<PaymentResult["voucher"]>(null);
   const [error, setError] = useState("");
   const { keyFor, reset, run } = useIdempotentIntent();
+  const { showToast } = useToast();
 
   const pollTimer = useRef<number | null>(null);
   const pollUntil = useRef(0);
@@ -199,6 +206,9 @@ export default function PaymentPanel({
         stopPolling();
         setVoucher(result.voucher);
         setPhase("success");
+        if (claimPaymentAnnouncement(result.payment.id)) {
+          showToast(PAYMENT_SUCCESS_MESSAGE, "success");
+        }
         onSuccessRef.current?.(result);
         return true;
       }
@@ -211,7 +221,7 @@ export default function PaymentPanel({
       }
       return false;
     },
-    [reset]
+    [reset, showToast]
   );
 
   /** Vérification serveur, répétée tant que FeexPay n'a pas conclu. */
@@ -327,13 +337,21 @@ export default function PaymentPanel({
         // Le client ne saisit que son numéro : nom et e-mail sont connus
         // du compte et ne lui sont pas redemandés.
         fields_to_hide: ["name", "email"],
+        // Après un paiement par carte (page hébergée par FeexPay), retour
+        // sur notre page de vérification.
+        callback_url: config.callback_url,
+        error_callback_url: config.error_callback_url,
         // FeexPay a terminé : on referme sa fenêtre tout de suite, puis le
         // serveur vérifie le vrai statut. En SANDBOX, le SDK simule la
         // réussite sans transaction : confirmation sandbox dédiée.
         callback: (response: unknown) => {
           closeFeexPayWindows();
+          const sandbox = config.mode === "SANDBOX" ? sandboxConfirmationFrom(response) : null;
+          // FeexPay redirige ensuite vers la page de retour : on lui laisse
+          // les indices nécessaires, au cas où la page change avant la fin
+          // de la vérification lancée ici.
+          savePaymentHandoff(paymentId, { network: networkFrom(response), sandbox });
           if (config.mode === "SANDBOX") {
-            const sandbox = sandboxConfirmationFrom(response);
             if (sandbox) {
               void confirmSandbox(paymentId, sandbox);
               return;

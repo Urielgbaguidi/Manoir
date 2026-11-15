@@ -13,7 +13,7 @@ class AdminStatsController extends Controller
 {
     public function dashboard(): JsonResponse
     {
-        Reservation::expireOverduePaymentRequests();
+        Reservation::refreshTimeBasedStatuses();
 
         $totalReservations = Reservation::count();
         $totalRooms = Room::count();

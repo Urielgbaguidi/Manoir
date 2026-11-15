@@ -114,7 +114,7 @@ class AdminUserPermissionsTest extends TestCase
     {
         $client = User::factory()->create();
 
-        $this->actingAsJwt($client)->getJson('/api/admin/users')->assertForbidden();
+        $this->actingAsJwt($client)->getJson('/api/admin/users')->assertNotFound();
     }
 
     public function test_super_admin_without_admin_flag_can_still_list_users(): void

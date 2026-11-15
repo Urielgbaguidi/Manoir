@@ -2,17 +2,19 @@
 
 namespace Tests\Feature;
 
+use App\Mail\VerifyEmailMail;
 use App\Models\EmailVerificationCode;
 use App\Models\User;
-use App\Notifications\AccountAlreadyExistsNotification;
-use App\Notifications\VerifyEmailCodeNotification;
+use App\Notifications\VerifyEmailLinkNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Middleware\ThrottleRequests;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
 
 /**
- * Inscription classique + verification email obligatoire avant toute session.
+ * Inscription classique + confirmation de l'adresse par lien, obligatoire
+ * avant toute session.
  */
 class RegistrationTest extends TestCase
 {
@@ -32,16 +34,19 @@ class RegistrationTest extends TestCase
         ], $overrides);
     }
 
-    private function codeEnvoye(User $user): string
+    /**
+     * Jeton contenu dans le lien du mail envoye a l'utilisateur.
+     */
+    private function jetonEnvoye(User $user): string
     {
-        $code = null;
-        Notification::assertSentTo($user, VerifyEmailCodeNotification::class, function ($notification) use (&$code) {
-            $code = (new \ReflectionProperty($notification, 'code'))->getValue($notification);
+        $token = null;
+        Notification::assertSentTo($user, VerifyEmailLinkNotification::class, function ($notification) use (&$token) {
+            $token = (new \ReflectionProperty($notification, 'token'))->getValue($notification);
 
             return true;
         });
 
-        return (string) $code;
+        return (string) $token;
     }
 
     public function test_l_inscription_normalise_les_donnees_et_n_ouvre_aucune_session(): void
@@ -62,17 +67,80 @@ class RegistrationTest extends TestCase
         $this->assertDatabaseCount('auth_sessions', 0);
     }
 
-    public function test_une_adresse_deja_utilisee_recoit_la_meme_reponse_et_un_mail_d_alerte(): void
+    public function test_le_mail_contient_un_lien_vers_la_page_de_confirmation_et_le_logo(): void
     {
         Notification::fake();
-        $existant = User::factory()->create(['email' => 'marie@manoir.test']);
+        $this->postJson('/api/auth/register', $this->inscription());
+        $user = User::where('email', 'marie@manoir.test')->firstOrFail();
+        $token = $this->jetonEnvoye($user);
 
-        $nouvelle = $this->postJson('/api/auth/register', $this->inscription(['email' => 'autre@manoir.test']));
-        $doublon = $this->postJson('/api/auth/register', $this->inscription());
+        $mail = (new VerifyEmailLinkNotification($token))->toMail($user);
+        $this->assertInstanceOf(VerifyEmailMail::class, $mail);
+        $this->assertSame(
+            rtrim((string) config('app.frontend_url'), '/').'/auth/confirmer-email?email=marie%40manoir.test&token='.$token,
+            $mail->url
+        );
+        $mail->assertSeeInHtml('Confirmer mon adresse e-mail');
 
-        $doublon->assertStatus(202)->assertJsonPath('message', $nouvelle->json('message'));
+        // Envoi reel (transport en memoire) : le logo est joint au message
+        // et reference par l'image de l'en-tete.
+        config(['mail.default' => 'array']);
+        Mail::send($mail);
+        $email = Mail::mailer('array')->getSymfonyTransport()->messages()->last()->getOriginalMessage();
+        $this->assertStringContainsString('cid:', (string) $email->getHtmlBody());
+        $this->assertCount(1, $email->getAttachments());
+        $this->assertSame('image/jpeg', $email->getAttachments()[0]->getMediaType().'/'.$email->getAttachments()[0]->getMediaSubtype());
+
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $token);
+        // Seule l'empreinte du jeton est conservee.
+        $this->assertDatabaseMissing('email_verification_codes', ['code_hash' => $token]);
+    }
+
+    public function test_une_adresse_deja_utilisee_est_refusee(): void
+    {
+        Notification::fake();
+        User::factory()->create(['email' => 'marie@manoir.test']);
+
+        $this->postJson('/api/auth/register', $this->inscription())
+            ->assertStatus(422)
+            ->assertJsonPath('reason', 'email_taken')
+            ->assertJsonPath('message', 'Cette adresse e-mail existe déjà.')
+            ->assertJsonValidationErrors('email');
+
         $this->assertSame(1, User::where('email', 'marie@manoir.test')->count());
-        Notification::assertSentTo($existant, AccountAlreadyExistsNotification::class);
+        Notification::assertNothingSent();
+    }
+
+    public function test_une_adresse_d_un_compte_google_est_refusee(): void
+    {
+        Notification::fake();
+        User::factory()->fromGoogle()->create(['email' => 'marie@manoir.test']);
+
+        $this->postJson('/api/auth/register', $this->inscription())
+            ->assertStatus(422)
+            ->assertJsonPath('reason', 'email_taken')
+            ->assertJsonValidationErrors('email');
+
+        $this->assertNull(User::where('email', 'marie@manoir.test')->value('password'));
+    }
+
+    public function test_une_adresse_inscrite_mais_jamais_confirmee_recoit_un_nouveau_lien_sans_modification(): void
+    {
+        Notification::fake();
+        $enAttente = User::factory()->unverified()->create([
+            'email' => 'marie@manoir.test',
+            'name' => 'Nom initial',
+        ]);
+        $hash = $enAttente->password;
+
+        $this->postJson('/api/auth/register', $this->inscription(['name' => 'Usurpateur']))
+            ->assertStatus(202)
+            ->assertJsonPath('already_pending', true);
+
+        Notification::assertSentTo($enAttente, VerifyEmailLinkNotification::class);
+        $enAttente->refresh();
+        $this->assertSame('Nom initial', $enAttente->name);
+        $this->assertSame($hash, $enAttente->password);
     }
 
     public function test_l_inscription_refuse_un_code_pays_invalide(): void
@@ -95,7 +163,7 @@ class RegistrationTest extends TestCase
             ->assertJsonValidationErrors('phone');
     }
 
-    public function test_le_bon_code_confirme_l_adresse_et_ouvre_la_session_par_cookies(): void
+    public function test_le_lien_confirme_l_adresse_et_ouvre_la_session_par_cookies(): void
     {
         Notification::fake();
         $this->postJson('/api/auth/register', $this->inscription());
@@ -103,7 +171,7 @@ class RegistrationTest extends TestCase
 
         $response = $this->postJson('/api/auth/email/verify', [
             'email' => 'marie@manoir.test',
-            'code' => $this->codeEnvoye($user),
+            'token' => $this->jetonEnvoye($user),
         ]);
 
         $response->assertOk($response->getContent())
@@ -120,38 +188,66 @@ class RegistrationTest extends TestCase
         $this->assertSame('lax', $cookie->getSameSite());
     }
 
-    public function test_un_mauvais_code_est_refuse_avec_un_message_generique(): void
+    public function test_un_lien_deja_utilise_indique_que_l_adresse_est_confirmee(): void
+    {
+        Notification::fake();
+        $this->postJson('/api/auth/register', $this->inscription());
+        $user = User::where('email', 'marie@manoir.test')->firstOrFail();
+        $token = $this->jetonEnvoye($user);
+
+        $this->postJson('/api/auth/email/verify', ['email' => 'marie@manoir.test', 'token' => $token])->assertOk();
+
+        $this->postJson('/api/auth/email/verify', ['email' => 'marie@manoir.test', 'token' => $token])
+            ->assertStatus(409)
+            ->assertJsonPath('reason', 'already_verified');
+    }
+
+    public function test_un_mauvais_lien_est_refuse_avec_un_message_generique(): void
     {
         Notification::fake();
         $this->postJson('/api/auth/register', $this->inscription());
 
-        $inconnu = $this->postJson('/api/auth/email/verify', ['email' => 'personne@manoir.test', 'code' => '123456']);
-        $faux = $this->postJson('/api/auth/email/verify', ['email' => 'marie@manoir.test', 'code' => '000000']);
+        $inconnu = $this->postJson('/api/auth/email/verify', ['email' => 'personne@manoir.test', 'token' => str_repeat('a', 64)]);
+        $faux = $this->postJson('/api/auth/email/verify', ['email' => 'marie@manoir.test', 'token' => str_repeat('b', 64)]);
 
         $inconnu->assertStatus(422);
         $faux->assertStatus(422)->assertJsonPath('message', $inconnu->json('message'));
         $this->assertDatabaseCount('auth_sessions', 0);
     }
 
-    public function test_le_code_est_brule_apres_trop_d_essais(): void
+    public function test_un_lien_expire_est_refuse(): void
     {
         Notification::fake();
         $this->postJson('/api/auth/register', $this->inscription());
         $user = User::where('email', 'marie@manoir.test')->firstOrFail();
-        $code = $this->codeEnvoye($user);
-        $mauvais = $code === '111111' ? '222222' : '111111';
+        $token = $this->jetonEnvoye($user);
+
+        $this->travel(EmailVerificationCode::DUREE_MINUTES + 1)->minutes();
+
+        $this->postJson('/api/auth/email/verify', ['email' => 'marie@manoir.test', 'token' => $token])
+            ->assertStatus(422)
+            ->assertJsonPath('reason', 'invalid_link');
+        $this->assertNull($user->fresh()->email_verified_at);
+    }
+
+    public function test_le_lien_est_brule_apres_trop_d_essais(): void
+    {
+        Notification::fake();
+        $this->postJson('/api/auth/register', $this->inscription());
+        $user = User::where('email', 'marie@manoir.test')->firstOrFail();
+        $token = $this->jetonEnvoye($user);
         $this->withoutMiddleware(ThrottleRequests::class);
 
         for ($i = 0; $i < EmailVerificationCode::MAX_TENTATIVES; $i++) {
-            $this->postJson('/api/auth/email/verify', ['email' => 'marie@manoir.test', 'code' => $mauvais]);
+            $this->postJson('/api/auth/email/verify', ['email' => 'marie@manoir.test', 'token' => str_repeat('c', 64)]);
         }
 
-        $this->postJson('/api/auth/email/verify', ['email' => 'marie@manoir.test', 'code' => $code])
+        $this->postJson('/api/auth/email/verify', ['email' => 'marie@manoir.test', 'token' => $token])
             ->assertStatus(422);
         $this->assertNull($user->fresh()->email_verified_at);
     }
 
-    public function test_le_renvoi_du_code_repond_pareil_que_le_compte_existe_ou_non(): void
+    public function test_le_renvoi_du_lien_repond_pareil_que_le_compte_existe_ou_non(): void
     {
         Notification::fake();
         $user = User::factory()->unverified()->create(['email' => 'marie@manoir.test']);
@@ -160,10 +256,10 @@ class RegistrationTest extends TestCase
         $inconnu = $this->postJson('/api/auth/email/resend', ['email' => 'inconnu@manoir.test'])->assertOk();
 
         $this->assertSame($connu->json('message'), $inconnu->json('message'));
-        Notification::assertSentTo($user, VerifyEmailCodeNotification::class);
+        Notification::assertSentTo($user, VerifyEmailLinkNotification::class);
     }
 
-    public function test_le_renvoi_du_code_est_limite(): void
+    public function test_le_renvoi_du_lien_est_limite(): void
     {
         Notification::fake();
 

@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Pencil, Save, Shield, ShieldCheck, ShieldOff, User as UserIcon, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Eye, Shield, User as UserIcon, UserRound } from "lucide-react";
+import Modal, { ModalActions, ModalButton } from "@/components/ui/Modal";
 import { useAuth } from "@/context/AuthContext";
-import { useToast } from "@/context/ToastContext";
 import { api, type AdminTableQuery, type Paginated, type User } from "@/lib/api";
+import { getCountry } from "@/lib/countries";
+import { formatDateTime } from "@/lib/reservationDisplay";
 import { isAdminUser } from "@/lib/roles";
+import { cn } from "@/lib/utils";
 import { AdminPageHeader } from "@/components/dashboard/admin/AdminShell";
 import DataTable, {
   FilterField,
@@ -37,9 +40,13 @@ const formatDate = (value?: string | null) => {
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("fr-FR");
 };
 
+const roleLabel = (user: User) =>
+  user.is_super_admin ? "Super administrateur" : user.is_admin ? "Administrateur" : "Client";
+
+const countryLabel = (code?: string | null) => (code ? getCountry(code)?.name || code : "—");
+
 export default function AdminUsersPage() {
   const { user: currentUser } = useAuth();
-  const { showToast } = useToast();
 
   // Parametres du tableau (traitement cote serveur).
   const [page, setPage] = useState(1);
@@ -54,10 +61,7 @@ export default function AdminUsersPage() {
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
 
-  const [editingUserId, setEditingUserId] = useState<number | null>(null);
-  const [editedName, setEditedName] = useState("");
-  const [savingUser, setSavingUser] = useState(false);
-  const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [selected, setSelected] = useState<User | null>(null);
 
   const loadUsers = useCallback(async () => {
     const query: AdminTableQuery = {
@@ -111,117 +115,31 @@ export default function AdminUsersPage() {
     setPage(1);
   };
 
-  const handleToggleAdmin = async (target: User) => {
-    if (!currentUser?.is_super_admin) {
-      showToast("Seul le super administrateur peut gérer les rôles administrateur.", "error");
-      return;
-    }
-    if (target.id === currentUser.id) {
-      showToast("Vous ne pouvez pas modifier votre propre rôle administrateur.", "error");
-      return;
-    }
-
-    const actionText = target.is_admin
-      ? `Retirer les privilèges administrateur de ${target.name} ?`
-      : `Nommer ${target.name} administrateur du Manoir ?`;
-    if (!confirm(actionText)) return;
-
-    setTogglingId(target.id);
-    try {
-      const response = await api.toggleUserAdmin(target.id);
-      showToast(response.message, "success");
-      loadUsers();
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : "Une erreur est survenue.", "error");
-    } finally {
-      setTogglingId(null);
-    }
-  };
-
-  const startEditingUser = (target: User) => {
-    setEditingUserId(target.id);
-    setEditedName(target.name);
-  };
-
-  const handleUpdateUserName = async (target: User) => {
-    if (editedName.trim().length < 2) {
-      showToast("Veuillez saisir un nom valide.", "error");
-      return;
-    }
-
-    setSavingUser(true);
-    try {
-      const response = await api.updateAdminUser(target.id, { name: editedName.trim() });
-      setResult((current) => ({
-        ...current,
-        data: current.data.map((row) =>
-          row.id === response.user.id ? { ...row, ...response.user } : row
-        )
-      }));
-      setEditingUserId(null);
-      setEditedName("");
-      showToast(response.message || "Nom mis à jour.", "success");
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : "Impossible de modifier le nom.", "error");
-    } finally {
-      setSavingUser(false);
-    }
-  };
-
   const columns: DataTableColumn<User>[] = [
     {
       key: "name",
       header: "Nom",
       sortKey: "name",
-      render: (u) =>
-        editingUserId === u.id ? (
-          <div className="flex min-w-[240px] items-center gap-2">
-            <input
-              type="text"
-              value={editedName}
-              autoFocus
-              onChange={(event) => setEditedName(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") handleUpdateUserName(u);
-                if (event.key === "Escape") setEditingUserId(null);
-              }}
-              aria-label="Nouveau nom"
-              className="glass-input h-9 w-full rounded-lg px-3 text-sm outline-none"
-            />
-            <IconAction
-              label="Enregistrer"
-              icon={Save}
-              tone="success"
-              disabled={savingUser}
-              onClick={() => handleUpdateUserName(u)}
-            />
-            <IconAction
-              label="Annuler"
-              icon={X}
-              disabled={savingUser}
-              onClick={() => setEditingUserId(null)}
-            />
-          </div>
-        ) : (
-          <div className="flex items-center gap-3">
-            <span
-              className="grid size-9 shrink-0 place-items-center rounded-full border border-gold/15 bg-white/5"
-              title={u.is_super_admin ? "Super admin" : u.is_admin ? "Administrateur" : "Client"}
-            >
-              {isAdminUser(u) ? (
-                <Shield size={15} className="text-gold-light" />
-              ) : (
-                <UserIcon size={15} className="text-cream/55" />
-              )}
-            </span>
-            <span className="font-medium text-cream">
-              {u.name}
-              {u.id === currentUser?.id && (
-                <span className="ml-1 text-xs font-normal italic text-cream/45">(vous)</span>
-              )}
-            </span>
-          </div>
-        )
+      render: (u) => (
+        <div className="flex items-center gap-3">
+          <span
+            className="grid size-9 shrink-0 place-items-center rounded-full border border-gold/15 bg-white/5"
+            title={roleLabel(u)}
+          >
+            {isAdminUser(u) ? (
+              <Shield size={15} className="text-gold-light" />
+            ) : (
+              <UserIcon size={15} className="text-cream/55" />
+            )}
+          </span>
+          <span className="font-medium text-cream">
+            {u.name}
+            {u.id === currentUser?.id && (
+              <span className="ml-1 text-xs font-normal italic text-cream/45">(vous)</span>
+            )}
+          </span>
+        </div>
+      )
     },
     {
       key: "email",
@@ -235,6 +153,13 @@ export default function AdminUsersPage() {
       render: (u) => u.phone || <span className="text-cream/35">—</span>
     },
     {
+      key: "reservations_count",
+      header: "Réservations",
+      sortKey: "reservations_count",
+      align: "center",
+      render: (u) => u.reservations_count ?? "—"
+    },
+    {
       key: "created_at",
       header: "Inscription",
       sortKey: "created_at",
@@ -244,31 +169,9 @@ export default function AdminUsersPage() {
       key: "actions",
       header: "Actions",
       align: "right",
-      render: (u) => {
-        if (u.id === currentUser?.id || editingUserId === u.id) return null;
-        const canRename = !isAdminUser(u) || currentUser?.is_super_admin;
-        const canToggleAdmin = currentUser?.is_super_admin && !u.is_super_admin;
-        return (
-          <div className="inline-flex gap-2">
-            {canRename && (
-              <IconAction
-                label="Modifier le nom"
-                icon={Pencil}
-                onClick={() => startEditingUser(u)}
-              />
-            )}
-            {canToggleAdmin && (
-              <IconAction
-                label={u.is_admin ? "Retirer le rôle administrateur" : "Nommer administrateur"}
-                icon={u.is_admin ? ShieldOff : ShieldCheck}
-                tone={u.is_admin ? "danger" : "success"}
-                disabled={togglingId === u.id}
-                onClick={() => handleToggleAdmin(u)}
-              />
-            )}
-          </div>
-        );
-      }
+      render: (u) => (
+        <IconAction label="Voir les détails" icon={Eye} onClick={() => setSelected(u)} />
+      )
     }
   ];
 
@@ -333,6 +236,83 @@ export default function AdminUsersPage() {
           </FilterField>
         }
       />
+
+      <Modal
+        open={!!selected}
+        onClose={() => setSelected(null)}
+        icon={UserRound}
+        title="Détails de l'utilisateur"
+        description={selected ? roleLabel(selected) : undefined}
+        maxWidth="max-w-xl"
+      >
+        {selected && (
+          <>
+            <dl className="grid gap-3 sm:grid-cols-2">
+              <UserDetail label="Nom" wide>
+                {selected.name}
+              </UserDetail>
+              <UserDetail label="E-mail" wide>
+                {selected.email}
+              </UserDetail>
+              <UserDetail label="Téléphone">{selected.phone || "—"}</UserDetail>
+              <UserDetail label="Pays">{countryLabel(selected.country)}</UserDetail>
+              <UserDetail label="Inscription">
+                {formatDateTime(selected.created_at, "—")}
+              </UserDetail>
+              <UserDetail label="Rôle">{roleLabel(selected)}</UserDetail>
+              <UserDetail label="E-mail vérifié">
+                <YesNo value={!!selected.email_verified_at} />
+                {selected.email_verified_at && (
+                  <span className="block text-xs font-normal text-[#6B5A4E]">
+                    le {formatDateTime(selected.email_verified_at, "—")}
+                  </span>
+                )}
+              </UserDetail>
+              {selected.two_factor_enabled !== undefined && (
+                <UserDetail label="Double authentification">
+                  <YesNo value={selected.two_factor_enabled} yes="Activée" no="Désactivée" />
+                </UserDetail>
+              )}
+              {selected.reservations_count !== undefined && (
+                <UserDetail label="Réservations">{selected.reservations_count}</UserDetail>
+              )}
+            </dl>
+            <ModalActions>
+              <ModalButton variant="secondary" onClick={() => setSelected(null)}>
+                Fermer
+              </ModalButton>
+            </ModalActions>
+          </>
+        )}
+      </Modal>
     </div>
   );
+}
+
+/** Ligne libellé / valeur de la fiche utilisateur. */
+function UserDetail({
+  label,
+  wide = false,
+  children
+}: {
+  label: string;
+  /** Occupe toute la largeur de la grille (valeurs longues). */
+  wide?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "min-w-0 rounded-xl border border-[#EADBCD] bg-[#FBF6F1] px-4 py-3",
+        wide && "sm:col-span-2"
+      )}
+    >
+      <dt className="text-[11px] font-semibold uppercase tracking-wider text-[#9A8B7E]">{label}</dt>
+      <dd className="mt-1 break-words text-sm font-medium text-[#2C2416]">{children}</dd>
+    </div>
+  );
+}
+
+function YesNo({ value, yes = "Oui", no = "Non" }: { value: boolean; yes?: string; no?: string }) {
+  return <span className={value ? "text-[#566523]" : "text-[#B5432A]"}>{value ? yes : no}</span>;
 }

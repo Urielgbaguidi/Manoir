@@ -4,14 +4,20 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Facades\Hash;
 
+/**
+ * Jeton du lien de confirmation d'adresse e-mail (un seul actif par compte).
+ *
+ * Le jeton (256 bits aleatoires) n'existe en clair que dans le mail : seul
+ * son empreinte SHA-256 est conservee (colonne `code_hash`). Redemander un
+ * lien invalide le precedent.
+ */
 class EmailVerificationCode extends Model
 {
-    /** Duree de validite d'un code. Court volontairement : c'est un secret a usage immediat. */
-    public const DUREE_MINUTES = 15;
+    /** Duree de validite d'un lien. */
+    public const DUREE_MINUTES = 60;
 
-    /** Au-dela, le code est brule et il faut en redemander un. */
+    /** Au-dela, le lien est brule et il faut en redemander un. */
     public const MAX_TENTATIVES = 5;
 
     protected $fillable = ['user_id', 'code_hash', 'expires_at', 'attempts'];
@@ -30,26 +36,22 @@ class EmailVerificationCode extends Model
     }
 
     /**
-     * Cree un code pour l'utilisateur et renvoie sa version en clair.
-     *
-     * Le clair n'existe que le temps de l'envoi du mail : seul le hachage est
-     * conserve. Redemander un code invalide le precedent.
+     * Cree un jeton pour l'utilisateur et renvoie sa version en clair.
      */
     public static function genererPour(User $user): string
     {
-        // random_int est cryptographiquement sur, contrairement a rand().
-        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $token = bin2hex(random_bytes(32));
 
         self::updateOrCreate(
             ['user_id' => $user->id],
             [
-                'code_hash' => Hash::make($code),
+                'code_hash' => hash('sha256', $token),
                 'expires_at' => now()->addMinutes(self::DUREE_MINUTES),
                 'attempts' => 0,
             ]
         );
 
-        return $code;
+        return $token;
     }
 
     public function estExpire(): bool
@@ -62,8 +64,9 @@ class EmailVerificationCode extends Model
         return $this->attempts >= self::MAX_TENTATIVES;
     }
 
-    public function correspond(string $code): bool
+    /** Comparaison a temps constant. */
+    public function correspond(string $token): bool
     {
-        return Hash::check($code, $this->code_hash);
+        return hash_equals($this->code_hash, hash('sha256', $token));
     }
 }

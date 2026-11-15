@@ -306,7 +306,7 @@ function StatusPanel({
       "Le délai de paiement est dépassé : l'appartement a été remis à la location. Vous pouvez refaire une demande.",
     ANNULEE: "Cette réservation a été annulée.",
     REMBOURSEE: "Le remboursement de cette réservation a été effectué.",
-    LIBEREE: "L'occupation a été clôturée par l'administration."
+    LIBEREE: "Votre séjour est terminé. Merci d'avoir choisi Le Manoir."
   };
 
   return (

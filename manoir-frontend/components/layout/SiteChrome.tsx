@@ -8,7 +8,13 @@ import type { ReactNode } from "react";
  * administrateur) et les écrans de connexion / inscription plein écran.
  * La navbar et le footer du site vitrine y sont masqués.
  */
-const STANDALONE_PREFIXES = ["/espace-client", "/admin", "/auth/login", "/auth/register"];
+const STANDALONE_PREFIXES = [
+  "/espace-client",
+  "/admin",
+  "/auth/login",
+  "/auth/register",
+  "/auth/confirmer-email"
+];
 
 export function isStandalonePath(pathname: string | null): boolean {
   if (!pathname) return false;

@@ -156,7 +156,17 @@ class PaymentService
             ],
             'first_name' => (string) ($user?->name ?? ''),
             'email' => (string) ($user?->email ?? ''),
+            // Retour apres la page de paiement par carte hebergee par FeexPay
+            // (FeexPay y ajoute `ref`). La page de retour fait verifier le
+            // paiement par le serveur : rien n'est deduit de l'URL.
+            'callback_url' => $this->returnUrl($payment),
+            'error_callback_url' => $this->returnUrl($payment),
         ];
+    }
+
+    private function returnUrl(Payment $payment): string
+    {
+        return rtrim((string) config('app.frontend_url'), '/').'/espace-client/paiement/retour?payment='.$payment->id;
     }
 
     /**
@@ -393,13 +403,26 @@ class PaymentService
     /**
      * La transaction annoncee par le navigateur doit porter les marques de
      * CE paiement (description ou callback_info), ou au minimum son montant.
+     *
+     * Exception : le paiement par carte du checkout FeexPay impose sa propre
+     * description (« Paiement par carte bancaire VISA ») et n'envoie pas de
+     * callback_info. Une telle transaction est retenue si son montant
+     * correspond ; une meme reference ne peut de toute facon regler qu'un
+     * seul paiement (contrainte d'unicite).
      */
     private function belongsTo(Payment $payment, FeexPayResponse $response): bool
     {
         $body = $response->body;
 
         if (isset($body['description']) && is_string($body['description']) && $body['description'] !== '') {
-            return $body['description'] === $payment->transaction_id;
+            if ($body['description'] === $payment->transaction_id) {
+                return true;
+            }
+
+            return $response->isCardCheckout()
+                && isset($body['amount'])
+                && is_numeric($body['amount'])
+                && $this->amountMatches($payment, $body);
         }
 
         $callbackInfo = $body['callback_info'] ?? null;

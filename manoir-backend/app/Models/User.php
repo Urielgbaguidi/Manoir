@@ -3,7 +3,7 @@
 namespace App\Models;
 
 use App\Notifications\ResetPasswordNotification;
-use App\Notifications\VerifyEmailCodeNotification;
+use App\Notifications\VerifyEmailLinkNotification;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -75,14 +75,14 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
-     * Confirmation d'adresse par code a 6 chiffres, et non par lien.
+     * Confirmation d'adresse par un lien envoye par mail.
      *
-     * Le code en clair ne vit que le temps de l'envoi du mail : seul son
-     * hachage est conserve en base.
+     * Le jeton du lien n'existe en clair que dans le mail : seule son
+     * empreinte est conservee en base.
      */
     public function sendEmailVerificationNotification(): void
     {
-        $this->notify(new VerifyEmailCodeNotification(
+        $this->notify(new VerifyEmailLinkNotification(
             EmailVerificationCode::genererPour($this)
         ));
     }

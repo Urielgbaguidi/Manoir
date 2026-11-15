@@ -7,8 +7,6 @@ use App\Http\Requests\Auth\CompletePhoneRequest;
 use App\Http\Requests\Auth\ReauthenticateRequest;
 use App\Http\Requests\Auth\UpdatePasswordRequest;
 use App\Models\AuthSession;
-use App\Models\User;
-use App\Notifications\EmailChangeCodeNotification;
 use App\Services\Auth\AuthSessionManager;
 use App\Services\Auth\GoogleIdTokenVerifier;
 use App\Services\Auth\JwtRequestAuthenticator;
@@ -17,10 +15,7 @@ use App\Services\Auth\SecurityLogger;
 use App\Services\Auth\TwoFactorAuthenticator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Notification;
 
 /**
  * Profil et securite du compte connecte.
@@ -142,86 +137,6 @@ class AccountSecurityController extends Controller
     }
 
     /**
-     * Demande de changement d'email : un code est envoye a la NOUVELLE
-     * adresse ; rien ne change tant qu'il n'est pas saisi.
-     */
-    public function requestEmailChange(Request $request): JsonResponse
-    {
-        $data = $request->validate([
-            'email' => ['required', 'string', 'email:rfc', 'max:255'],
-        ]);
-
-        $user = $request->user();
-        $email = strtolower(trim($data['email']));
-        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-
-        // Adresse deja prise : meme reponse, mais aucun code ne part (pas
-        // d'enumeration, et le changement echouera a la confirmation).
-        if ($email !== $user->email && ! User::where('email', $email)->exists()) {
-            Cache::put($this->emailChangeKey($user), [
-                'email' => $email,
-                'code_hash' => Hash::make($code),
-                'attempts' => 0,
-            ], now()->addMinutes(15));
-
-            try {
-                Notification::route('mail', $email)->notify(new EmailChangeCodeNotification($code));
-            } catch (\Throwable $exception) {
-                Log::warning('Envoi du code de changement d email impossible : '.$exception->getMessage());
-            }
-        }
-
-        return response()->json([
-            'message' => 'Si cette adresse est disponible, un code de confirmation vient d\'y etre envoye.',
-        ]);
-    }
-
-    public function confirmEmailChange(Request $request): JsonResponse
-    {
-        $data = $request->validate([
-            'code' => ['required', 'string', 'regex:/^\d{6}$/'],
-        ]);
-
-        $user = $request->user();
-        $key = $this->emailChangeKey($user);
-        $pending = Cache::get($key);
-        $generic = 'Code invalide ou expire.';
-
-        if (! is_array($pending) || $pending['attempts'] >= 5) {
-            Cache::forget($key);
-
-            return response()->json(['message' => $generic], 422);
-        }
-
-        if (! Hash::check($data['code'], $pending['code_hash'])) {
-            $pending['attempts']++;
-            Cache::put($key, $pending, now()->addMinutes(15));
-
-            return response()->json(['message' => $generic], 422);
-        }
-
-        Cache::forget($key);
-
-        if (User::where('email', $pending['email'])->exists()) {
-            return response()->json(['message' => $generic], 422);
-        }
-
-        $previous = $user->email;
-        $user->forceFill([
-            'email' => $pending['email'],
-            'email_verified_at' => now(),
-        ])->save();
-
-        $this->sessions->revokeAll($user, 'email_changed', JwtRequestAuthenticator::currentSession($request)?->id);
-        $this->securityLogger->info('account.email_changed', ['user_id' => $user->id, 'email' => $previous]);
-
-        return response()->json([
-            'message' => 'Adresse email mise a jour.',
-            'user' => $user->fresh(),
-        ]);
-    }
-
-    /**
      * Sessions actives de l'utilisateur, par appareil.
      */
     public function listSessions(Request $request): JsonResponse
@@ -321,10 +236,5 @@ class AccountSecurityController extends Controller
         $this->securityLogger->info('account.recovery_codes_regenerated', ['user_id' => $user->id]);
 
         return response()->json(['recovery_codes' => $twoFactor->regenerateRecoveryCodes($user)]);
-    }
-
-    private function emailChangeKey(User $user): string
-    {
-        return 'email-change:'.$user->id;
     }
 }

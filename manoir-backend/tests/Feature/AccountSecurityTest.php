@@ -172,4 +172,19 @@ class AccountSecurityTest extends TestCase
         $this->assertNotNull($autre->session->fresh()->revoked_at);
         $this->assertSame(1, AuthSession::active()->where('user_id', $user->id)->count());
     }
+
+    public function test_l_adresse_email_ne_peut_jamais_etre_modifiee(): void
+    {
+        $user = User::factory()->create(['email' => 'marie@manoir.test']);
+
+        $this->actingAsJwt($user)
+            ->putJson('/api/user/profile', ['name' => 'Marie Dupont', 'email' => 'pirate@manoir.test'])
+            ->assertOk();
+        $this->actingAsJwt($user)
+            ->postJson('/api/user/email', ['email' => 'pirate@manoir.test'])
+            ->assertNotFound();
+
+        $this->assertSame('marie@manoir.test', $user->fresh()->email);
+        $this->assertSame('Marie Dupont', $user->fresh()->name);
+    }
 }

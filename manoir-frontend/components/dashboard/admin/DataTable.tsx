@@ -522,20 +522,26 @@ export function useLocalTable<T>(data: T[], options: LocalTableOptions<T>) {
 
 export type BadgeTone = "success" | "warning" | "error" | "info" | "neutral";
 
+/*
+ * Couleurs de statut usuelles (palette Bootstrap) : vert = réussi / confirmé,
+ * jaune = en attente, rouge = refusé / échoué / annulé, bleu = information,
+ * gris = clos. Identiques en thème clair et sombre (classes `status-*` de
+ * globals.css).
+ */
 const badgeTones: Record<BadgeTone, string> = {
-  success: "bg-olive/15 text-olive-light",
-  warning: "bg-gold/15 text-gold-light",
-  error: "bg-terracotta/15 text-terracotta-light",
-  info: "bg-sky-500/15 text-sky-400",
-  neutral: "bg-white/5 text-cream/70"
+  success: "status-success",
+  warning: "status-warning",
+  error: "status-danger",
+  info: "status-info",
+  neutral: "status-neutral"
 };
 
-/** Badge clair (variante « light » du template). */
+/** Badge de statut. */
 export function TableBadge({ tone, children }: { tone: BadgeTone; children: ReactNode }) {
   return (
     <span
       className={cn(
-        "inline-flex h-6 w-fit shrink-0 items-center justify-center whitespace-nowrap rounded-lg px-2.5 text-xs font-medium",
+        "inline-flex h-6 w-fit shrink-0 items-center justify-center whitespace-nowrap rounded-md px-2.5 text-xs font-semibold",
         badgeTones[tone]
       )}
     >
@@ -544,17 +550,27 @@ export function TableBadge({ tone, children }: { tone: BadgeTone; children: Reac
   );
 }
 
+/*
+ * Couleurs des actions (conventions usuelles, palette Bootstrap) :
+ * bleu = voir / ouvrir, jaune = modifier, vert = valider / télécharger,
+ * rouge = supprimer / refuser / annuler, gris = action secondaire.
+ */
 const iconTones = {
-  default: "text-cream/60 hover:border-gold/40 hover:text-gold-light",
-  danger: "text-cream/60 hover:border-terracotta/50 hover:text-terracotta-light",
-  success: "text-cream/60 hover:border-olive/50 hover:text-olive-light"
+  primary: "action-primary",
+  warning: "action-warning",
+  success: "action-success",
+  danger: "action-danger",
+  secondary: "action-secondary"
 } as const;
+
+export type IconActionTone = keyof typeof iconTones;
 
 type IconActionProps = {
   /** Libellé lu par les lecteurs d'écran et affiché au survol. */
   label: string;
   icon: ComponentType<{ size?: number; className?: string }>;
-  tone?: keyof typeof iconTones;
+  /** Par défaut : bleu (voir / ouvrir). */
+  tone?: IconActionTone;
   disabled?: boolean;
 } & ({ href: string; onClick?: never } | { onClick: () => void; href?: never });
 
@@ -562,12 +578,12 @@ type IconActionProps = {
 export function IconAction({
   label,
   icon: Icon,
-  tone = "default",
+  tone = "primary",
   disabled,
   ...rest
 }: IconActionProps) {
   const className = cn(
-    "inline-flex size-9 items-center justify-center rounded-lg border border-gold/15 transition disabled:pointer-events-none disabled:opacity-40",
+    "inline-flex size-9 items-center justify-center rounded-lg border transition disabled:pointer-events-none disabled:opacity-40",
     iconTones[tone]
   );
   if ("href" in rest && rest.href) {

@@ -263,6 +263,9 @@ export interface FeexPayCheckoutConfig {
   callback_info: Record<string, unknown>;
   first_name: string;
   email: string;
+  /** Page de retour après le paiement par carte (FeexPay y ajoute `ref`). */
+  callback_url: string;
+  error_callback_url: string;
 }
 
 export interface PaymentChannel {
@@ -326,6 +329,14 @@ export interface Notification {
   sent_at?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface RegisterResponse {
+  message: string;
+  email: string;
+  verification_required: boolean;
+  /** Compte déjà créé mais jamais confirmé : un nouveau lien a été envoyé. */
+  already_pending?: boolean;
 }
 
 export interface User {
@@ -974,8 +985,8 @@ class ApiClient {
     phone: string;
     password: string;
     country: string;
-  }): Promise<{ message: string; email: string }> {
-    return this.request<{ message: string; email: string }>("/auth/register", {
+  }): Promise<RegisterResponse> {
+    return this.request<RegisterResponse>("/auth/register", {
       method: "POST",
       body: JSON.stringify(data),
       skipRefresh: true
@@ -983,10 +994,11 @@ class ApiClient {
   }
 
   /** Confirme l'adresse avec le code recu et ouvre la session. */
-  async verifyEmailCode(email: string, code: string): Promise<User> {
+  /** Jeton du lien de confirmation reçu par e-mail : ouvre la session. */
+  async verifyEmailLink(email: string, token: string): Promise<User> {
     const response = await this.request<{ user: User; csrf_token: string }>("/auth/email/verify", {
       method: "POST",
-      body: JSON.stringify({ email, code }),
+      body: JSON.stringify({ email, token }),
       skipRefresh: true
     });
     return this.applySession(response).user;
@@ -1039,20 +1051,6 @@ class ApiClient {
     return this.request<{ message: string; user: User }>("/user/password", {
       method: "PUT",
       body: JSON.stringify(data)
-    });
-  }
-
-  async requestEmailChange(email: string): Promise<{ message: string }> {
-    return this.request<{ message: string }>("/user/email", {
-      method: "POST",
-      body: JSON.stringify({ email })
-    });
-  }
-
-  async confirmEmailChange(code: string): Promise<{ message: string; user: User }> {
-    return this.request<{ message: string; user: User }>("/user/email/confirm", {
-      method: "POST",
-      body: JSON.stringify({ code })
     });
   }
 
@@ -1246,19 +1244,6 @@ class ApiClient {
     );
   }
 
-  async releaseOccupiedRoom(
-    id: number,
-    data: { release_notes?: string }
-  ): Promise<{ message: string; reservation: Reservation }> {
-    return this.request<{ message: string; reservation: Reservation }>(
-      `/admin/reservations/${id}/release-room`,
-      {
-        method: "POST",
-        body: JSON.stringify(data)
-      }
-    );
-  }
-
   async getAdminRoomCategories(): Promise<RoomCategory[]> {
     return this.request<RoomCategory[]>("/admin/room-categories");
   }
@@ -1339,25 +1324,9 @@ class ApiClient {
     return this.request<AdminStatsResponse>("/admin/stats");
   }
 
-  /** Utilisateurs : liste paginee, triable et filtrable cote serveur. Aucune suppression possible. */
+  /** Utilisateurs : liste paginee, triable et filtrable cote serveur (consultation seule). */
   async getAdminUsers(params?: AdminTableQuery): Promise<Paginated<User>> {
     return this.request<Paginated<User>>(`/admin/users${this.tableQuery(params)}`);
-  }
-
-  async updateAdminUser(
-    id: number,
-    data: { name: string }
-  ): Promise<{ message: string; user: User }> {
-    return this.request<{ message: string; user: User }>(`/admin/users/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data)
-    });
-  }
-
-  async toggleUserAdmin(id: number): Promise<{ message: string; user: User }> {
-    return this.request<{ message: string; user: User }>(`/admin/users/${id}/toggle-admin`, {
-      method: "PUT"
-    });
   }
 }
 

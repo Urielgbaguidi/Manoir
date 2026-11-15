@@ -28,7 +28,7 @@ class ReservationController extends Controller
      */
     public function store(StoreReservationRequest $request, RequestMailer $mailer): JsonResponse
     {
-        Reservation::expireOverduePaymentRequests();
+        Reservation::refreshTimeBasedStatuses();
 
         $category = RoomCategory::where('type', $request->category_type)->firstOrFail();
 
@@ -127,7 +127,7 @@ class ReservationController extends Controller
 
     public function myReservations(): JsonResponse
     {
-        Reservation::expireOverduePaymentRequests(Auth::id());
+        Reservation::refreshTimeBasedStatuses(Auth::id());
 
         $reservations = Reservation::where('user_id', Auth::id())
             // Masquees par le client : elles restent en base et visibles cote
@@ -169,7 +169,7 @@ class ReservationController extends Controller
      */
     public function viderHistorique(): JsonResponse
     {
-        Reservation::expireOverduePaymentRequests(Auth::id());
+        Reservation::refreshTimeBasedStatuses(Auth::id());
 
         $terminees = Reservation::where('user_id', Auth::id())
             ->whereNull('client_hidden_at')

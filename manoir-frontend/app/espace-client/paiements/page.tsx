@@ -1,9 +1,7 @@
 "use client";
 
-import { Eye } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import DataTable, {
-  IconAction,
   TableBadge,
   useLocalTable,
   type BadgeTone,
@@ -18,7 +16,6 @@ import {
   formatShortDay,
   paymentLabel,
   paymentMethodLabel,
-  reservationHref,
   reservationRef,
   reservationTitle
 } from "@/lib/reservationDisplay";
@@ -99,7 +96,7 @@ export default function PaiementsPage() {
     },
     {
       key: "method",
-      header: "Moyen de paiement",
+      header: "Canal",
       sortKey: "method",
       render: ({ payment }) => paymentMethodLabel(payment)
     },
@@ -120,14 +117,6 @@ export default function PaiementsPage() {
         <TableBadge tone={paymentStatus[payment.status].tone}>
           {paymentStatus[payment.status].label}
         </TableBadge>
-      )
-    },
-    {
-      key: "actions",
-      header: <span className="sr-only">Actions</span>,
-      align: "right",
-      render: ({ reservation }) => (
-        <IconAction label="Voir la réservation" icon={Eye} href={reservationHref(reservation.id)} />
       )
     }
   ];

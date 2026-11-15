@@ -22,24 +22,49 @@ export const statusLabels: Record<ReservationStatus, string> = {
   SEJOUR_PAYE: "Séjour payé",
   ANNULEE: "Annulée",
   REMBOURSEE: "Remboursée",
-  LIBEREE: "Appartement libéré"
+  LIBEREE: "Séjour terminé"
 };
 
-/** Classes de pastille par statut (compatibles thèmes clair et sombre). */
+/**
+ * Couleur de statut (palette Bootstrap, classes `status-*` de globals.css) :
+ * vert = confirmé / payé, jaune = en attente (validation ou paiement),
+ * rouge = refusé / annulé, gris = clos (expiré, remboursé, terminé).
+ */
+const cnBorderless = (className: string) => `${className} border-transparent`;
+
+export type StatusColor = "success" | "warning" | "error" | "info" | "neutral";
+
+export const reservationStatusColor: Record<ReservationStatus, StatusColor> = {
+  EN_ATTENTE: "warning",
+  VALIDEE_PAIEMENT_REQUIS: "warning",
+  CONFIRMEE: "success",
+  SEJOUR_PAYE: "success",
+  REFUSEE: "error",
+  ANNULEE: "error",
+  EXPIREE: "neutral",
+  REMBOURSEE: "neutral",
+  LIBEREE: "neutral"
+};
+
+export const extensionStatusColor: Record<StayExtensionStatus, StatusColor> = {
+  EN_ATTENTE: "warning",
+  VALIDEE_PAIEMENT_REQUIS: "warning",
+  PAYEE: "success",
+  REFUSEE: "error",
+  EXPIREE: "neutral"
+};
+
+const statusColorClass: Record<StatusColor, string> = {
+  success: "status-success",
+  warning: "status-warning",
+  error: "status-danger",
+  info: "status-info",
+  neutral: "status-neutral"
+};
+
+/** Classes de pastille par statut de réservation. */
 export function statusTone(status: ReservationStatus): string {
-  switch (status) {
-    case "VALIDEE_PAIEMENT_REQUIS":
-    case "EN_ATTENTE":
-      return "border-gold/40 bg-gold/15 text-gold-light";
-    case "CONFIRMEE":
-    case "SEJOUR_PAYE":
-      return "border-olive/40 bg-olive/15 text-olive-light";
-    case "REMBOURSEE":
-    case "LIBEREE":
-      return "border-gold/20 bg-white/5 text-cream/70";
-    default:
-      return "border-terracotta/40 bg-terracotta/15 text-terracotta-light";
-  }
+  return cnBorderless(statusColorClass[reservationStatusColor[status] ?? "neutral"]);
 }
 
 export const extensionStatusLabels: Record<StayExtensionStatus, string> = {
@@ -51,15 +76,7 @@ export const extensionStatusLabels: Record<StayExtensionStatus, string> = {
 };
 
 export function extensionStatusTone(status: StayExtensionStatus): string {
-  switch (status) {
-    case "EN_ATTENTE":
-    case "VALIDEE_PAIEMENT_REQUIS":
-      return "border-gold/40 bg-gold/15 text-gold-light";
-    case "PAYEE":
-      return "border-olive/40 bg-olive/15 text-olive-light";
-    default:
-      return "border-terracotta/40 bg-terracotta/15 text-terracotta-light";
-  }
+  return cnBorderless(statusColorClass[extensionStatusColor[status] ?? "neutral"]);
 }
 
 /** Statuts « en cours » hors séjour payé (voir `isActiveReservation`). */
@@ -104,6 +121,8 @@ export const formatShortDay = (value?: string | null) =>
 export const formatStayPeriod = (reservation: Pick<Reservation, "check_in" | "check_out">) =>
   `${formatShortDay(reservation.check_in)} au ${formatShortDay(reservation.check_out)}`;
 
+const pad2 = (value: number) => String(value).padStart(2, "0");
+
 /**
  * Référence lisible d'une réservation : « MN » + jour, mois et année (2
  * chiffres) de la demande. Ex. demande du 12/11/2026 → MN121126.
@@ -111,21 +130,31 @@ export const formatStayPeriod = (reservation: Pick<Reservation, "check_in" | "ch
 export function reservationRef(reservation: Pick<Reservation, "created_at">): string {
   const date = new Date(reservation.created_at);
   if (Number.isNaN(date.getTime())) return "MN";
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `MN${pad(date.getDate())}${pad(date.getMonth() + 1)}${pad(date.getFullYear() % 100)}`;
+  return `MN${pad2(date.getDate())}${pad2(date.getMonth() + 1)}${pad2(date.getFullYear() % 100)}`;
 }
 
-export const formatDateTime = (value?: string | null) => {
-  if (!value) return "Date à préciser";
+/**
+ * Jour de demande (AAAA-MM-JJ) désigné par une référence saisie dans une
+ * recherche (« MN121126 », « mn 121126 »), ou null si le texte n'en est pas une.
+ * L'API ne connaît pas ces références : les tableaux les traduisent en filtre
+ * sur la date de la demande.
+ */
+export function reservationRefDay(text: string): string | null {
+  const match = /^MN\s*(\d{2})(\d{2})(\d{2})$/i.exec(text.trim());
+  if (!match) return null;
+  const [, day, month, shortYear] = match;
+  const year = 2000 + Number(shortYear);
+  const date = new Date(year, Number(month) - 1, Number(day));
+  if (date.getMonth() !== Number(month) - 1 || date.getDate() !== Number(day)) return null;
+  return `${year}-${month}-${day}`;
+}
+
+/** Date et heure locales : « 13/11/2026 à 16:18 ». */
+export const formatDateTime = (value?: string | null, fallback = "Date à préciser") => {
+  if (!value) return fallback;
   const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? "Date à préciser"
-    : date.toLocaleString("fr-FR", {
-        day: "numeric",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit"
-      });
+  if (Number.isNaN(date.getTime())) return fallback;
+  return `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()} à ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 };
 
 export const countNights = (checkIn: string, checkOut: string) => {
@@ -220,17 +249,19 @@ const channelLabels: Record<string, string> = {
   free: "Free Money",
   bmo: "B-MO",
   coris: "Coris Money",
+  airtel: "Airtel Money",
+  vodafone: "Vodafone Cash",
   card: "Carte bancaire"
 };
 
 /**
- * Moyen de paiement réellement utilisé (MTN, Moov, carte…), tel que
- * renvoyé par l'API. « Mobile Money » seulement si l'opérateur est inconnu.
+ * Canal de paiement réellement utilisé (MTN, Moov, carte…), tel que
+ * renvoyé par l'API. « — » tant qu'il n'est pas connu (paiement non abouti).
  */
 export function paymentMethodLabel(payment: Payment): string {
   if (payment.channel && channelLabels[payment.channel]) return channelLabels[payment.channel];
   if (payment.payment_method === "card") return "Carte bancaire";
-  return "Mobile Money";
+  return "—";
 }
 
 /* --------------------------------- Bons de Séjour --------------------------------- */

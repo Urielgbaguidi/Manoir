@@ -87,9 +87,9 @@ class AppServiceProvider extends ServiceProvider
             $request->user()?->id ?: $request->ip()
         ));
 
-        // Saisie du code a 6 chiffres. Le nombre d'essais par code est deja
-        // plafonne dans EmailVerificationCode ; cette limite-ci protege en plus
-        // contre un attaquant qui essaierait des adresses en boucle.
+        // Ouverture du lien de confirmation. Le nombre d'essais par lien est
+        // deja plafonne dans EmailVerificationCode ; cette limite-ci protege en
+        // plus contre un attaquant qui essaierait des adresses en boucle.
         RateLimiter::for('email-verify', fn (Request $request) => [
             Limit::perMinute(10)->by($request->ip()),
             Limit::perMinute(5)->by(strtolower((string) $request->input('email'))),

@@ -2,7 +2,7 @@
 
 import type { ApexOptions } from "apexcharts";
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useThemeMode } from "@/lib/useThemeMode";
 import { cn } from "@/lib/utils";
 
@@ -12,7 +12,20 @@ const Chart = dynamic(() => import("react-apexcharts"), {
   loading: () => <div className="h-full min-h-[180px] w-full animate-pulse rounded-xl bg-white/5" />
 });
 
-export const MONTHS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"];
+export const MONTHS = [
+  "Jan",
+  "Fév",
+  "Mar",
+  "Avr",
+  "Mai",
+  "Juin",
+  "Juil",
+  "Août",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Déc"
+];
 
 const palette = {
   gold: "#C9A45C",
@@ -42,16 +55,52 @@ const compactFcfa = (value: number) =>
       ? `${Math.round(value / 1_000).toLocaleString("fr-FR")} k`
       : value.toLocaleString("fr-FR");
 
-/** Chiffre d'affaires mensuel (barres) — reprise de « Monthly Sales » TailAdmin. */
-export function MonthlyRevenueChart({ data }: { data: number[] }) {
+/**
+ * Hauteur de contenu d'un élément, suivie au redimensionnement. Le graphique
+ * est placé en absolu dans cet élément : sa taille ne rétroagit pas sur la
+ * mesure, et la barre de défilement horizontale (petits écrans) est déduite.
+ */
+function useContentHeight<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  const [height, setHeight] = useState(0);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) =>
+      setHeight(Math.floor(entry.contentRect.height))
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  return { ref, height };
+}
+
+/**
+ * Chiffre d'affaires mensuel (barres) — reprise de « Monthly Sales » TailAdmin.
+ * Occupe toute la hauteur que lui laisse sa carte (240 px au minimum).
+ */
+export function MonthlyRevenueChart({ data, className }: { data: number[]; className?: string }) {
   const theme = useChartTheme();
+  const { ref, height } = useContentHeight<HTMLDivElement>();
 
   const options: ApexOptions = {
     colors: [palette.gold],
-    chart: { fontFamily: "inherit", type: "bar", toolbar: { show: false }, background: "transparent" },
+    chart: {
+      fontFamily: "inherit",
+      type: "bar",
+      toolbar: { show: false },
+      background: "transparent"
+    },
     theme: { mode: theme.mode },
     plotOptions: {
-      bar: { horizontal: false, columnWidth: "42%", borderRadius: 6, borderRadiusApplication: "end" }
+      bar: {
+        horizontal: false,
+        columnWidth: "42%",
+        borderRadius: 6,
+        borderRadiusApplication: "end"
+      }
     },
     dataLabels: { enabled: false },
     stroke: { show: true, width: 3, colors: ["transparent"] },
@@ -77,12 +126,26 @@ export function MonthlyRevenueChart({ data }: { data: number[] }) {
       }
     },
     legend: { show: false },
-    tooltip: { theme: theme.mode, y: { formatter: (value: number) => `${value.toLocaleString("fr-FR")} FCFA` } }
+    tooltip: {
+      theme: theme.mode,
+      y: { formatter: (value: number) => `${value.toLocaleString("fr-FR")} FCFA` }
+    }
   };
 
   return (
-    <div className="-ml-4 min-w-[640px] xl:min-w-full">
-      <Chart options={options} series={[{ name: "Encaissements", data }]} type="bar" height={200} />
+    <div className={cn("relative min-h-[240px] w-full", className)}>
+      <div ref={ref} className="absolute inset-0 overflow-x-auto overflow-y-hidden">
+        <div className="-ml-4 h-full min-w-[600px] md:min-w-0">
+          {height > 0 && (
+            <Chart
+              options={options}
+              series={[{ name: "Encaissements", data }]}
+              type="bar"
+              height={height}
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -140,7 +203,13 @@ export function OccupancyGauge({ value }: { value: number }) {
 type StatTab = "overview" | "requests" | "confirmed";
 
 /** Activité mensuelle (aires) — reprise de « Statistics » TailAdmin, avec onglets. */
-export function ActivityChart({ requests, confirmed }: { requests: number[]; confirmed: number[] }) {
+export function ActivityChart({
+  requests,
+  confirmed
+}: {
+  requests: number[];
+  confirmed: number[];
+}) {
   const theme = useChartTheme();
   const [tab, setTab] = useState<StatTab>("overview");
 
@@ -154,17 +223,30 @@ export function ActivityChart({ requests, confirmed }: { requests: number[]; con
   }, [tab, requests, confirmed]);
 
   const colors =
-    tab === "requests" ? [palette.gold] : tab === "confirmed" ? [palette.oliveLight] : [palette.gold, palette.oliveLight];
+    tab === "requests"
+      ? [palette.gold]
+      : tab === "confirmed"
+        ? [palette.oliveLight]
+        : [palette.gold, palette.oliveLight];
 
   const options: ApexOptions = {
     colors,
     legend: { show: false },
-    chart: { fontFamily: "inherit", type: "area", toolbar: { show: false }, background: "transparent" },
+    chart: {
+      fontFamily: "inherit",
+      type: "area",
+      toolbar: { show: false },
+      background: "transparent"
+    },
     theme: { mode: theme.mode },
     stroke: { curve: "smooth", width: 2 },
     fill: { type: "gradient", gradient: { opacityFrom: 0.45, opacityTo: 0 } },
     markers: { size: 0, hover: { size: 6 } },
-    grid: { borderColor: theme.grid, xaxis: { lines: { show: false } }, yaxis: { lines: { show: true } } },
+    grid: {
+      borderColor: theme.grid,
+      xaxis: { lines: { show: false } },
+      yaxis: { lines: { show: true } }
+    },
     dataLabels: { enabled: false },
     tooltip: { theme: theme.mode, shared: true, intersect: false },
     xaxis: {
@@ -175,7 +257,12 @@ export function ActivityChart({ requests, confirmed }: { requests: number[]; con
       tooltip: { enabled: false },
       labels: { style: { colors: theme.label } }
     },
-    yaxis: { labels: { style: { colors: [theme.label] }, formatter: (val: number) => String(Math.round(val)) } }
+    yaxis: {
+      labels: {
+        style: { colors: [theme.label] },
+        formatter: (val: number) => String(Math.round(val))
+      }
+    }
   };
 
   const tabs: { key: StatTab; label: string }[] = [
@@ -244,5 +331,7 @@ export function CategoryDonut({ labels, values }: { labels: string[]; values: nu
     }
   };
 
-  return <Chart options={options} series={total > 0 ? values : [0, 0, 0]} type="donut" height={240} />;
+  return (
+    <Chart options={options} series={total > 0 ? values : [0, 0, 0]} type="donut" height={240} />
+  );
 }

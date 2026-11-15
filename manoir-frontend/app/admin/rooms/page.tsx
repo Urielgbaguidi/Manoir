@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { AnimatePresence, motion } from "framer-motion";
-import { DoorOpen, Image as ImageIcon, Pencil, Plus, Save, Trash2, Video, X } from "lucide-react";
+import { Image as ImageIcon, Pencil, Plus, Trash2, TriangleAlert, Video } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
+import Modal, { ModalActions, ModalButton } from "@/components/ui/Modal";
 import { api, type Reservation, type Room, type RoomCategory } from "@/lib/api";
 import { isAdminUser } from "@/lib/roles";
 import { cn } from "@/lib/utils";
@@ -74,8 +74,6 @@ const fieldLabel = "mb-1.5 block text-xs font-medium text-cream/50";
 const fieldInput = "glass-input w-full rounded-lg px-3 py-2.5 text-sm outline-none";
 const primaryButton =
   "inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-br from-gold-light to-gold px-4 py-2.5 text-sm font-semibold text-night transition hover:brightness-105 disabled:opacity-50";
-const secondaryButton =
-  "inline-flex items-center justify-center gap-2 rounded-lg border border-gold/20 px-4 py-2.5 text-sm font-medium text-cream/70 transition hover:border-gold/50 hover:text-gold-light disabled:opacity-50";
 
 export default function AdminRoomsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -91,8 +89,6 @@ export default function AdminRoomsPage() {
 
   const [roomForm, setRoomForm] = useState<RoomForm | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Room | null>(null);
-  const [releaseTarget, setReleaseTarget] = useState<Reservation | null>(null);
-  const [releaseNotes, setReleaseNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState<MediaKind | null>(null);
 
@@ -221,26 +217,6 @@ export default function AdminRoomsPage() {
     }
   };
 
-  const releaseRoom = async () => {
-    if (!releaseTarget) return;
-    setSubmitting(true);
-    try {
-      const response = await api.releaseOccupiedRoom(releaseTarget.id, {
-        release_notes: releaseNotes.trim() || undefined
-      });
-      showToast(response.message, "success");
-      setReleaseTarget(null);
-      loadData();
-    } catch (err) {
-      showToast(
-        err instanceof Error ? err.message : "Impossible de libérer l'appartement.",
-        "error"
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   /** Import immédiat d'une photo ou vidéo (appartement existant). */
   const uploadMedia = async (kind: MediaKind, event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -337,7 +313,7 @@ export default function AdminRoomsPage() {
       header: "Réservation en ligne",
       render: (room) =>
         room.status === "available" ? (
-          <TableBadge tone="info">Ouverte</TableBadge>
+          <TableBadge tone="success">Ouverte</TableBadge>
         ) : (
           <TableBadge tone="neutral">Bloquée</TableBadge>
         )
@@ -346,35 +322,22 @@ export default function AdminRoomsPage() {
       key: "actions",
       header: "Actions",
       align: "right",
-      render: (room) => {
-        const stay = occupancyByRoom.get(room.id);
-        return (
-          <div className="inline-flex gap-2">
-            {stay && (
-              <IconAction
-                label="Libérer l'appartement"
-                icon={DoorOpen}
-                tone="success"
-                onClick={() => {
-                  setReleaseNotes("");
-                  setReleaseTarget(stay);
-                }}
-              />
-            )}
-            <IconAction
-              label="Modifier"
-              icon={Pencil}
-              onClick={() => setRoomForm(toRoomForm(room))}
-            />
-            <IconAction
-              label="Supprimer"
-              icon={Trash2}
-              tone="danger"
-              onClick={() => setDeleteTarget(room)}
-            />
-          </div>
-        );
-      }
+      render: (room) => (
+        <div className="inline-flex gap-2">
+          <IconAction
+            label="Modifier"
+            icon={Pencil}
+            tone="warning"
+            onClick={() => setRoomForm(toRoomForm(room))}
+          />
+          <IconAction
+            label="Supprimer"
+            icon={Trash2}
+            tone="danger"
+            onClick={() => setDeleteTarget(room)}
+          />
+        </div>
+      )
     }
   ];
 
@@ -422,7 +385,10 @@ export default function AdminRoomsPage() {
       {/* Création / modification d'un appartement */}
       <Modal
         open={!!roomForm}
-        onClose={() => !submitting && setRoomForm(null)}
+        onClose={() => setRoomForm(null)}
+        busy={submitting}
+        icon={roomForm?.id ? Pencil : Plus}
+        maxWidth="max-w-2xl"
         title={roomForm?.id ? `Modifier ${roomLabel(roomForm)}` : "Nouvel appartement"}
       >
         {roomForm && (
@@ -545,70 +511,30 @@ export default function AdminRoomsPage() {
       {/* Suppression */}
       <Modal
         open={!!deleteTarget}
-        onClose={() => !submitting && setDeleteTarget(null)}
+        onClose={() => setDeleteTarget(null)}
+        busy={submitting}
+        icon={TriangleAlert}
+        tone="danger"
         title="Supprimer l'appartement"
         maxWidth="max-w-md"
-      >
-        {deleteTarget && (
-          <div className="space-y-5">
-            <p className="text-sm leading-6 text-cream/70">
-              Supprimer définitivement{" "}
-              <strong className="text-cream">{roomLabel(deleteTarget)}</strong> ? Cette action est
+        description={
+          deleteTarget ? (
+            <>
+              Supprimer définitivement <strong>{roomLabel(deleteTarget)}</strong> ? Cette action est
               irréversible. Un appartement qui a déjà des réservations ne peut pas être supprimé :
               bloquez plutôt sa réservation en ligne.
-            </p>
+            </>
+          ) : undefined
+        }
+      >
+        {deleteTarget && (
+          <div>
             <ModalFooter
               submitting={submitting}
               onCancel={() => setDeleteTarget(null)}
               onSubmit={deleteRoom}
-              submitLabel="Supprimer"
+              submitLabel="Oui, supprimer"
               danger
-            />
-          </div>
-        )}
-      </Modal>
-
-      {/* Libération manuelle */}
-      <Modal
-        open={!!releaseTarget}
-        onClose={() => !submitting && setReleaseTarget(null)}
-        title="Libérer l'appartement"
-        maxWidth="max-w-lg"
-      >
-        {releaseTarget && (
-          <div className="space-y-5">
-            <p className="text-sm leading-6 text-cream/60">
-              L&apos;occupation est marquée comme terminée et l&apos;appartement redevient
-              disponible. L&apos;historique de la réservation est conservé.
-            </p>
-            <div className="space-y-1.5 rounded-lg border border-gold/15 bg-white/5 p-4 text-sm text-cream/70">
-              <p>
-                <strong className="text-cream">Appartement :</strong>{" "}
-                {releaseTarget.room ? roomLabel(releaseTarget.room) : `#${releaseTarget.room_id}`}
-              </p>
-              <p>
-                <strong className="text-cream">Client :</strong>{" "}
-                {releaseTarget.user?.name || "Client non renseigné"}
-              </p>
-              <p>
-                <strong className="text-cream">Séjour :</strong> du{" "}
-                {formatDay(releaseTarget.check_in)} au {formatDay(releaseTarget.check_out)}
-              </p>
-            </div>
-            <Field label="Note interne (facultative)">
-              <textarea
-                rows={3}
-                value={releaseNotes}
-                onChange={(event) => setReleaseNotes(event.target.value)}
-                placeholder="Ex : départ anticipé, appartement remis à disposition…"
-                className={cn(fieldInput, "resize-none")}
-              />
-            </Field>
-            <ModalFooter
-              submitting={submitting}
-              onCancel={() => setReleaseTarget(null)}
-              onSubmit={releaseRoom}
-              submitLabel="Libérer l'appartement"
             />
           </div>
         )}
@@ -644,24 +570,14 @@ function ModalFooter({
   danger?: boolean;
 }) {
   return (
-    <div className="flex flex-col-reverse gap-3 border-t border-gold/10 pt-4 sm:flex-row sm:justify-end">
-      <button type="button" disabled={submitting} onClick={onCancel} className={secondaryButton}>
+    <ModalActions>
+      <ModalButton variant="secondary" disabled={submitting} onClick={onCancel}>
         Annuler
-      </button>
-      <button
-        type="button"
-        disabled={submitting}
-        onClick={onSubmit}
-        className={
-          danger
-            ? "inline-flex items-center justify-center gap-2 rounded-lg bg-terracotta px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-terracotta/90 disabled:opacity-50"
-            : primaryButton
-        }
-      >
-        {danger ? <Trash2 size={16} /> : <Save size={16} />}
+      </ModalButton>
+      <ModalButton variant={danger ? "danger" : "primary"} disabled={submitting} onClick={onSubmit}>
         {submitting ? "Patientez…" : submitLabel}
-      </button>
-    </div>
+      </ModalButton>
+    </ModalActions>
   );
 }
 
@@ -791,67 +707,5 @@ function UploadButton({
       <Plus size={14} />
       {busy ? "Import…" : label}
     </label>
-  );
-}
-
-function Modal({
-  open,
-  onClose,
-  title,
-  maxWidth = "max-w-2xl",
-  children
-}: {
-  open: boolean;
-  onClose: () => void;
-  title: string;
-  maxWidth?: string;
-  children: ReactNode;
-}) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  return (
-    <AnimatePresence>
-      {open && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 bg-night/80 backdrop-blur-md"
-          />
-          <motion.div
-            role="dialog"
-            aria-modal="true"
-            aria-label={title}
-            initial={{ opacity: 0, scale: 0.97, y: 16 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.97, y: 16 }}
-            className={cn(
-              "admin-panel relative max-h-[90vh] w-full overflow-y-auto rounded-2xl border border-gold/15 p-5 text-cream shadow-2xl sm:p-6",
-              maxWidth
-            )}
-          >
-            <div className="mb-5 flex items-start justify-between gap-4">
-              <h2 className="text-lg font-semibold text-cream">{title}</h2>
-              <button
-                type="button"
-                onClick={onClose}
-                className="grid size-9 shrink-0 place-items-center rounded-lg border border-gold/15 text-cream/60 transition hover:border-gold/40 hover:text-gold-light"
-                aria-label="Fermer"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            {children}
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
   );
 }

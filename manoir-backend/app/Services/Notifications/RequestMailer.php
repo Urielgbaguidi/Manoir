@@ -11,12 +11,16 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
 
+use function Illuminate\Support\defer;
+
 /**
  * Mails lies aux demandes : notification a l'admin a chaque nouvelle demande,
  * confirmation au client apres validation, confirmation de paiement.
  *
- * Tous partent en file d'attente. Un echec d'envoi ne bloque jamais la
- * requete : il est journalise.
+ * Les mails partent juste APRES l'envoi de la reponse HTTP (`defer`) : le
+ * client n'attend jamais le serveur SMTP, et aucun worker de file d'attente
+ * n'est necessaire. Un echec d'envoi ne bloque jamais la requete : il est
+ * journalise.
  */
 class RequestMailer
 {
@@ -186,11 +190,7 @@ class RequestMailer
             return;
         }
 
-        try {
-            Mail::to($user->email)->queue($mail);
-        } catch (Throwable $exception) {
-            Log::error('Mail client non mis en file : '.$exception->getMessage(), ['subject' => $mail->mailSubject]);
-        }
+        $this->deliver([$user->email], $mail);
     }
 
     private function toAdmins(ManoirNotificationMail $mail): void
@@ -213,11 +213,21 @@ class RequestMailer
             return;
         }
 
-        try {
-            Mail::to($recipients)->queue($mail);
-        } catch (Throwable $exception) {
-            Log::error('Mail admin non mis en file : '.$exception->getMessage(), ['subject' => $mail->mailSubject]);
-        }
+        $this->deliver($recipients, $mail);
+    }
+
+    /**
+     * @param  array<int, string>  $recipients
+     */
+    private function deliver(array $recipients, ManoirNotificationMail $mail): void
+    {
+        defer(function () use ($recipients, $mail): void {
+            try {
+                Mail::to($recipients)->send($mail);
+            } catch (Throwable $exception) {
+                Log::error('Envoi de mail impossible : '.$exception->getMessage(), ['subject' => $mail->mailSubject]);
+            }
+        });
     }
 
     private function adminUrl(string $type, int $id): string

@@ -18,6 +18,7 @@ export function contactMailto(subject = "Demande d'information | Le Manoir", bod
 export function initialsOf(name?: string | null): string {
   if (!name) return "LM";
   const parts = name.trim().split(/\s+/).filter(Boolean);
-  const letters = parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : parts[0].slice(0, 2);
+  const letters =
+    parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : parts[0].slice(0, 2);
   return letters.toUpperCase();
 }
