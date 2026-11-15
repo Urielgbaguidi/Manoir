@@ -10,6 +10,9 @@ Artisan::command('inspire', function () {
 
 Schedule::command('reservations:check-expirations')->everyMinute();
 
+// Fin de sejour : l'appartement se libere automatiquement le jour du depart.
+Schedule::command('reservations:complete-stays')->everyFifteenMinutes()->withoutOverlapping();
+
 // Agendas Google des appartements : les reservations prises hors du site
 // doivent rendre l'appartement indisponible sans intervention manuelle.
 // Toutes les 15 minutes : Google met de toute facon son flux iCal en cache,

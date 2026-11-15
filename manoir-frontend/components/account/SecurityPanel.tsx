@@ -1,7 +1,8 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { KeyRound, Laptop, LogOut, ShieldCheck, ShieldOff, Smartphone, X } from "lucide-react";
+import { KeyRound, Laptop, LogOut, ShieldCheck, ShieldOff, Smartphone } from "lucide-react";
+import Modal, { ModalActions, ModalButton } from "@/components/ui/Modal";
 import Switch from "@/components/ui/Switch";
 import { ApiError, AuthSessionInfo, api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -59,33 +60,19 @@ function ReauthDialog({ onDone }: { onDone: (ok: boolean) => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-night/70 p-4 backdrop-blur-sm">
-      <form
-        onSubmit={submit}
-        className="glass-dark glass-edge w-full max-w-sm space-y-5 rounded-3xl p-6 text-cream"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 className="font-display text-xl font-semibold uppercase">
-              Confirmez votre identité
-            </h3>
-            <p className="mt-1 text-xs leading-relaxed text-cream/55">
-              Cette action est sensible : par sécurité, confirmez qu&apos;il s&apos;agit bien de
-              vous.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => onDone(false)}
-            aria-label="Annuler"
-            className="text-cream/50 hover:text-cream"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
+    <Modal
+      open
+      onClose={() => onDone(false)}
+      busy={loading}
+      zIndex="z-[140]"
+      maxWidth="max-w-md"
+      icon={ShieldCheck}
+      title="Confirmez votre identité"
+      description="Cette action est sensible : par sécurité, confirmez qu'il s'agit bien de vous."
+    >
+      <form onSubmit={submit} className="space-y-5">
         {user?.has_password === false && !user?.two_factor_enabled ? (
-          <p className="rounded-2xl border border-gold/25 bg-gold/10 p-4 text-xs leading-5 text-cream/75">
+          <p className="rounded-xl border border-gold/25 bg-gold/10 p-4 text-xs leading-5 text-cream/75">
             Votre compte utilise la connexion Google et n&apos;a pas de mot de passe. Définissez-en
             un via « Mot de passe oublié » sur la page de connexion pour effectuer cette action.
           </p>
@@ -99,19 +86,20 @@ function ReauthDialog({ onDone }: { onDone: (ok: boolean) => void }) {
             autoFocus
             required
             placeholder={usesCode ? "Code à 6 chiffres" : "Votre mot de passe"}
-            className="glass-input h-12 w-full rounded-xl px-4 text-[15px] outline-none"
+            className="glass-input h-11 w-full rounded-lg px-4 text-sm outline-none"
           />
         )}
 
-        <button
-          type="submit"
-          disabled={loading || !value}
-          className="flex w-full items-center justify-center rounded-full bg-gradient-to-br from-gold-light to-gold py-3.5 text-xs font-bold uppercase tracking-[0.22em] text-night disabled:opacity-50"
-        >
-          {loading ? "Vérification..." : "Confirmer"}
-        </button>
+        <ModalActions className="mt-0">
+          <ModalButton variant="secondary" onClick={() => onDone(false)} disabled={loading}>
+            Annuler
+          </ModalButton>
+          <ModalButton type="submit" variant="primary" disabled={loading || !value}>
+            {loading ? "Vérification…" : "Confirmer"}
+          </ModalButton>
+        </ModalActions>
       </form>
-    </div>
+    </Modal>
   );
 }
 

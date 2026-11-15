@@ -2,31 +2,19 @@
 
 namespace App\Mail;
 
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
-use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Log;
-use Throwable;
 
 /**
- * Mail transactionnel du Manoir, envoye en file d'attente.
+ * Mail transactionnel du Manoir (envoye par RequestMailer, juste apres la
+ * reponse HTTP).
  *
  * Tout le contenu passe par Blade et est echappe : un nom ou un motif saisi
  * par un utilisateur ne peut pas injecter de HTML dans le mail.
  */
-class ManoirNotificationMail extends Mailable implements ShouldQueue
+class ManoirNotificationMail extends Mailable
 {
-    use Queueable, SerializesModels;
-
-    /** Nouvelles tentatives si le serveur SMTP refuse temporairement. */
-    public int $tries = 3;
-
-    /** @var array<int, int> */
-    public array $backoff = [60, 300];
-
     /**
      * @param  array<int, string>  $paragraphs
      * @param  array<string, string>  $details
@@ -59,17 +47,5 @@ class ManoirNotificationMail extends Mailable implements ShouldQueue
                 'actionLabel' => $this->actionLabel,
             ],
         );
-    }
-
-    /**
-     * Echec definitif apres toutes les tentatives : journalise, sans jamais
-     * remonter jusqu'a l'utilisateur.
-     */
-    public function failed(Throwable $exception): void
-    {
-        Log::error('Echec definitif d\'envoi de mail', [
-            'subject' => $this->mailSubject,
-            'error' => $exception->getMessage(),
-        ]);
     }
 }

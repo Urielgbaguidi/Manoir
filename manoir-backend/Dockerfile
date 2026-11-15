@@ -25,11 +25,12 @@ RUN composer dump-autoload --optimize --no-dev \
 ENV PORT=8080
 EXPOSE 8080
 
-# Cache config/routes, worker de file d'attente (mails : verification,
-# notifications admin, confirmations client) puis serveur HTTP sur $PORT.
-# Sans worker, les mails mis en file ne partiraient jamais.
+# Cache config/routes, planificateur (delais de paiement, fins de sejour,
+# agendas), worker de file d'attente (taches mises en file) puis serveur
+# HTTP sur $PORT.
 # (les migrations sont jouees via preDeployCommand dans render.yaml)
 CMD php artisan config:cache \
     && php artisan route:cache \
+    && (php artisan schedule:work &) \
     && (php artisan queue:work --tries=3 --backoff=60 --sleep=3 &) \
     && php artisan serve --host=0.0.0.0 --port=$PORT

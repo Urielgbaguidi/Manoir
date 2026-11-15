@@ -221,8 +221,9 @@ export default function ClientShell({ children }: { children: ReactNode }) {
           )}
         </AnimatePresence>
 
-        <main className="min-w-0 flex-1 overflow-x-clip px-4 pb-16 pt-6 sm:px-6 lg:px-10 lg:pt-10">
-          <div className="mx-auto w-full max-w-6xl">{children}</div>
+        {/* Pleine largeur disponible : tableaux et cartes occupent tout l'espace. */}
+        <main className="min-w-0 flex-1 overflow-x-clip px-4 pb-16 pt-6 sm:px-6 lg:pt-8 xl:px-8">
+          {children}
         </main>
       </div>
     </div>

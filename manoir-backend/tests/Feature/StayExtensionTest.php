@@ -77,7 +77,7 @@ class StayExtensionTest extends TestCase
         $this->assertSame(2 * (int) $this->room->base_price, $extension->amount);
         // Rien ne change avant validation et paiement.
         $this->assertTrue($reservation->fresh()->check_out->isSameDay($reservation->check_out));
-        Mail::assertQueued(ManoirNotificationMail::class, fn ($mail) => $mail->hasTo('admin@manoir.test')
+        Mail::assertSent(ManoirNotificationMail::class, fn ($mail) => $mail->hasTo('admin@manoir.test')
             && $mail->details['Type de demande'] === 'Prolongation de séjour');
     }
 
@@ -160,7 +160,7 @@ class StayExtensionTest extends TestCase
             ->postJson("/api/admin/extensions/{$extension->id}/approve")
             ->assertOk()
             ->assertJsonPath('extension.status', StayExtension::STATUS_AWAITING_PAYMENT);
-        Mail::assertQueued(ManoirNotificationMail::class, fn ($mail) => $mail->hasTo($this->client->email));
+        Mail::assertSent(ManoirNotificationMail::class, fn ($mail) => $mail->hasTo($this->client->email));
 
         // Les nuits sont retenues : personne d'autre ne peut les reserver.
         $this->assertFalse($this->room->isAvailableForDates(
@@ -202,7 +202,7 @@ class StayExtensionTest extends TestCase
             ->assertOk();
 
         $this->assertSame(StayExtension::STATUS_REJECTED, $extension->fresh()->status);
-        Mail::assertQueued(ManoirNotificationMail::class, fn ($mail) => $mail->hasTo($this->client->email));
+        Mail::assertSent(ManoirNotificationMail::class, fn ($mail) => $mail->hasTo($this->client->email));
     }
 
     public function test_un_client_ne_peut_pas_prolonger_le_sejour_d_un_autre(): void

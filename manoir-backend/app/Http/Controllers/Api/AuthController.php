@@ -8,10 +8,9 @@ use App\Http\Requests\Auth\GoogleAuthRequest;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
 use App\Http\Requests\Auth\TwoFactorChallengeRequest;
-use App\Http\Requests\Auth\VerifyEmailCodeRequest;
+use App\Http\Requests\Auth\VerifyEmailRequest;
 use App\Models\EmailVerificationCode;
 use App\Models\User;
-use App\Notifications\AccountAlreadyExistsNotification;
 use App\Services\Auth\AuthCookies;
 use App\Services\Auth\AuthSessionManager;
 use App\Services\Auth\GoogleIdTokenVerifier;
@@ -50,69 +49,94 @@ class AuthController extends Controller
 
     /**
      * Inscription classique. Ne connecte PAS : la session ne s'ouvre qu'une
-     * fois l'adresse confirmee par le code recu.
+     * fois l'adresse confirmee par le lien recu par mail.
      *
-     * La reponse est identique que l'adresse soit libre ou deja utilisee ;
-     * dans le second cas, c'est le proprietaire de l'adresse qui est prevenu
-     * par mail.
+     * Une adresse deja utilisee est refusee (y compris par un compte cree
+     * avec Google). Un compte jamais confirme recoit simplement un nouveau
+     * lien, sans que rien n'y soit modifie.
      */
     public function register(RegisterRequest $request): JsonResponse
     {
         $data = $request->validated();
         $existing = User::where('email', $data['email'])->first();
 
-        if ($existing) {
-            $this->safely(fn () => $existing->notify(new AccountAlreadyExistsNotification));
-            $this->securityLogger->info('auth.register_existing_email', ['email' => $data['email']]);
-        } else {
-            $user = User::create([
-                'name' => $data['name'],
-                'email' => $data['email'],
-                'phone' => $data['phone'],
-                'country' => $data['country'],
-                'password' => Hash::make($data['password']),
-            ]);
+        if ($existing && $existing->hasVerifiedEmail()) {
+            $this->securityLogger->info('auth.register_existing_email', ['user_id' => $existing->id]);
 
-            // Pas d'evenement Registered ici : son listener Laravel enverrait
-            // un second code qui invaliderait le premier.
-            $this->safely(fn () => $user->sendEmailVerificationNotification());
-            $this->securityLogger->info('auth.registered', ['user_id' => $user->id]);
+            $message = 'Cette adresse e-mail existe déjà.';
+
+            return response()->json([
+                'message' => $message,
+                'reason' => 'email_taken',
+                'errors' => ['email' => [$message]],
+            ], 422);
         }
 
-        return response()->json([
-            'message' => 'Si cette adresse peut etre utilisee, un code de confirmation a 6 chiffres vient d\'y etre envoye.',
+        if ($existing) {
+            $this->safely(fn () => $existing->sendEmailVerificationNotification());
+            $this->securityLogger->info('auth.register_unverified_email', ['user_id' => $existing->id]);
+
+            return response()->json([
+                'message' => 'Un compte en attente de confirmation existe deja pour cette adresse : nous venons de vous renvoyer le lien de confirmation.',
+                'email' => $existing->email,
+                'verification_required' => true,
+                'already_pending' => true,
+            ], 202);
+        }
+
+        $user = User::create([
+            'name' => $data['name'],
             'email' => $data['email'],
+            'phone' => $data['phone'],
+            'country' => $data['country'],
+            'password' => Hash::make($data['password']),
+        ]);
+
+        // Pas d'evenement Registered ici : son listener Laravel enverrait
+        // un second lien qui invaliderait le premier.
+        $this->safely(fn () => $user->sendEmailVerificationNotification());
+        $this->securityLogger->info('auth.registered', ['user_id' => $user->id]);
+
+        return response()->json([
+            'message' => 'Compte cree. Un lien de confirmation vient d\'etre envoye a votre adresse e-mail.',
+            'email' => $user->email,
             'verification_required' => true,
         ], 202);
     }
 
     /**
-     * Confirme l'adresse avec le code recu, puis ouvre la session.
+     * Confirme l'adresse avec le jeton du lien recu par mail, puis ouvre la
+     * session.
      */
-    public function verifyEmail(VerifyEmailCodeRequest $request): JsonResponse
+    public function verifyEmail(VerifyEmailRequest $request): JsonResponse
     {
         $user = User::where('email', $request->validated('email'))->first();
-        $entry = $user?->emailVerificationCode;
-        $generic = 'Code invalide ou expire. Verifiez-le ou demandez-en un nouveau.';
 
-        if (! $user || $user->hasVerifiedEmail() || ! $entry) {
-            return response()->json(['message' => $generic], 422);
+        if ($user?->hasVerifiedEmail()) {
+            return response()->json([
+                'message' => 'Cette adresse est deja confirmee. Connectez-vous pour acceder a votre espace.',
+                'reason' => 'already_verified',
+            ], 409);
+        }
+
+        $entry = $user?->emailVerificationCode;
+        $generic = 'Ce lien de confirmation est invalide ou a expire. Demandez-en un nouveau.';
+
+        if (! $user || ! $entry) {
+            return response()->json(['message' => $generic, 'reason' => 'invalid_link'], 422);
         }
 
         if ($entry->estExpire() || $entry->tropDeTentatives()) {
             $entry->delete();
 
-            return response()->json(['message' => $generic], 422);
+            return response()->json(['message' => $generic, 'reason' => 'invalid_link'], 422);
         }
 
-        if (! $entry->correspond($request->validated('code'))) {
+        if (! $entry->correspond($request->validated('token'))) {
             $entry->increment('attempts');
-            $this->securityLogger->warning('auth.email_code_failed', ['user_id' => $user->id]);
+            $this->securityLogger->warning('auth.email_link_failed', ['user_id' => $user->id]);
 
-            return response()->json([
-                'message' => $generic,
-                'attempts_left' => max(0, EmailVerificationCode::MAX_TENTATIVES - $entry->attempts),
-            ], 422);
+            return response()->json(['message' => $generic, 'reason' => 'invalid_link'], 422);
         }
 
         $user->markEmailAsVerified();
@@ -120,11 +144,11 @@ class AuthController extends Controller
         event(new Verified($user));
         $this->securityLogger->info('auth.email_verified', ['user_id' => $user->id]);
 
-        return $this->openSession($user->fresh(), $request, 'Adresse email confirmee. Bienvenue !');
+        return $this->openSession($user->fresh(), $request, 'Adresse e-mail confirmee. Bienvenue !');
     }
 
     /**
-     * Renvoie un code. Reponse identique dans tous les cas.
+     * Renvoie un lien. Reponse identique dans tous les cas.
      */
     public function resendVerification(EmailOnlyRequest $request): JsonResponse
     {
@@ -135,7 +159,7 @@ class AuthController extends Controller
         }
 
         return response()->json([
-            'message' => 'Si un compte en attente de confirmation existe pour cette adresse, un nouveau code vient d\'y etre envoye.',
+            'message' => 'Si un compte en attente de confirmation existe pour cette adresse, un nouveau lien vient d\'y etre envoye.',
             'expires_in_minutes' => EmailVerificationCode::DUREE_MINUTES,
         ]);
     }
@@ -170,7 +194,7 @@ class AuthController extends Controller
             $this->safely(fn () => $user->sendEmailVerificationNotification());
 
             return response()->json([
-                'message' => 'Confirmez votre adresse email : un nouveau code vient de vous etre envoye.',
+                'message' => 'Confirmez votre adresse e-mail : un nouveau lien de confirmation vient de vous etre envoye.',
                 'reason' => 'email_not_verified',
                 'email' => $user->email,
             ], 403);

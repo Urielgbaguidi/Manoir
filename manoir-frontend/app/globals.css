@@ -427,127 +427,157 @@ body.overlay-open .grain-layer::after {
 }
 
 /* Texte de surface : crème -> encre */
-:root[data-theme="light"] .text-cream {
+:root[data-theme="light"] .text-cream,
+.modal-light .text-cream {
   color: #2c2416;
 }
-:root[data-theme="light"] .text-cream\/90 {
+:root[data-theme="light"] .text-cream\/90,
+.modal-light .text-cream\/90 {
   color: rgb(44 36 22 / 0.92);
 }
-:root[data-theme="light"] .text-cream\/85 {
+:root[data-theme="light"] .text-cream\/85,
+.modal-light .text-cream\/85 {
   color: rgb(44 36 22 / 0.9);
 }
-:root[data-theme="light"] .text-cream\/80 {
+:root[data-theme="light"] .text-cream\/80,
+.modal-light .text-cream\/80 {
   color: rgb(44 36 22 / 0.86);
 }
-:root[data-theme="light"] .text-cream\/75 {
+:root[data-theme="light"] .text-cream\/75,
+.modal-light .text-cream\/75 {
   color: rgb(44 36 22 / 0.82);
 }
-:root[data-theme="light"] .text-cream\/70 {
+:root[data-theme="light"] .text-cream\/70,
+.modal-light .text-cream\/70 {
   color: rgb(44 36 22 / 0.78);
 }
-:root[data-theme="light"] .text-cream\/65 {
+:root[data-theme="light"] .text-cream\/65,
+.modal-light .text-cream\/65 {
   color: rgb(44 36 22 / 0.72);
 }
-:root[data-theme="light"] .text-cream\/60 {
+:root[data-theme="light"] .text-cream\/60,
+.modal-light .text-cream\/60 {
   color: rgb(44 36 22 / 0.68);
 }
-:root[data-theme="light"] .text-cream\/55 {
+:root[data-theme="light"] .text-cream\/55,
+.modal-light .text-cream\/55 {
   color: rgb(44 36 22 / 0.62);
 }
-:root[data-theme="light"] .text-cream\/50 {
+:root[data-theme="light"] .text-cream\/50,
+.modal-light .text-cream\/50 {
   color: rgb(44 36 22 / 0.56);
 }
-:root[data-theme="light"] .text-cream\/45 {
+:root[data-theme="light"] .text-cream\/45,
+.modal-light .text-cream\/45 {
   color: rgb(44 36 22 / 0.5);
 }
-:root[data-theme="light"] .text-cream\/40 {
+:root[data-theme="light"] .text-cream\/40,
+.modal-light .text-cream\/40 {
   color: rgb(44 36 22 / 0.46);
 }
-
 /* Accents dorés -> tons profonds (contraste sur clair) */
 :root[data-theme="light"] .text-gold,
-:root[data-theme="light"] .text-gold-light {
+:root[data-theme="light"] .text-gold-light,
+.modal-light .text-gold,
+.modal-light .text-gold-light {
   color: #9a6a2b;
 }
-:root[data-theme="light"] .text-gold\/80 {
+:root[data-theme="light"] .text-gold\/80,
+.modal-light .text-gold\/80 {
   color: rgb(139 90 43 / 0.92);
 }
-:root[data-theme="light"] .text-gold\/70 {
+:root[data-theme="light"] .text-gold\/70,
+.modal-light .text-gold\/70 {
   color: rgb(139 90 43 / 0.85);
 }
-:root[data-theme="light"] .text-gold\/60 {
+:root[data-theme="light"] .text-gold\/60,
+.modal-light .text-gold\/60 {
   color: rgb(139 90 43 / 0.78);
 }
-:root[data-theme="light"] .eyebrow {
+:root[data-theme="light"] .eyebrow,
+.modal-light .eyebrow {
   color: #9a6a2b;
 }
-:root[data-theme="light"] .text-olive-light {
+:root[data-theme="light"] .text-olive-light,
+.modal-light .text-olive-light {
   color: #566523;
 }
-:root[data-theme="light"] .text-terracotta-light {
+:root[data-theme="light"] .text-terracotta-light,
+.modal-light .text-terracotta-light {
   color: #8b5a2b;
 }
-
 /* Les regles ci-dessus repeignent les accents pour le fond clair, mais elles
    s'appliquent aussi au survol : un libelle terracotta sur un fond terracotta
    plein devenait invisible. hover:text-white doit rester blanc, en clair comme
    en sombre. */
-:root[data-theme="light"] .hover\:text-white:hover {
+:root[data-theme="light"] .hover\:text-white:hover,
+.modal-light .hover\:text-white:hover {
   color: #ffffff;
 }
-:root[data-theme="light"] .text-gradient-gold {
+:root[data-theme="light"] .text-gradient-gold,
+.modal-light .text-gradient-gold {
   background: linear-gradient(120deg, #b4712a, #8b5a2b 45%, #6b7b3e);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
-
 /* Bordures dorées -> bark */
-:root[data-theme="light"] .border-gold\/10 {
+:root[data-theme="light"] .border-gold\/10,
+.modal-light .border-gold\/10 {
   border-color: rgb(61 40 23 / 0.1);
 }
-:root[data-theme="light"] .border-gold\/15 {
+:root[data-theme="light"] .border-gold\/15,
+.modal-light .border-gold\/15 {
   border-color: rgb(61 40 23 / 0.15);
 }
-:root[data-theme="light"] .border-gold\/20 {
+:root[data-theme="light"] .border-gold\/20,
+.modal-light .border-gold\/20 {
   border-color: rgb(61 40 23 / 0.18);
 }
-:root[data-theme="light"] .border-gold\/25 {
+:root[data-theme="light"] .border-gold\/25,
+.modal-light .border-gold\/25 {
   border-color: rgb(61 40 23 / 0.2);
 }
-:root[data-theme="light"] .border-gold\/30 {
+:root[data-theme="light"] .border-gold\/30,
+.modal-light .border-gold\/30 {
   border-color: rgb(61 40 23 / 0.24);
 }
-:root[data-theme="light"] .hairline {
+:root[data-theme="light"] .hairline,
+.modal-light .hairline {
   background: linear-gradient(90deg, transparent, rgb(61 40 23 / 0.25), transparent);
 }
-
 /* Tuiles translucides (bg-white/x illisibles sur crème) */
-:root[data-theme="light"] .bg-white\/5 {
+:root[data-theme="light"] .bg-white\/5,
+.modal-light .bg-white\/5 {
   background-color: rgb(61 40 23 / 0.045);
 }
-:root[data-theme="light"] .bg-white\/10 {
+:root[data-theme="light"] .bg-white\/10,
+.modal-light .bg-white\/10 {
   background-color: rgb(61 40 23 / 0.08);
 }
-
 /* Verre : versions claires */
 :root[data-theme="light"] .glass,
 :root[data-theme="light"] .glass-warm,
-:root[data-theme="light"] .glass-dark {
+:root[data-theme="light"] .glass-dark,
+.modal-light .glass,
+.modal-light .glass-warm,
+.modal-light .glass-dark {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(245, 240, 230, 0.55));
   border: 1px solid rgba(61, 40, 23, 0.1);
   box-shadow:
     0 18px 50px -22px rgba(61, 40, 23, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
-:root[data-theme="light"] .glass-hover:hover {
+:root[data-theme="light"] .glass-hover:hover,
+.modal-light .glass-hover:hover {
   border-color: rgba(139, 90, 43, 0.35);
   box-shadow:
     0 28px 70px -20px rgba(61, 40, 23, 0.4),
     0 0 50px -20px rgba(139, 90, 43, 0.25),
     inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
-:root[data-theme="light"] .glass-edge::before {
+:root[data-theme="light"] .glass-edge::before,
+.modal-light .glass-edge::before {
   background: linear-gradient(
     140deg,
     rgba(255, 255, 255, 0.9),
@@ -556,23 +586,28 @@ body.overlay-open .grain-layer::after {
     rgba(139, 90, 43, 0.18)
   );
 }
-:root[data-theme="light"] .glass-input {
+:root[data-theme="light"] .glass-input,
+.modal-light .glass-input {
   background: rgba(61, 40, 23, 0.04);
   border-color: rgba(61, 40, 23, 0.16);
   color: #2c2416;
 }
-:root[data-theme="light"] .glass-input::placeholder {
+:root[data-theme="light"] .glass-input::placeholder,
+.modal-light .glass-input::placeholder {
   color: rgba(44, 36, 22, 0.45);
 }
-:root[data-theme="light"] .glass-input:focus {
+:root[data-theme="light"] .glass-input:focus,
+.modal-light .glass-input:focus {
   background: rgba(255, 255, 255, 0.65);
   border-color: rgba(139, 90, 43, 0.5);
   box-shadow: 0 0 0 4px rgba(139, 90, 43, 0.12);
 }
-:root[data-theme="light"] .glass-input::-webkit-calendar-picker-indicator {
+:root[data-theme="light"] .glass-input::-webkit-calendar-picker-indicator,
+.modal-light .glass-input::-webkit-calendar-picker-indicator {
   filter: none;
 }
-:root[data-theme="light"] .sheen::before {
+:root[data-theme="light"] .sheen::before,
+.modal-light .sheen::before {
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
 }
 
@@ -719,6 +754,12 @@ body.overlay-open .grain-layer::after {
 :root[data-theme="light"] .dt-grid thead th {
   background-color: rgb(61 40 23 / 0.03);
 }
+/* Fenêtres modales (components/ui/Modal) : blanc chaud, voile roux en haut */
+.modal-surface {
+  background:
+    radial-gradient(120% 70% at 0% 0%, rgb(201 120 70 / 0.1), transparent 60%),
+    linear-gradient(180deg, #fffaf5 0%, #ffffff 55%);
+}
 /* Piste d'un interrupteur éteint (components/ui/Switch) */
 .switch-track {
   background-color: rgb(255 255 255 / 0.18);
@@ -830,4 +871,104 @@ body.overlay-open .grain-layer::after {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+/* ==========================================================================
+   Couleurs de statut et d'action (DataTable) — palette Bootstrap
+   ========================================================================== */
+.status-success {
+  background-color: #198754;
+  color: #ffffff;
+}
+.status-warning {
+  background-color: #ffc107;
+  color: #212529;
+}
+.status-danger {
+  background-color: #dc3545;
+  color: #ffffff;
+}
+.status-info {
+  background-color: #0d6efd;
+  color: #ffffff;
+}
+.status-neutral {
+  background-color: #6c757d;
+  color: #ffffff;
+}
+
+.action-primary {
+  color: #6ea8fe;
+  background-color: rgb(13 110 253 / 0.14);
+  border-color: rgb(13 110 253 / 0.4);
+}
+.action-warning {
+  color: #ffda6a;
+  background-color: rgb(255 193 7 / 0.14);
+  border-color: rgb(255 193 7 / 0.45);
+}
+.action-success {
+  color: #75b798;
+  background-color: rgb(25 135 84 / 0.16);
+  border-color: rgb(25 135 84 / 0.45);
+}
+.action-danger {
+  color: #ea868f;
+  background-color: rgb(220 53 69 / 0.14);
+  border-color: rgb(220 53 69 / 0.45);
+}
+.action-secondary {
+  color: #adb5bd;
+  background-color: rgb(108 117 125 / 0.16);
+  border-color: rgb(108 117 125 / 0.45);
+}
+:root[data-theme="light"] .action-primary {
+  color: #0a58ca;
+  background-color: rgb(13 110 253 / 0.08);
+}
+:root[data-theme="light"] .action-warning {
+  color: #997404;
+  background-color: rgb(255 193 7 / 0.16);
+}
+:root[data-theme="light"] .action-success {
+  color: #146c43;
+  background-color: rgb(25 135 84 / 0.08);
+}
+:root[data-theme="light"] .action-danger {
+  color: #b02a37;
+  background-color: rgb(220 53 69 / 0.08);
+}
+:root[data-theme="light"] .action-secondary {
+  color: #565e64;
+  background-color: rgb(108 117 125 / 0.1);
+}
+.action-primary:hover,
+:root[data-theme="light"] .action-primary:hover {
+  color: #ffffff;
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+}
+.action-warning:hover,
+:root[data-theme="light"] .action-warning:hover {
+  color: #212529;
+  background-color: #ffc107;
+  border-color: #ffc107;
+}
+.action-success:hover,
+:root[data-theme="light"] .action-success:hover {
+  color: #ffffff;
+  background-color: #198754;
+  border-color: #198754;
+}
+.action-danger:hover,
+:root[data-theme="light"] .action-danger:hover {
+  color: #ffffff;
+  background-color: #dc3545;
+  border-color: #dc3545;
+}
+.action-secondary:hover,
+:root[data-theme="light"] .action-secondary:hover {
+  color: #ffffff;
+  background-color: #6c757d;
+  border-color: #6c757d;
 }

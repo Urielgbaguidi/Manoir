@@ -18,7 +18,7 @@ const failureLabels: Partial<Record<ReservationStatus, string>> = {
   EXPIREE: "Délai de paiement expiré",
   ANNULEE: "Réservation annulée",
   REMBOURSEE: "Remboursement effectué",
-  LIBEREE: "Appartement libéré"
+  LIBEREE: "Séjour terminé"
 };
 
 /**

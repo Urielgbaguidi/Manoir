@@ -1,10 +1,11 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { TriangleAlert } from "lucide-react";
+import Modal, { ModalActions, ModalButton } from "@/components/ui/Modal";
 import type { Reservation } from "@/lib/api";
 import {
   formatCurrency,
-  formatDay,
+  formatStayPeriod,
   parseDay,
   reservationRef,
   reservationTitle,
@@ -50,45 +51,36 @@ export default function CancelReservationModal({
   onClose,
   onConfirm
 }: {
-  reservation: Reservation;
+  /** Réservation à annuler ; `null` ferme la fenêtre. */
+  reservation: Reservation | null;
   cancelling: boolean;
   onClose: () => void;
   onConfirm: () => void;
 }) {
-  const preview = cancellationPreview(reservation);
+  const preview = reservation ? cancellationPreview(reservation) : null;
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={() => !cancelling && onClose()}
-        className="absolute inset-0 bg-black/80 backdrop-blur-md"
-      />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="glass-dark glass-edge relative w-full max-w-xl rounded-3xl p-8 text-cream"
-      >
-        <div className="space-y-6">
-          <div>
-            <h3 className="font-display text-2xl font-bold uppercase tracking-wide text-cream">
-              Annuler ma réservation
-            </h3>
-            <p className="mt-1 text-[10px] uppercase tracking-widest text-cream/50">
-              Réservation {reservationRef(reservation)}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-gold/15 bg-white/5 p-4 text-xs leading-relaxed text-cream/70">
+    <Modal
+      open={reservation !== null}
+      onClose={onClose}
+      busy={cancelling}
+      icon={TriangleAlert}
+      tone="danger"
+      title="Annuler ma réservation"
+      description={
+        reservation
+          ? `Voulez-vous vraiment annuler la réservation ${reservationRef(reservation)} ? Cette action est définitive.`
+          : undefined
+      }
+    >
+      {reservation && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-gold/15 bg-white/5 p-4 text-sm leading-relaxed text-cream/75">
             <p>
-              <strong>Appartement :</strong> {reservationTitle(reservation)}
+              <strong className="text-cream">Appartement :</strong> {reservationTitle(reservation)}
             </p>
             <p>
-              <strong>Dates :</strong> du {formatDay(reservation.check_in)} au{" "}
-              {formatDay(reservation.check_out)}
+              <strong className="text-cream">Dates :</strong> {formatStayPeriod(reservation)}
             </p>
           </div>
 
@@ -104,32 +96,22 @@ export default function CancelReservationModal({
               />
             </div>
           ) : (
-            <p className="rounded-2xl border border-olive/25 bg-olive/10 p-4 text-sm text-cream/75">
+            <p className="rounded-xl border border-olive/25 bg-olive/10 p-4 text-sm text-cream/75">
               Aucun paiement n&apos;a été effectué : l&apos;annulation est sans frais.
             </p>
           )}
 
-          <div className="flex gap-3 border-t border-gold/10 pt-4">
-            <button
-              type="button"
-              disabled={cancelling}
-              onClick={onClose}
-              className="flex-1 rounded-xl border border-gold/20 py-4 text-xs font-bold uppercase tracking-wider text-cream/70 transition hover:border-gold/40 hover:bg-white/5 hover:text-cream disabled:opacity-50"
-            >
+          <ModalActions>
+            <ModalButton variant="secondary" disabled={cancelling} onClick={onClose}>
               Retour
-            </button>
-            <button
-              type="button"
-              disabled={cancelling}
-              onClick={onConfirm}
-              className="flex-1 rounded-xl bg-terracotta py-4 text-xs font-black uppercase tracking-wider text-white transition hover:bg-terracotta/90 disabled:opacity-50"
-            >
-              {cancelling ? "Annulation..." : "Confirmer l'annulation"}
-            </button>
-          </div>
+            </ModalButton>
+            <ModalButton variant="danger" disabled={cancelling} onClick={onConfirm}>
+              {cancelling ? "Annulation…" : "Oui, annuler la réservation"}
+            </ModalButton>
+          </ModalActions>
         </div>
-      </motion.div>
-    </div>
+      )}
+    </Modal>
   );
 }
 
@@ -146,8 +128,8 @@ function Amount({
     <div
       className={
         highlight
-          ? "rounded-2xl border border-olive/25 bg-olive/10 p-4"
-          : "rounded-2xl border border-gold/10 bg-white/5 p-4"
+          ? "rounded-xl border border-olive/25 bg-olive/10 p-4"
+          : "rounded-xl border border-gold/10 bg-white/5 p-4"
       }
     >
       <p className="text-[9px] uppercase tracking-widest text-cream/45">{label}</p>

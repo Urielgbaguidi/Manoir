@@ -189,6 +189,41 @@ class Reservation extends Model
     }
 
     /**
+     * Cloture automatique des sejours payes dont la date de depart est
+     * arrivee : l'appartement redevient libre sans action de l'administration.
+     *
+     * Meme regle que le calcul d'occupation : un sejour occupe l'appartement
+     * du jour d'arrivee jusqu'a la veille du depart.
+     */
+    public static function completeFinishedStays(?int $userId = null): int
+    {
+        $query = self::query()
+            ->whereIn('status', ['SEJOUR_PAYE', 'CONFIRMEE'])
+            ->whereDate('check_out', '<=', now()->toDateString());
+
+        if ($userId) {
+            $query->where('user_id', $userId);
+        }
+
+        return $query->update([
+            'status' => 'LIBEREE',
+            'released_at' => now(),
+            'released_by_admin_id' => null,
+        ]);
+    }
+
+    /**
+     * Mise a jour des statuts dependant du temps (delais de paiement depasses,
+     * sejours termines). Appelee avant chaque lecture, en plus de la tache
+     * planifiee, pour que l'affichage soit juste meme sans planificateur.
+     */
+    public static function refreshTimeBasedStatuses(?int $userId = null): void
+    {
+        self::expireOverduePaymentRequests($userId);
+        self::completeFinishedStays($userId);
+    }
+
+    /**
      * Solde restant apres l'acompte.
      *
      * L'acompte se deduit du sejour : le client verse d'abord un pourcentage,

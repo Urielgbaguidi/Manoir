@@ -124,8 +124,6 @@ Route::middleware(['auth:api', 'csrf.api', 'email.verified'])->group(function ()
     // Actions sensibles : reauthentification recente obligatoire.
     Route::middleware('reauth')->group(function () {
         Route::put('/user/password', [AccountSecurityController::class, 'updatePassword']);
-        Route::post('/user/email', [AccountSecurityController::class, 'requestEmailChange'])->middleware('throttle:email-resend');
-        Route::post('/user/email/confirm', [AccountSecurityController::class, 'confirmEmailChange'])->middleware('throttle:two-factor');
         Route::post('/auth/sessions/revoke-others', [AccountSecurityController::class, 'revokeOtherSessions']);
         Route::post('/auth/two-factor/setup', [AccountSecurityController::class, 'beginTwoFactorSetup']);
         Route::delete('/auth/two-factor', [AccountSecurityController::class, 'disableTwoFactor']);
@@ -195,7 +193,6 @@ Route::middleware(['auth:api', 'csrf.api', 'email.verified', 'profile.complete',
     Route::post('/reservations/check-conflicts', [AdminReservationController::class, 'checkConflicts']);
     Route::post('/reservations/{id}/approve', [AdminReservationController::class, 'approve']);
     Route::post('/reservations/{id}/reject', [AdminReservationController::class, 'reject']);
-    Route::post('/reservations/{id}/release-room', [AdminReservationController::class, 'releaseRoom']);
     Route::post('/reservations/{id}/mark-refunded', [AdminReservationController::class, 'markRefunded']);
 
     // Demandes de prolongation.

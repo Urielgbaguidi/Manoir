@@ -63,7 +63,7 @@ class ReservationRequestFlowTest extends TestCase
         $reservation = Reservation::sole();
         $this->assertNull($reservation->payment_deadline);
         $this->assertSame(0, $reservation->payments()->count());
-        Mail::assertQueued(ManoirNotificationMail::class, fn ($mail) => $mail->hasTo('admin@manoir.test')
+        Mail::assertSent(ManoirNotificationMail::class, fn ($mail) => $mail->hasTo('admin@manoir.test')
             && $mail->details['Type de demande'] === 'Réservation');
     }
 
@@ -99,7 +99,7 @@ class ReservationRequestFlowTest extends TestCase
         $premiere->assertCreated();
         $rejouee->assertCreated()->assertJsonPath('reservation.id', $premiere->json('reservation.id'));
         $this->assertSame(1, Reservation::count());
-        Mail::assertQueuedCount(1);
+        Mail::assertSentCount(1);
     }
 
     public function test_la_meme_cle_avec_un_autre_contenu_est_refusee(): void
@@ -173,7 +173,7 @@ class ReservationRequestFlowTest extends TestCase
             ->assertJsonPath('reservation.status', 'VALIDEE_PAIEMENT_REQUIS');
 
         $this->assertNotNull($reservation->fresh()->payment_deadline);
-        Mail::assertQueued(ManoirNotificationMail::class, fn ($mail) => $mail->hasTo($this->client->email)
+        Mail::assertSent(ManoirNotificationMail::class, fn ($mail) => $mail->hasTo($this->client->email)
             && str_contains($mail->mailSubject, 'validée'));
     }
 
@@ -187,7 +187,7 @@ class ReservationRequestFlowTest extends TestCase
             ->assertOk();
 
         $this->assertSame('REFUSEE', $reservation->fresh()->status);
-        Mail::assertQueued(ManoirNotificationMail::class, fn ($mail) => $mail->hasTo($this->client->email));
+        Mail::assertSent(ManoirNotificationMail::class, fn ($mail) => $mail->hasTo($this->client->email));
     }
 
     public function test_un_client_ne_peut_pas_valider_une_demande(): void
@@ -196,7 +196,7 @@ class ReservationRequestFlowTest extends TestCase
 
         $this->actingAsJwt($this->client)
             ->postJson("/api/admin/reservations/{$reservation->id}/approve")
-            ->assertForbidden();
+            ->assertNotFound();
 
         $this->assertSame('EN_ATTENTE', $reservation->fresh()->status);
     }

@@ -25,6 +25,8 @@ final class PaymentChannel
         'free' => 'free',
         'bmo' => 'bmo',
         'coris' => 'coris',
+        'airtel' => 'airtel',
+        'vodafone' => 'vodafone',
         'card' => 'card',
         'carte' => 'card',
         'visa' => 'card',

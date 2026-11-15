@@ -5,7 +5,10 @@ namespace App\Http\Requests\Auth;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
-class VerifyEmailCodeRequest extends FormRequest
+/**
+ * Confirmation d'adresse : e-mail + jeton du lien recu par mail.
+ */
+class VerifyEmailRequest extends FormRequest
 {
     use NormalizesInput;
 
@@ -18,8 +21,8 @@ class VerifyEmailCodeRequest extends FormRequest
     {
         $this->normalizeEmail();
 
-        if (is_string($this->input('code'))) {
-            $this->merge(['code' => preg_replace('/\s+/', '', $this->input('code'))]);
+        if (is_string($this->input('token'))) {
+            $this->merge(['token' => strtolower(trim($this->input('token')))]);
         }
     }
 
@@ -30,7 +33,7 @@ class VerifyEmailCodeRequest extends FormRequest
     {
         return [
             'email' => ['required', 'string', 'email', 'max:255'],
-            'code' => ['required', 'string', 'regex:/^\d{6}$/'],
+            'token' => ['required', 'string', 'regex:/^[a-f0-9]{64}$/'],
         ];
     }
 
@@ -39,6 +42,6 @@ class VerifyEmailCodeRequest extends FormRequest
      */
     public function messages(): array
     {
-        return ['code.regex' => 'Le code doit contenir exactement 6 chiffres.'];
+        return ['token.regex' => 'Ce lien de confirmation est incomplet. Ouvrez-le directement depuis le mail.'];
     }
 }

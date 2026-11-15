@@ -45,7 +45,7 @@ export default function VoucherButton({
         aria-label={label}
         title={label}
         className={cn(
-          "inline-flex size-9 items-center justify-center rounded-lg border border-gold/15 text-cream/60 transition hover:border-gold/40 hover:text-gold-light disabled:cursor-wait disabled:opacity-60",
+          "action-success inline-flex size-9 items-center justify-center rounded-lg border transition disabled:cursor-wait disabled:opacity-60",
           className
         )}
       >

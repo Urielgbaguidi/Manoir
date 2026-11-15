@@ -18,11 +18,12 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import NotificationBell from "@/components/ui/NotificationBell";
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import { useAuth } from "@/context/AuthContext";
+import NotFoundView from "@/components/ui/NotFoundView";
 import { isAdminUser } from "@/lib/roles";
 import { initialsOf } from "@/lib/site";
 import { cn } from "@/lib/utils";
@@ -61,7 +62,6 @@ const menu: { title: string; items: NavItem[] }[] = [
  */
 export default function AdminShell({ children }: { children: ReactNode }) {
   const { user, loading, loggingOut } = useAuth();
-  const router = useRouter();
   const pathname = usePathname() || "/admin";
   const [expanded, setExpanded] = useState(true);
   const [hovered, setHovered] = useState(false);
@@ -70,11 +70,6 @@ export default function AdminShell({ children }: { children: ReactNode }) {
   const showLabels = expanded || hovered || mobileOpen;
   const isAdmin = isAdminUser(user);
 
-  useEffect(() => {
-    if (loading || loggingOut) return;
-    if (!user) router.replace(`/auth/login?redirect=${encodeURIComponent(pathname)}`);
-    else if (!isAdmin) router.replace("/espace-client");
-  }, [loading, loggingOut, user, isAdmin, router, pathname]);
 
   useEffect(() => setMobileOpen(false), [pathname]);
 
@@ -83,13 +78,17 @@ export default function AdminShell({ children }: { children: ReactNode }) {
     else setMobileOpen((value) => !value);
   };
 
-  if (loading || !isAdmin) {
+  if (loading || loggingOut) {
     return (
       <div className="grid min-h-screen place-items-center">
         <span className="size-10 animate-spin rounded-full border-[3px] border-gold border-t-transparent" />
       </div>
     );
   }
+
+  // Visiteur ou client : l'administration « n'existe pas » (404), sans
+  // redirection qui trahirait sa présence.
+  if (!isAdmin) return <NotFoundView fullScreen />;
 
   return (
     <div className="min-h-screen text-cream lg:flex">
@@ -217,7 +216,8 @@ export default function AdminShell({ children }: { children: ReactNode }) {
         )}
       >
         <AdminHeader mobileOpen={mobileOpen} onToggle={toggleSidebar} />
-        <main className="mx-auto w-full min-w-0 max-w-screen-2xl overflow-x-clip p-4 md:p-6">
+        {/* Pleine largeur : seules les marges intérieures séparent le contenu des bords. */}
+        <main className="w-full min-w-0 flex-1 overflow-x-clip px-4 py-4 sm:px-6 sm:py-6 xl:px-8">
           {children}
         </main>
       </div>
@@ -228,7 +228,7 @@ export default function AdminShell({ children }: { children: ReactNode }) {
 function AdminHeader({ mobileOpen, onToggle }: { mobileOpen: boolean; onToggle: () => void }) {
   return (
     <header className="admin-header sticky top-0 z-[90] flex w-full border-b border-gold/15">
-      <div className="flex w-full items-center justify-between gap-3 px-3 py-3 sm:px-4 lg:px-6 lg:py-4">
+      <div className="flex w-full items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:py-4 xl:px-8">
         <button
           type="button"
           onClick={onToggle}

@@ -25,7 +25,8 @@ export default function AuthShell({
   children,
   footer,
   image = "/assets/hero_detail.jpg",
-  headline = "Votre séjour commence ici."
+  headline = "Votre séjour commence ici.",
+  bare = false
 }: {
   title: string;
   subtitle: string;
@@ -34,6 +35,8 @@ export default function AuthShell({
   image?: string;
   /** Grande accroche posée sur la photo. */
   headline?: string;
+  /** Sans en-tête (logo, retour au site) ni pied de page : écran focalisé. */
+  bare?: boolean;
 }) {
   const year = new Date().getFullYear();
 
@@ -108,31 +111,33 @@ export default function AuthShell({
 
       {/* Colonne formulaire, à droite */}
       <section className="relative flex min-h-[100svh] flex-col px-5 py-6 sm:px-10 lg:px-14 xl:px-20">
-        <header className="flex items-center justify-between gap-4">
-          <Link href="/" className="flex items-center gap-3" aria-label="Retour à l'accueil">
-            <span className="grid size-10 place-items-center overflow-hidden rounded-full border border-gold/30 bg-cream">
-              <Image
-                src="/assets/logo.jpg"
-                alt=""
-                width={40}
-                height={40}
-                className="size-full object-cover"
-              />
-            </span>
-            <span className="font-display text-sm font-semibold uppercase tracking-[0.3em]">
-              Le Manoir
-            </span>
-          </Link>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/"
-              className="hidden items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold text-cream/60 transition hover:text-gold-light sm:inline-flex"
-            >
-              <ArrowLeft size={14} /> Retour au site
+        {!bare && (
+          <header className="flex items-center justify-between gap-4">
+            <Link href="/" className="flex items-center gap-3" aria-label="Retour à l'accueil">
+              <span className="grid size-10 place-items-center overflow-hidden rounded-full border border-gold/30 bg-cream">
+                <Image
+                  src="/assets/logo.jpg"
+                  alt=""
+                  width={40}
+                  height={40}
+                  className="size-full object-cover"
+                />
+              </span>
+              <span className="font-display text-sm font-semibold uppercase tracking-[0.3em]">
+                Le Manoir
+              </span>
             </Link>
-            <ThemeToggle />
-          </div>
-        </header>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/"
+                className="hidden items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold text-cream/60 transition hover:text-gold-light sm:inline-flex"
+              >
+                <ArrowLeft size={14} /> Retour au site
+              </Link>
+              <ThemeToggle />
+            </div>
+          </header>
+        )}
 
         <motion.div
           initial={{ opacity: 0, y: 18 }}
@@ -154,12 +159,14 @@ export default function AuthShell({
           {footer && <div className="mt-8 text-center text-sm text-cream/60">{footer}</div>}
         </motion.div>
 
-        <footer className="flex flex-wrap items-center justify-between gap-2 text-xs text-cream/45">
-          <span>© {year} Le Manoir · Cotonou</span>
-          <a href={contactMailto("Aide connexion, Le Manoir")} className="hover:text-gold-light">
-            Besoin d'aide ?
-          </a>
-        </footer>
+        {!bare && (
+          <footer className="flex flex-wrap items-center justify-between gap-2 text-xs text-cream/45">
+            <span>© {year} Le Manoir · Cotonou</span>
+            <a href={contactMailto("Aide connexion, Le Manoir")} className="hover:text-gold-light">
+              Besoin d'aide ?
+            </a>
+          </footer>
+        )}
       </section>
     </main>
   );

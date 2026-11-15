@@ -2,10 +2,10 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { AnimatePresence, motion } from "framer-motion";
 import {
   BedDouble,
   CalendarPlus,
+  CheckCircle2,
   Check,
   Download,
   Eye,
@@ -13,8 +13,10 @@ import {
   Phone,
   RefreshCcw,
   X,
+  XCircle,
   type LucideIcon
 } from "lucide-react";
+import Modal, { ModalActions, ModalButton } from "@/components/ui/Modal";
 import { useToast } from "@/context/ToastContext";
 import {
   api,
@@ -25,6 +27,13 @@ import {
   type StayExtension,
   type User
 } from "@/lib/api";
+import {
+  extensionStatusColor,
+  formatDateTime,
+  reservationRef,
+  reservationRefDay,
+  reservationStatusColor
+} from "@/lib/reservationDisplay";
 import { cn } from "@/lib/utils";
 import { AdminPageHeader } from "@/components/dashboard/admin/AdminShell";
 import DataTable, {
@@ -52,7 +61,7 @@ const reservationStatusLabels: Record<string, string> = {
   EXPIREE: "Expirée",
   ANNULEE: "Annulée",
   REMBOURSEE: "Remboursée",
-  LIBEREE: "Appartement libéré"
+  LIBEREE: "Séjour terminé"
 };
 
 const extensionStatusLabels: Record<string, string> = {
@@ -77,7 +86,7 @@ const statusOptions: Record<RequestType, { key: string; label: string; statuses:
     { key: "EXPIREE", label: "Expirée", statuses: ["EXPIREE"] },
     { key: "ANNULEE", label: "Annulée", statuses: ["ANNULEE"] },
     { key: "REMBOURSEE", label: "Remboursée", statuses: ["REMBOURSEE"] },
-    { key: "LIBEREE", label: "Appartement libéré", statuses: ["LIBEREE"] }
+    { key: "LIBEREE", label: "Séjour terminé", statuses: ["LIBEREE"] }
   ],
   extension: [
     { key: "EN_ATTENTE", label: "En attente", statuses: ["EN_ATTENTE"] },
@@ -94,8 +103,8 @@ const statusOptions: Record<RequestType, { key: string; label: string; statuses:
 
 /** Cles de tri acceptees par l'API, par type de demande. */
 const sortKeys: Record<RequestType, string[]> = {
-  reservation: ["id", "created_at", "check_in", "check_out", "status", "amount"],
-  extension: ["id", "created_at", "requested_check_out", "status", "amount"]
+  reservation: ["created_at", "check_in", "check_out", "status", "amount"],
+  extension: ["created_at", "requested_check_out", "status", "amount"]
 };
 
 const categoryLabels: Record<string, string> = {
@@ -109,14 +118,8 @@ const DEFAULT_DIRECTION: SortDirection = "desc";
 const DEFAULT_PER_PAGE = 10;
 
 const statusTones: Record<string, BadgeTone> = {
-  EN_ATTENTE: "warning",
-  VALIDEE_PAIEMENT_REQUIS: "info",
-  CONFIRMEE: "success",
-  SEJOUR_PAYE: "success",
-  PAYEE: "success",
-  REFUSEE: "error",
-  ANNULEE: "error",
-  LIBEREE: "info"
+  ...extensionStatusColor,
+  ...reservationStatusColor
 };
 
 function StatusBadge({ status, labels }: { status: string; labels: Record<string, string> }) {
@@ -137,14 +140,8 @@ const parseDate = (value?: string | null) => {
 
 const formatDate = (value?: string | null) => parseDate(value)?.toLocaleDateString("fr-FR") || "—";
 
-const formatDateTime = (value?: string | null) =>
-  parseDate(value)?.toLocaleString("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  }) || "—";
+/** Date et heure du back-office : « 13/11/2026 à 16:18 », « — » si absente. */
+const formatStamp = (value?: string | null) => formatDateTime(value, "—");
 
 const formatAmount = (value?: number | null) => `${(value ?? 0).toLocaleString("fr-FR")} FCFA`;
 
@@ -175,6 +172,10 @@ const apartmentLabel = (room?: Room, categoryType?: string) => {
 
 const extensionClient = (extension: StayExtension) => extension.reservation?.user ?? extension.user;
 
+/** Référence (MN + jjmmaa) de la réservation prolongée. */
+const extensionRef = (extension: StayExtension) =>
+  extension.reservation ? reservationRef(extension.reservation) : "—";
+
 const emptyPage = <T,>(): Paginated<T> => ({
   data: [],
   current_page: 1,
@@ -201,7 +202,6 @@ type RowCommand = {
   label: string;
   icon: LucideIcon;
   tone: "success" | "danger";
-  disabled?: boolean;
   run: () => void;
 };
 
@@ -266,6 +266,7 @@ function AdminRequests() {
   /* ---- Actions ---- */
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [details, setDetails] = useState<DetailsTarget | null>(null);
+  const [refundTarget, setRefundTarget] = useState<Reservation | null>(null);
   const [adminNotes, setAdminNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -286,14 +287,18 @@ function AdminRequests() {
 
   const loadRequests = useCallback(async () => {
     const statuses = statusOptions[type].find((option) => option.key === statusKey)?.statuses;
+    // Référence « MN121126 » : l'API filtre alors sur le jour de la demande.
+    const refDay = type === "reservation" ? reservationRefDay(search) : null;
+    const from = refDay ?? (dateFrom || undefined);
+    const to = refDay ?? (dateTo || undefined);
     const query: AdminTableQuery = {
       page,
       per_page: perPage,
-      search: search || undefined,
+      search: refDay ? undefined : search || undefined,
       status: statuses,
-      date_from: dateFrom || undefined,
-      date_to: dateTo || undefined,
-      date_field: dateFrom || dateTo ? dateField : undefined,
+      date_from: from,
+      date_to: to,
+      date_field: refDay ? "created" : from || to ? dateField : undefined,
       sort,
       direction
     };
@@ -436,12 +441,13 @@ function AdminRequests() {
     }
   };
 
-  const markRefunded = async (reservation: Reservation) => {
-    if (!confirm(`Confirmer le remboursement de la réservation #${reservation.id} ?`)) return;
+  const markRefunded = async () => {
+    if (!refundTarget) return;
     setSubmitting(true);
     try {
-      const response = await api.markReservationRefunded(reservation.id);
+      const response = await api.markReservationRefunded(refundTarget.id);
       showToast(response.message || "Remboursement marqué comme effectué.", "success");
+      setRefundTarget(null);
       setDetails(null);
       loadRequests();
     } catch (err) {
@@ -520,8 +526,7 @@ function AdminRequests() {
             label: "Marquer comme remboursée",
             icon: RefreshCcw,
             tone: "success" as const,
-            disabled: submitting,
-            run: () => markRefunded(reservation)
+            run: () => setRefundTarget(reservation)
           }
         ]
       : [])
@@ -559,7 +564,6 @@ function AdminRequests() {
           label={command.label}
           icon={command.icon}
           tone={command.tone}
-          disabled={command.disabled}
           onClick={command.run}
         />
       ))}
@@ -568,11 +572,10 @@ function AdminRequests() {
 
   const reservationColumns: DataTableColumn<Reservation>[] = [
     {
-      key: "id",
-      header: "N°",
-      sortKey: "id",
+      key: "ref",
+      header: "Réf.",
       className: "font-semibold text-cream",
-      render: (r) => `#${r.id}`
+      render: (r) => reservationRef(r)
     },
     { key: "client", header: "Client", render: (r) => clientCell(r.user) },
     {
@@ -627,7 +630,7 @@ function AdminRequests() {
           <StatusBadge status={r.status} labels={reservationStatusLabels} />
           {r.status === "VALIDEE_PAIEMENT_REQUIS" && r.payment_deadline && (
             <span className="mt-1 block whitespace-nowrap text-xs text-cream/45">
-              Avant le {formatDateTime(r.payment_deadline)}
+              Avant le {formatStamp(r.payment_deadline)}
             </span>
           )}
         </>
@@ -638,7 +641,7 @@ function AdminRequests() {
       header: "Demandée le",
       sortKey: "created_at",
       className: "whitespace-nowrap text-cream/65",
-      render: (r) => formatDateTime(r.created_at)
+      render: (r) => formatStamp(r.created_at)
     },
     {
       key: "actions",
@@ -651,17 +654,10 @@ function AdminRequests() {
 
   const extensionColumns: DataTableColumn<StayExtension>[] = [
     {
-      key: "id",
-      header: "N°",
-      sortKey: "id",
-      className: "font-semibold text-cream",
-      render: (e) => `#${e.id}`
-    },
-    {
       key: "reservation",
       header: "Réservation",
-      className: "whitespace-nowrap",
-      render: (e) => `#${e.reservation_id}`
+      className: "font-semibold text-cream",
+      render: (e) => extensionRef(e)
     },
     { key: "client", header: "Client", render: (e) => clientCell(extensionClient(e)) },
     {
@@ -700,14 +696,14 @@ function AdminRequests() {
       key: "payment_deadline",
       header: "Échéance paiement",
       className: "whitespace-nowrap text-cream/65",
-      render: (e) => (e.payment_deadline ? formatDateTime(e.payment_deadline) : "—")
+      render: (e) => formatStamp(e.payment_deadline)
     },
     {
       key: "created_at",
       header: "Demandée le",
       sortKey: "created_at",
       className: "whitespace-nowrap text-cream/65",
-      render: (e) => formatDateTime(e.created_at)
+      render: (e) => formatStamp(e.created_at)
     },
     {
       key: "actions",
@@ -736,7 +732,10 @@ function AdminRequests() {
       setFocusId(null);
       setPage(1);
     },
-    searchPlaceholder: "N° (#123), client, e-mail, téléphone, appartement…",
+    searchPlaceholder:
+      type === "reservation"
+        ? "Réf. (MN121126), client, e-mail, téléphone, appartement…"
+        : "Client, e-mail, téléphone, appartement…",
     sort,
     direction,
     onSortChange: (nextSort: string, nextDirection: SortDirection) => {
@@ -909,7 +908,8 @@ function AdminRequests() {
       {/* Fiche detaillee */}
       <Modal
         open={!!details}
-        onClose={() => !submitting && !pending && setDetails(null)}
+        onClose={() => !pending && !refundTarget && setDetails(null)}
+        busy={submitting}
         maxWidth="max-w-2xl"
       >
         {details?.kind === "reservation" && (
@@ -927,26 +927,34 @@ function AdminRequests() {
       </Modal>
 
       {/* Validation / refus */}
-      <Modal open={!!pending} onClose={() => !submitting && setPending(null)} zIndex="z-[120]">
+      <Modal
+        open={!!pending}
+        onClose={() => setPending(null)}
+        busy={submitting}
+        zIndex="z-[120]"
+        icon={pending?.action === "approve" ? CheckCircle2 : XCircle}
+        tone={pending?.action === "approve" ? "success" : "danger"}
+        title={
+          pending
+            ? pending.action === "approve"
+              ? pending.kind === "reservation"
+                ? "Valider la demande"
+                : "Valider la prolongation"
+              : pending.kind === "reservation"
+                ? "Refuser la demande"
+                : "Refuser la prolongation"
+            : undefined
+        }
+        description={
+          pending
+            ? pending.kind === "reservation"
+              ? `Réservation ${reservationRef(pending.item)} · ${pending.item.user?.name || "Client"}`
+              : `Prolongation de la réservation ${extensionRef(pending.item)} · ${extensionClient(pending.item)?.name || "Client"}`
+            : undefined
+        }
+      >
         {pending && (
-          <div className="space-y-6">
-            <div>
-              <h3 className="font-display text-2xl font-bold uppercase tracking-wide text-cream">
-                {pending.action === "approve"
-                  ? pending.kind === "reservation"
-                    ? "Valider la demande"
-                    : "Valider la prolongation"
-                  : pending.kind === "reservation"
-                    ? "Refuser la demande"
-                    : "Refuser la prolongation"}
-              </h3>
-              <p className="mt-1 text-[10px] uppercase tracking-widest text-cream/50">
-                {pending.kind === "reservation"
-                  ? `Réservation #${pending.item.id} · ${pending.item.user?.name || "Client"}`
-                  : `Prolongation #${pending.item.id} · ${extensionClient(pending.item)?.name || "Client"}`}
-              </p>
-            </div>
-
+          <div className="space-y-5">
             <div className="space-y-2 rounded-2xl border border-gold/10 bg-white/5 p-4 text-xs text-cream/70">
               {pending.kind === "reservation" ? (
                 <>
@@ -996,41 +1004,94 @@ function AdminRequests() {
               <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-gold/80">
                 {pending.action === "approve" ? "Note facultative" : "Motif du refus (obligatoire)"}
               </span>
+              {/* Champ aux couleurs de la fenêtre (focus roux) ; les data-* coupent les
+                  pastilles bleues des correcteurs du navigateur (LanguageTool, Grammarly). */}
               <textarea
                 rows={4}
                 value={adminNotes}
-                onChange={(event) => setAdminNotes(event.target.value)}
+                onChange={(event) => {
+                  setAdminNotes(event.target.value);
+                  if (actionError) setActionError("");
+                }}
                 maxLength={1000}
-                className="glass-input w-full resize-none rounded-xl p-4 text-sm outline-none"
+                autoFocus={pending.action === "reject"}
+                aria-required={pending.action === "reject"}
+                aria-invalid={!!actionError}
+                placeholder={
+                  pending.action === "approve"
+                    ? "Ajoutez une précision si besoin…"
+                    : "Ex. : appartement indisponible à ces dates"
+                }
+                data-gramm="false"
+                data-gramm_editor="false"
+                data-enable-grammarly="false"
+                data-lt-active="false"
+                className="block w-full resize-none rounded-xl border border-[#E3D3C4] bg-white px-4 py-3 text-sm leading-6 text-[#2C2416] caret-[#8B5A2B] outline-none transition placeholder:text-[#9A8B7E] focus:border-[#8B5A2B]/60 focus:ring-4 focus:ring-[#8B5A2B]/15"
               />
             </label>
 
-            {actionError && <p className="text-xs font-semibold text-red-400">{actionError}</p>}
+            {actionError && <p className="text-xs font-semibold text-[#B5432A]">{actionError}</p>}
 
-            <div className="flex gap-3 border-t border-gold/10 pt-4">
-              <button
-                type="button"
+            <ModalActions className="mt-0">
+              <ModalButton
+                variant="secondary"
                 disabled={submitting}
                 onClick={() => setPending(null)}
-                className="flex-1 rounded-xl border border-gold/15 py-4 text-xs font-bold uppercase tracking-wider text-cream/70 transition hover:bg-white/5 disabled:opacity-50"
               >
                 Annuler
-              </button>
-              <button
-                type="button"
+              </ModalButton>
+              <ModalButton
+                variant={pending.action === "approve" ? "success" : "danger"}
                 disabled={submitting}
                 onClick={submitAction}
-                className={cn(
-                  "flex-1 rounded-xl py-4 text-xs font-black uppercase tracking-[0.2em] transition disabled:opacity-50",
-                  pending.action === "approve"
-                    ? "bg-gradient-to-br from-gold-light to-gold text-night hover:brightness-105"
-                    : "bg-terracotta text-cream hover:brightness-110"
-                )}
               >
-                {submitting ? "Envoi…" : pending.action === "approve" ? "Valider" : "Refuser"}
-              </button>
-            </div>
+                {submitting
+                  ? "Envoi…"
+                  : pending.action === "approve"
+                    ? "Oui, valider"
+                    : "Oui, refuser"}
+              </ModalButton>
+            </ModalActions>
           </div>
+        )}
+      </Modal>
+
+      {/* Confirmation du remboursement */}
+      <Modal
+        open={!!refundTarget}
+        onClose={() => setRefundTarget(null)}
+        busy={submitting}
+        zIndex="z-[120]"
+        icon={RefreshCcw}
+        title="Confirmer le remboursement"
+        description={
+          refundTarget
+            ? `Réservation ${reservationRef(refundTarget)} · ${refundTarget.user?.name || "Client"}`
+            : undefined
+        }
+      >
+        {refundTarget && (
+          <>
+            <p className="text-sm leading-6 text-cream/70">
+              Le remboursement de{" "}
+              <strong className="text-cream">
+                {formatAmount(refundTarget.cancellation_refund_amount)}
+              </strong>{" "}
+              sera marqué comme effectué et le client en sera informé.
+            </p>
+            <ModalActions>
+              <ModalButton
+                variant="secondary"
+                disabled={submitting}
+                onClick={() => setRefundTarget(null)}
+              >
+                Annuler
+              </ModalButton>
+              <ModalButton disabled={submitting} onClick={markRefunded}>
+                {submitting ? "Envoi…" : "Oui, c'est remboursé"}
+              </ModalButton>
+            </ModalActions>
+          </>
         )}
       </Modal>
     </div>
@@ -1046,14 +1107,13 @@ function DetailsActions({ commands }: { commands: RowCommand[] }) {
   if (commands.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-2">
-      {commands.map(({ label, icon: Icon, tone, disabled, run }) => (
+      {commands.map(({ label, icon: Icon, tone, run }) => (
         <button
           key={label}
           type="button"
-          disabled={disabled}
           onClick={run}
           className={cn(
-            "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wider transition disabled:opacity-50",
+            "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wider outline-none transition focus-visible:ring-2 focus-visible:ring-gold/50",
             tone === "danger"
               ? "border border-terracotta/40 text-terracotta-light hover:bg-terracotta/15"
               : "bg-gradient-to-br from-gold-light to-gold text-night hover:brightness-105"
@@ -1063,64 +1123,6 @@ function DetailsActions({ commands }: { commands: RowCommand[] }) {
         </button>
       ))}
     </div>
-  );
-}
-
-function Modal({
-  open,
-  onClose,
-  children,
-  zIndex = "z-[100]",
-  maxWidth = "max-w-lg"
-}: {
-  open: boolean;
-  onClose: () => void;
-  children: ReactNode;
-  zIndex?: string;
-  maxWidth?: string;
-}) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  return (
-    <AnimatePresence>
-      {open && (
-        <div className={cn("fixed inset-0 flex items-center justify-center p-4", zIndex)}>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 bg-night/80 backdrop-blur-md"
-          />
-          <motion.div
-            role="dialog"
-            aria-modal="true"
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className={cn(
-              "glass-dark glass-edge relative max-h-[90vh] w-full overflow-y-auto rounded-3xl p-6 text-cream shadow-2xl sm:p-8",
-              maxWidth
-            )}
-          >
-            <button
-              type="button"
-              onClick={onClose}
-              className="absolute right-5 top-5 flex h-9 w-9 items-center justify-center rounded-full border border-gold/20 bg-white/5 text-cream transition hover:border-gold hover:text-gold-light"
-              aria-label="Fermer"
-            >
-              <X size={15} />
-            </button>
-            {children}
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
   );
 }
 
@@ -1161,7 +1163,7 @@ function ReservationDetails({
     <div className="space-y-5">
       <div className="pr-10">
         <p className="text-[10px] uppercase tracking-widest text-cream/50">
-          Réservation #{reservation.id}
+          Réservation {reservationRef(reservation)}
         </p>
         <h3 className="mt-1 font-display text-2xl font-bold uppercase tracking-wide text-cream">
           {apartmentLabel(reservation.room, reservation.category_type)}
@@ -1182,18 +1184,18 @@ function ReservationDetails({
         <DetailRow label="Montant du séjour">
           {formatAmount(reservationAmount(reservation))}
         </DetailRow>
-        <DetailRow label="Demandée le">{formatDateTime(reservation.created_at)}</DetailRow>
+        <DetailRow label="Demandée le">{formatStamp(reservation.created_at)}</DetailRow>
         {reservation.approved_at && (
-          <DetailRow label="Validée le">{formatDateTime(reservation.approved_at)}</DetailRow>
+          <DetailRow label="Validée le">{formatStamp(reservation.approved_at)}</DetailRow>
         )}
         {reservation.payment_deadline && reservation.status === "VALIDEE_PAIEMENT_REQUIS" && (
           <DetailRow label="Paiement attendu avant le">
-            {formatDateTime(reservation.payment_deadline)}
+            {formatStamp(reservation.payment_deadline)}
           </DetailRow>
         )}
         {(reservation.stay_paid_at || reservation.paid_at) && (
           <DetailRow label="Séjour payé le">
-            {formatDateTime(reservation.stay_paid_at || reservation.paid_at)}
+            {formatStamp(reservation.stay_paid_at || reservation.paid_at)}
           </DetailRow>
         )}
         {(reservation.status === "ANNULEE" || reservation.status === "REMBOURSEE") && (
@@ -1202,7 +1204,7 @@ function ReservationDetails({
           </DetailRow>
         )}
         {reservation.released_at && (
-          <DetailRow label="Libéré le">{formatDateTime(reservation.released_at)}</DetailRow>
+          <DetailRow label="Terminé le">{formatStamp(reservation.released_at)}</DetailRow>
         )}
       </div>
 
@@ -1233,7 +1235,7 @@ function ReservationDetails({
             {reservation.extensions.map((extension) => (
               <li key={extension.id} className="flex flex-wrap items-center justify-between gap-2">
                 <span>
-                  #{extension.id} · jusqu&apos;au {formatDate(extension.requested_check_out)} ·{" "}
+                  Jusqu&apos;au {formatDate(extension.requested_check_out)} ·{" "}
                   {formatAmount(extension.amount)}
                 </span>
                 <StatusBadge status={extension.status} labels={extensionStatusLabels} />
@@ -1260,7 +1262,7 @@ function ExtensionDetails({
     <div className="space-y-5">
       <div className="pr-10">
         <p className="text-[10px] uppercase tracking-widest text-cream/50">
-          Prolongation #{extension.id} · Réservation #{extension.reservation_id}
+          Prolongation · Réservation {extensionRef(extension)}
         </p>
         <h3 className="mt-1 font-display text-2xl font-bold uppercase tracking-wide text-cream">
           {apartmentLabel(reservation?.room, reservation?.category_type)}
@@ -1283,14 +1285,14 @@ function ExtensionDetails({
         </DetailRow>
         <DetailRow label="Prix par nuit">{formatAmount(extension.price_per_night)}</DetailRow>
         <DetailRow label="Montant">{formatAmount(extension.amount)}</DetailRow>
-        <DetailRow label="Demandée le">{formatDateTime(extension.created_at)}</DetailRow>
+        <DetailRow label="Demandée le">{formatStamp(extension.created_at)}</DetailRow>
         {extension.payment_deadline && (
           <DetailRow label="Échéance de paiement">
-            {formatDateTime(extension.payment_deadline)}
+            {formatStamp(extension.payment_deadline)}
           </DetailRow>
         )}
         {extension.paid_at && (
-          <DetailRow label="Payée le">{formatDateTime(extension.paid_at)}</DetailRow>
+          <DetailRow label="Payée le">{formatStamp(extension.paid_at)}</DetailRow>
         )}
         {extension.voucher?.number && (
           <DetailRow label="Bon de séjour">{extension.voucher.number}</DetailRow>

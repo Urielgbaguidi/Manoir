@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { CheckCircle2, Eye, EyeOff, Info, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
+import { ApiError } from "@/lib/api";
 import AuthShell, { AuthDivider, AuthField, AuthSubmit } from "@/components/auth/AuthShell";
 import GoogleSignInButton from "@/components/auth/GoogleSignInButton";
 
@@ -47,7 +48,11 @@ function LoginContent() {
         setLoading(false);
       }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "Une erreur est survenue", "error");
+      // Adresse non confirmée : la page de confirmation (ouverte par le
+      // contexte) explique la suite, pas besoin d'un message d'erreur ici.
+      if (!(err instanceof ApiError && err.reason === "email_not_verified")) {
+        showToast(err instanceof Error ? err.message : "Une erreur est survenue", "error");
+      }
       setLoading(false);
     }
   };

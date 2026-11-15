@@ -1,7 +1,16 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { AlertCircle, ArrowRight, CalendarCheck2, FileText, Wallet } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowRight,
+  BedDouble,
+  CalendarCheck2,
+  FileText,
+  LifeBuoy,
+  Mail,
+  Wallet
+} from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -194,13 +203,18 @@ export default function EspaceClientAccueil() {
         </motion.div>
       ))}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      {/*
+        Bloc principal : informations à gauche, prochain séjour et aide à
+        droite. Les deux colonnes ont la même hauteur ; sous xl elles
+        s'empilent et les deux cartes latérales passent côte à côte.
+      */}
+      <div className="grid items-stretch gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]">
         {/* Informations — façon « annonces » */}
         <section className="glass-warm glass-edge rounded-3xl p-6 sm:p-8">
-          <div className="space-y-7 text-[15px] leading-7 text-cream/75">
+          <div className="grid gap-x-10 gap-y-7 text-[15px] leading-7 text-cream/75 md:grid-cols-2">
             <InfoBlock index={1} title="Réservations">
               {loading ? (
-                <span className="inline-block h-4 w-64 animate-pulse rounded bg-white/10" />
+                <span className="inline-block h-4 w-4/5 animate-pulse rounded bg-white/10" />
               ) : summary.active.length > 0 ? (
                 <>
                   Vous avez{" "}
@@ -236,23 +250,13 @@ export default function EspaceClientAccueil() {
               prolongation : elle est validée par notre équipe puis réglée en ligne. Une demande pas
               encore payée peut être annulée sans frais jusqu'au jour de l'arrivée.
             </InfoBlock>
-
-            <InfoBlock index={5} title="Besoin d'aide ?">
-              Notre équipe vous répond par e-mail à{" "}
-              <a
-                href={contactMailto("Question | Espace client")}
-                className="font-semibold text-gold-light underline underline-offset-4"
-              >
-                {CONTACT_EMAIL}
-              </a>
-              .
-            </InfoBlock>
           </div>
         </section>
 
-        {/* Colonne latérale : prochain séjour */}
-        <div>
+        {/* Colonne latérale : le prochain séjour occupe la hauteur restante. */}
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-1 xl:grid-rows-[minmax(0,1fr)_auto]">
           <NextStayCard loading={loading} next={summary.next} />
+          <HelpCard />
         </div>
       </div>
     </div>
@@ -335,6 +339,31 @@ function InlineLink({ href, children }: { href: string; children: ReactNode }) {
   );
 }
 
+function HelpCard() {
+  return (
+    <div className="glass-warm glass-edge flex h-full flex-col gap-4 rounded-3xl p-6">
+      <div className="flex items-start gap-4">
+        <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-olive/15 text-olive-light">
+          <LifeBuoy size={22} />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-[17px] font-bold text-cream">Besoin d&apos;aide ?</h2>
+          <p className="mt-1 text-sm leading-6 text-cream/65">
+            Notre équipe vous répond par e-mail, pour toute question sur votre séjour.
+          </p>
+        </div>
+      </div>
+      <a
+        href={contactMailto("Question | Espace client")}
+        className="mt-auto flex min-w-0 items-center justify-center gap-2 rounded-full border border-gold/30 px-5 py-2.5 text-sm font-semibold text-cream transition hover:border-gold/60 hover:text-gold-light"
+      >
+        <Mail size={16} className="shrink-0" />
+        <span className="truncate">{CONTACT_EMAIL}</span>
+      </a>
+    </div>
+  );
+}
+
 function NextStayCard({
   loading,
   next
@@ -343,14 +372,17 @@ function NextStayCard({
   next?: { reservation: Reservation; status: Reservation["status"] };
 }) {
   if (loading) {
-    return <div className="glass-warm h-64 animate-pulse rounded-3xl" />;
+    return <div className="glass-warm h-full min-h-64 animate-pulse rounded-3xl" />;
   }
 
   if (!next) {
     return (
-      <div className="glass-warm glass-edge rounded-3xl p-6 text-center">
-        <p className="eyebrow">Prochain séjour</p>
-        <p className="mt-3 text-sm leading-6 text-cream/65">Aucun séjour à venir pour le moment.</p>
+      <div className="glass-warm glass-edge flex h-full min-h-56 flex-col items-center justify-center rounded-3xl p-6 text-center">
+        <span className="grid size-12 place-items-center rounded-2xl bg-gold/15 text-gold-light">
+          <BedDouble size={22} />
+        </span>
+        <p className="eyebrow mt-4">Prochain séjour</p>
+        <p className="mt-2 text-sm leading-6 text-cream/65">Aucun séjour à venir pour le moment.</p>
         <Link
           href="/rooms"
           className="mt-5 inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-gold-light to-gold px-5 py-2.5 text-sm font-bold text-night transition hover:brightness-105"
@@ -371,19 +403,18 @@ function NextStayCard({
   return (
     <Link
       href={reservationHref(reservation.id)}
-      className="on-dark group relative block overflow-hidden rounded-3xl"
+      className="on-dark group relative flex h-full min-h-64 flex-col justify-end overflow-hidden rounded-3xl"
     >
-      <div className="relative h-64">
-        <Image
-          src={image}
-          alt=""
-          fill
-          sizes="340px"
-          className="object-cover transition duration-700 group-hover:scale-105"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-night via-night/60 to-night/10" />
-      </div>
-      <div className="absolute inset-x-0 bottom-0 p-5">
+      {/* L'image couvre toute la hauteur de la carte, quelle qu'elle soit. */}
+      <Image
+        src={image}
+        alt=""
+        fill
+        sizes="(min-width: 1280px) 380px, (min-width: 768px) 50vw, 100vw"
+        className="object-cover transition duration-700 group-hover:scale-105"
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-night via-night/60 to-night/10" />
+      <div className="relative p-5">
         <div className="flex items-center justify-between gap-2">
           <span className="eyebrow">Prochain séjour</span>
           <span

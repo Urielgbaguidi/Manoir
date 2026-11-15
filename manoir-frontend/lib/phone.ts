@@ -34,7 +34,16 @@ export type DialCountry = {
 export const DEFAULT_DIAL_COUNTRY: CountryCode = "BJ";
 
 /** Pays proposés en premier : la clientèle habituelle du Manoir. */
-export const SUGGESTED_DIAL_COUNTRIES: CountryCode[] = ["BJ", "TG", "NG", "CI", "FR", "SN", "BF", "GH"];
+export const SUGGESTED_DIAL_COUNTRIES: CountryCode[] = [
+  "BJ",
+  "TG",
+  "NG",
+  "CI",
+  "FR",
+  "SN",
+  "BF",
+  "GH"
+];
 
 /**
  * Indicatifs dont le code n'est pas un code ISO 3166-1 officiel, donc absents
@@ -57,7 +66,9 @@ export const DIAL_COUNTRIES: DialCountry[] = getCountries()
       code,
       dial,
       name,
-      search: normalizeCountryQuery(`${name} ${country?.nameEn || ""} ${code} ${dial} ${dial.slice(1)}`)
+      search: normalizeCountryQuery(
+        `${name} ${country?.nameEn || ""} ${code} ${dial} ${dial.slice(1)}`
+      )
     };
   })
   .sort((a, b) => a.name.localeCompare(b.name, "fr"));
@@ -93,9 +104,7 @@ function migrateLegacyNumber(national: string, country: CountryCode) {
   return national;
 }
 
-export type PhoneCheck =
-  | { valid: true; international: string }
-  | { valid: false; message: string };
+export type PhoneCheck = { valid: true; international: string } | { valid: false; message: string };
 
 /**
  * Valide un numéro saisi pour un pays et le renvoie au format international
@@ -115,7 +124,10 @@ export function checkPhone(input: string, country: CountryCode): PhoneCheck {
     ? parsePhoneNumberFromString(candidate)
     : parsePhoneNumberFromString(candidate, country);
 
-  if (!parsed || !(raw.startsWith("+") ? parsed.isValid() : isValidPhoneNumber(candidate, country))) {
+  if (
+    !parsed ||
+    !(raw.startsWith("+") ? parsed.isValid() : isValidPhoneNumber(candidate, country))
+  ) {
     return {
       valid: false,
       message: raw.startsWith("+")

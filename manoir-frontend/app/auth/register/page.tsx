@@ -3,7 +3,7 @@
 import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
@@ -148,6 +148,7 @@ function RegisterForm({ redirectTo }: { redirectTo?: string }) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
+  const [emailTaken, setEmailTaken] = useState(false);
   const [phoneCountry, setPhoneCountry] = useState<CountryCode>(DEFAULT_DIAL_COUNTRY);
   const [phone, setPhone] = useState("");
   const [phoneError, setPhoneError] = useState("");
@@ -200,7 +201,13 @@ function RegisterForm({ redirectTo }: { redirectTo?: string }) {
         redirectTo
       );
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "Une erreur est survenue", "error");
+      if (err instanceof ApiError && err.reason === "email_taken") {
+        // Adresse déjà utilisée : le message reste sous le champ.
+        setEmailTaken(true);
+        document.getElementById("email")?.focus();
+      } else {
+        showToast(err instanceof Error ? err.message : "Une erreur est survenue", "error");
+      }
       setLoading(false);
     }
   };
@@ -261,15 +268,30 @@ function RegisterForm({ redirectTo }: { redirectTo?: string }) {
 
         <AuthField
           label="Adresse e-mail"
+          id="email"
           name="email"
           type="email"
           autoComplete="email"
           inputMode="email"
           value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          onChange={(event) => {
+            setEmail(event.target.value);
+            if (emailTaken) setEmailTaken(false);
+          }}
           required
           placeholder="vous@exemple.com"
-          hint="Un code de confirmation vous sera envoyé à cette adresse."
+          aria-invalid={emailTaken}
+          aria-describedby={emailTaken ? "email-taken" : undefined}
+          className={emailTaken ? "!border-red-500/70" : undefined}
+          hint={
+            emailTaken ? (
+              <span id="email-taken" role="alert" className="text-red-500">
+                Cette adresse e-mail existe déjà.
+              </span>
+            ) : (
+              "Un lien de confirmation vous sera envoyé à cette adresse."
+            )
+          }
         />
 
         <div className="space-y-1.5">
@@ -363,11 +385,6 @@ function RegisterForm({ redirectTo }: { redirectTo?: string }) {
             ) : undefined
           }
         />
-
-        <p className="text-xs leading-5 text-cream/50">
-          En créant un compte, vous acceptez que Le Manoir utilise vos coordonnées pour gérer vos
-          réservations et vous contacter au sujet de votre séjour.
-        </p>
 
         <AuthSubmit loading={loading}>Créer mon compte</AuthSubmit>
       </form>

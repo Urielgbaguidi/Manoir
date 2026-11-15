@@ -24,7 +24,7 @@ export default function EmailVerificationBanner({ user }: { user: User | null })
         <div className="space-y-1">
           <p className="text-sm font-semibold text-cream">Confirmez votre adresse email</p>
           <p className="text-xs leading-5 text-cream/60">
-            Un code à 6 chiffres a été envoyé à{" "}
+            Un lien de confirmation a été envoyé à{" "}
             <span className="text-gold-light">{user.email}</span>. Sans confirmation, nous ne
             pourrons pas vous joindre au sujet de vos réservations.
           </p>
@@ -35,7 +35,7 @@ export default function EmailVerificationBanner({ user }: { user: User | null })
         href="/auth/confirmer-email"
         className="shrink-0 rounded-xl border border-gold/30 bg-white/5 px-5 py-2.5 text-center text-[10px] font-black uppercase tracking-[0.22em] text-cream transition hover:border-gold/50 hover:bg-white/10 hover:text-gold-light"
       >
-        Saisir mon code
+        Renvoyer le lien
       </Link>
     </div>
   );

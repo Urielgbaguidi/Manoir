@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type AdminTableQuery, type Paginated, type Reservation } from "@/lib/api";
+import { reservationRef, reservationRefDay } from "@/lib/reservationDisplay";
 import { AdminPageHeader } from "@/components/dashboard/admin/AdminShell";
 import DataTable, {
   FilterField,
@@ -66,11 +67,11 @@ const apartmentLabel = (reservation: Reservation) => {
   return room?.name || categoryLabels[reservation.category_type || ""] || "Appartement";
 };
 
-/** Situation du séjour : libéré, à venir (payé), en cours ou terminé. */
+/** Situation du séjour : à venir (payé), en cours ou terminé. */
 const stayState = (reservation: Reservation, today: string): { label: string; tone: BadgeTone } => {
-  if (reservation.status === "LIBEREE") return { label: "Libéré", tone: "info" };
+  if (reservation.status === "LIBEREE") return { label: "Terminé", tone: "neutral" };
   if (today < dayOf(reservation.check_in)) return { label: "Séjour payé", tone: "success" };
-  if (today < dayOf(reservation.check_out)) return { label: "En cours", tone: "warning" };
+  if (today < dayOf(reservation.check_out)) return { label: "En cours", tone: "info" };
   return { label: "Terminé", tone: "neutral" };
 };
 
@@ -89,14 +90,18 @@ export default function AdminStaysPage() {
   const requestId = useRef(0);
 
   const loadStays = useCallback(async () => {
+    // Référence « MN121126 » : l'API filtre alors sur le jour de la demande.
+    const refDay = reservationRefDay(search);
+    const from = refDay ?? (dateFrom || undefined);
+    const to = refDay ?? (dateTo || undefined);
     const query: AdminTableQuery = {
       page,
       per_page: perPage,
-      search: search || undefined,
+      search: refDay ? undefined : search || undefined,
       status: PAID_STATUSES,
-      date_from: dateFrom || undefined,
-      date_to: dateTo || undefined,
-      date_field: dateFrom || dateTo ? "stay" : undefined,
+      date_from: from,
+      date_to: to,
+      date_field: refDay ? "created" : from || to ? "stay" : undefined,
       sort,
       direction
     };
@@ -149,6 +154,12 @@ export default function AdminStaysPage() {
   const today = todayKey();
 
   const columns: DataTableColumn<Reservation>[] = [
+    {
+      key: "ref",
+      header: "Réf.",
+      className: "font-semibold text-cream",
+      render: (r) => reservationRef(r)
+    },
     {
       key: "client",
       header: "Client",
@@ -213,7 +224,7 @@ export default function AdminStaysPage() {
           setSearch(value);
           setPage(1);
         }}
-        searchPlaceholder="Client, appartement, N° (#123)…"
+        searchPlaceholder="Réf. (MN121126), client, appartement…"
         sort={sort}
         direction={direction}
         onSortChange={(nextSort, nextDirection) => {

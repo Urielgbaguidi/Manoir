@@ -35,17 +35,11 @@ class NotificationController extends Controller
 
     /**
      * Marque une notification de l'utilisateur comme lue.
-     * Renvoie 403 si la notification n'appartient pas a l'utilisateur.
+     * La notification d'un autre utilisateur est introuvable (404).
      */
     public function markRead(Request $request, string $id): JsonResponse
     {
-        $notification = Notification::findOrFail($id);
-
-        if ($notification->user_id !== $request->user()->id) {
-            return response()->json([
-                'message' => 'Action non autorisee.',
-            ], 403);
-        }
+        $notification = Notification::where('user_id', $request->user()->id)->findOrFail($id);
 
         if ($notification->status !== 'read') {
             $notification->update(['status' => 'read']);

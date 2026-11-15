@@ -32,8 +32,8 @@ interface AuthContextType {
     country: string,
     redirectTo?: string
   ) => Promise<void>;
-  /** Saisie du code reçu par email : ouvre la session. */
-  verifyEmail: (email: string, code: string, redirectTo?: string) => Promise<void>;
+  /** Ouverture du lien de confirmation reçu par e-mail : ouvre la session. */
+  verifyEmail: (email: string, token: string) => Promise<void>;
   logout: (redirectTo?: string) => void;
   refreshUser: () => Promise<User | null>;
   setUser: (user: User | null) => void;
@@ -49,10 +49,38 @@ export function phoneCompletionPath(redirectTo?: string) {
     : "/auth/register?etape=telephone";
 }
 
-export function emailConfirmationPath(email: string, redirectTo?: string) {
-  const params = new URLSearchParams({ email });
-  if (redirectTo) params.set("redirect", redirectTo);
-  return `/auth/confirmer-email?${params.toString()}`;
+export function emailConfirmationPath(email: string) {
+  return `/auth/confirmer-email?${new URLSearchParams({ email }).toString()}`;
+}
+
+/*
+ * Page à rouvrir après la confirmation de l'adresse (une fiche appartement,
+ * par exemple). Le lien du mail s'ouvre souvent dans un nouvel onglet : la
+ * destination est donc gardée dans le navigateur (simple chemin du site, sans
+ * aucune donnée sensible).
+ */
+const AFTER_VERIFY_KEY = "manoir:after-email-verification";
+
+function rememberAfterVerification(redirectTo?: string) {
+  try {
+    if (redirectTo && redirectTo.startsWith("/") && !redirectTo.startsWith("//")) {
+      window.localStorage.setItem(AFTER_VERIFY_KEY, redirectTo);
+    } else {
+      window.localStorage.removeItem(AFTER_VERIFY_KEY);
+    }
+  } catch {
+    /* stockage indisponible : retour à l'espace client */
+  }
+}
+
+function takeAfterVerification(): string | undefined {
+  try {
+    const value = window.localStorage.getItem(AFTER_VERIFY_KEY);
+    window.localStorage.removeItem(AFTER_VERIFY_KEY);
+    return value && value.startsWith("/") && !value.startsWith("//") ? value : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -106,8 +134,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * téléphone (Google) est d'abord envoyé compléter son profil.
    */
   const onLoggedIn = useCallback(
-    (loggedUser: User, redirectTo?: string) => {
+    (
+      loggedUser: User,
+      redirectTo?: string,
+      options: { replace?: boolean; welcome?: string } = {}
+    ) => {
       setUser(loggedUser);
+      // Après la confirmation de l'adresse, la page du lien ne doit pas
+      // rester dans l'historique (retour arrière).
+      const go = options.replace ? router.replace : router.push;
 
       const isAdmin = isAdminUser(loggedUser);
       // Un admin ne peut atterrir que dans /admin, un client jamais dans /admin.
@@ -118,15 +153,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         toast.info("Dernière étape : renseignez votre numéro de téléphone.", {
           toastId: "phone-required"
         });
-        router.push(phoneCompletionPath(destination));
+        go(phoneCompletionPath(destination));
         return;
       }
 
-      toast.success(`Connexion réussie. Bienvenue, ${loggedUser.name.split(" ")[0]} !`, {
-        toastId: "login-success"
-      });
+      toast.success(
+        options.welcome ?? `Connexion réussie. Bienvenue, ${loggedUser.name.split(" ")[0]} !`,
+        { toastId: "login-success" }
+      );
 
-      router.push(destination);
+      go(destination);
     },
     [router]
   );
@@ -137,12 +173,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (result.kind === "session") onLoggedIn(result.user, redirectTo);
       return result;
     } catch (error) {
-      // Mot de passe correct mais adresse non confirmée : saisie du code.
+      // Mot de passe correct mais adresse non confirmée : un nouveau lien
+      // vient de partir, la page de confirmation l'explique.
       if (error instanceof ApiError && error.reason === "email_not_verified") {
-        toast.info("Confirmez votre adresse : un nouveau code vient de vous être envoyé.", {
-          toastId: "email-unverified"
-        });
-        router.push(emailConfirmationPath(String(error.data.email || email), redirectTo));
+        rememberAfterVerification(redirectTo);
+        router.push(emailConfirmationPath(String(error.data.email || email)));
       }
       throw error;
     }
@@ -172,15 +207,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     redirectTo?: string
   ) => {
     const response = await api.register({ name, email, phone, password, country });
-    toast.success("Saisissez le code à 6 chiffres reçu par e-mail.", {
-      toastId: "register-success"
-    });
-    router.push(emailConfirmationPath(response.email || email, redirectTo));
+    rememberAfterVerification(redirectTo);
+    if (response.already_pending) {
+      toast.info(response.message, { toastId: "register-pending" });
+    }
+    router.push(emailConfirmationPath(response.email || email));
   };
 
-  const verifyEmail = async (email: string, code: string, redirectTo?: string) => {
-    const verifiedUser = await api.verifyEmailCode(email, code);
-    onLoggedIn(verifiedUser, redirectTo);
+  const verifyEmail = async (email: string, token: string) => {
+    const verifiedUser = await api.verifyEmailLink(email, token);
+    onLoggedIn(verifiedUser, takeAfterVerification(), {
+      replace: true,
+      welcome: `Adresse e-mail confirmée. Bienvenue, ${verifiedUser.name.split(" ")[0]} !`
+    });
   };
 
   /**

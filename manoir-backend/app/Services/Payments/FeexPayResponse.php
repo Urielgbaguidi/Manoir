@@ -53,6 +53,10 @@ final readonly class FeexPayResponse
      */
     public function channel(): ?string
     {
+        if ($this->isCardCheckout()) {
+            return 'card';
+        }
+
         foreach (['reseau', 'network', 'operator', 'payment_method'] as $key) {
             $channel = PaymentChannel::normalize($this->body[$key] ?? null);
 
@@ -62,6 +66,17 @@ final readonly class FeexPayResponse
         }
 
         return null;
+    }
+
+    /**
+     * Transaction creee par le formulaire carte du checkout FeexPay, qui lui
+     * donne la description « Paiement par carte bancaire VISA|MASTERCARD ».
+     */
+    public function isCardCheckout(): bool
+    {
+        $description = $this->body['description'] ?? null;
+
+        return is_string($description) && str_starts_with(strtolower($description), 'paiement par carte bancaire');
     }
 
     public function errorCode(): ?string
